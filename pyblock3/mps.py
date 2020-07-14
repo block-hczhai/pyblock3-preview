@@ -1,5 +1,8 @@
 
-from .symmetry import StateInfo
+from .symmetry import StateInfo, StateFusingInfo
+from .tensor import SparseTensor, SubTensor
+from collections import Counter
+import numpy as np
 
 
 class MPSInfo:
@@ -11,7 +14,7 @@ class MPSInfo:
         n_sites : int
             Number of sites
         vacuum : SZ
-            Vacuum state
+            vacuum state
         target : SZ
             target state
         basis : list(StateInfo)
@@ -43,7 +46,7 @@ class MPSInfo:
         self.right_dims[-1] = StateInfo(quanta=Counter({self.target: 1}))
         for d in range(self.n_sites - 1, -1, -1):
             self.right_dims[d] = StateInfo.tensor_product(
-                -self.basis[d], self.left_dims[d + 1])
+                -self.basis[d], self.right_dims[d + 1])
 
         for d in range(0, self.n_sites + 1):
             self.left_dims[d].filter(self.right_dims[d])
@@ -57,14 +60,15 @@ class MPSInfo:
         """Truncated bond dimension based on FCI quantum numbers
             each FCI quantum number has at least one state kept"""
 
-        self.set_bond_dimension_fci()
+        if self.left_dims is None:
+            self.set_bond_dimension_fci()
 
         for d in range(0, self.n_sites):
             ref = StateInfo.tensor_product(self.left_dims[d], self.basis[d])
             self.left_dims[d + 1].truncate(bond_dim, ref)
         for d in range(self.n_sites - 1, -1, -1):
             ref = StateInfo.tensor_product(
-                self.basis[d], self.right_dims[d + 1])
+                -self.basis[d], self.right_dims[d + 1])
             self.right_dims[d].truncate(bond_dim, ref)
 
 
@@ -103,14 +107,14 @@ class MPS:
         """Construct unfused MPS from MPSInfo."""
         tensors = [None] * info.n_sites
         for i in range(info.n_sites):
-            tensors[i] = SparseTensor.init_from_state_info(
+            tensors[i] = SparseTensor.init_mps_tensor(
                 info.left_dims[i], info.basis[i], info.left_dims[i + 1])
         return MPS(tensors=tensors)
 
-    def randomize(self, a=0, b=1):
+    def randomize(self, low=0, high=1):
         """Fill random numbers."""
         for i in range(self.n_sites):
-            tensors[i].randomize(a, b)
+            self.tensors[i].randomize(low, high)
 
     def __mul__(self, other):
         """Scalar multiplication"""
@@ -175,7 +179,7 @@ class MPS:
                     sub_mp[q].reduced[-sh[0]:, ...] += block.reduced
                 else:
                     sub_mp[q].reduced[-sh[0]:, ..., -sh[-1]:] += block.reduced
-            tensors.append(Tensor(blocks=list(sub_mp.values())))
+            tensors.append(SparseTensor(blocks=list(sub_mp.values())))
         return MPS(tensors=tensors)
 
     def __sub__(self, other):
@@ -198,10 +202,28 @@ class MPS:
     def canonicalize(self, center):
         """
         MPS/MPO canonicalization.
+
         Args:
             center : int
-                Site index of canonicalization center
+                Site index of canonicalization center.
         """
+        for i in range(0, center):
+            if self.tensors[i] is None:
+                continue
+            rs = self.tensors[i].left_canonicalize()
+            if i + 1 < self.n_sites and self.tensors[i + 1] is not None:
+                self.tensors[i + 1].left_multiply(rs)
+            elif i + 2 < self.n_sites:
+                self.tensors[i + 2].left_multiply(rs)
+        for i in range(self.n_sites - 1, center, -1):
+            if self.tensors[i] is None:
+                continue
+            ls = self.tensors[i].right_canonicalize()
+            if i - 1 >= 0 and self.tensors[i - 1] is not None:
+                self.tensors[i - 1].right_multiply(ls)
+            elif i - 2 >= 0:
+                self.tensors[i - 2].right_multiply(ls)
+        self.center = center
 
     def compress(self, bond_dim=-1, cutoff=0.0, left=True):
         """
@@ -231,7 +253,21 @@ class MPS:
 
     def fuse(self):
         """Transform unfused (already canonicalized) MPS to fused MPS."""
+        assert not self.fused
+        assert self.center != -1
 
+        for i in range(0, self.n_sites):
+            l = self.tensors[i].get_state_info(0)
+            m = self.tensors[i].get_state_info(1)
+            r = self.tensors[i].get_state_info(2)
+            if i <= self.center:
+                info = StateFusingInfo.tensor_product(l, m, ref=r)
+                self.tensors[i] = self.tensors[i].fuse(0, 1, info)
+            else:
+                info = StateFusingInfo.tensor_product(-m, r, ref=l)
+                self.tensors[i] = self.tensors[i].fuse(1, 2, info, rev=True)
+
+        self.fused = True
 
 class MPO(MPS):
     """
@@ -265,3 +301,4 @@ class MPO(MPS):
         """
         (a) Contraction of MPO and MPS. MPO |MPS>. (other : MPS)
         (b) Contraction of MPO and MPO. MPO * MPO. (other : MPO)
+        """

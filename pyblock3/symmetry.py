@@ -10,6 +10,10 @@ class SZ:
         self.n = n
         self.twos = twos
         self.pg = pg
+    
+    @property
+    def is_fermion(self):
+        return self.n % 2 == 1
 
     def __add__(self, other):
         return SZ(self.n + other.n, self.twos + other.twos, self.pg ^ other.pg)
@@ -65,11 +69,10 @@ class StateInfo:
         return StateInfo(quanta=Counter({-k: v for k, v in self.quanta.items()}))
 
     def filter(self, other):
-        return StateInfo(
-            quanta=Counter(
-                {k: min(other.quanta[k], v)
-                 for k, v in self.quanta.items() if k in other.quanta}))
-    
+        self.quanta = Counter(
+            {k: min(other.quanta[k], v)
+             for k, v in self.quanta.items() if k in other.quanta})
+
     def truncate(self, bond_dim, ref=None):
         n_total = self.n_states_total
         if n_total > bond_dim:
@@ -77,6 +80,9 @@ class StateInfo:
                 self.quanta[k] = int(np.ceil(v * bond_dim // n_total + 0.1))
                 if ref is not None:
                     self.quanta[k] = min(self.quanta[k], ref.quanta[k])
+
+    def __repr__(self):
+        return " ".join(["%r = %d" % (k, v) for k, v in self.quanta.items()])
 
 
 class StateFusingInfo(StateInfo):
@@ -95,14 +101,15 @@ class StateFusingInfo(StateInfo):
         super().__init__(quanta)
 
     @staticmethod
-    def tensor_product(a, b):
+    def tensor_product(a, b, ref=None):
         quanta = Counter()
         finfo = {}
         for ka, va in a.quanta.items():
             for kb, vb in b.quanta.items():
                 kc = ka + kb
-                if kc not in finfo:
-                    finfo[kc] = Counter()
-                finfo[kc][(ka, kb)] = quanta[ka + kb]
-                quanta[ka + kb] += va * vb
+                if ref is None or kc in ref.quanta:
+                    if kc not in finfo:
+                        finfo[kc] = Counter()
+                    finfo[kc][(ka, kb)] = quanta[kc]
+                    quanta[kc] += va * vb
         return StateFusingInfo(quanta, finfo)
