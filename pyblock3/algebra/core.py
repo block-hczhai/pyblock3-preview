@@ -93,6 +93,14 @@ class SubTensor(np.ndarray):
         return obj
 
     @staticmethod
+    @implements(np.linalg.norm)
+    def _norm(x):
+        return np.linalg.norm(np.asarray(x))
+
+    def norm(self):
+        return np.linalg.norm(np.asarray(self))
+
+    @staticmethod
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
         """
@@ -205,10 +213,14 @@ class SliceableTensor(np.ndarray):
             self.infos = getattr(obj, 'infos', None)
 
     def __repr__(self):
-        return "\n".join("%3d %r" % (ix, self[tuple(ix)]) for ix in np.argwhere(self))
+        idx = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
+        p = np.asarray(self)
+        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if p[tuple(ix)] is not 0)
 
     def __str__(self):
-        return "\n".join("%3d %r" % (ix, self[tuple(ix)]) for ix in np.argwhere(self))
+        idx = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
+        p = np.asarray(self)
+        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if p[tuple(ix)] is not 0)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _sliceable_tensor_numpy_func_impls:
@@ -221,6 +233,24 @@ class SliceableTensor(np.ndarray):
         """get state info associated with one of the legs
         idx: leg index"""
         return self.infos[idx]
+
+    def __getitem__(self, key):
+        r = super().__getitem__(key)
+        r.infos = list(r.infos)
+        if isinstance(key, int):
+            kk = sorted(r.infos[0].quanta)[key]
+            r.infos[0] = r.infos[0].__class__(quanta=r.infos[0].quanta.__class__(
+                            {kk: r.infos[0].quanta[kk]}))
+        elif isinstance(key, tuple):
+            for ik, k in enumerate(key):
+                if isinstance(k, int):
+                    kk = sorted(r.infos[ik].quanta)[k]
+                    r.infos[ik] = r.infos[ik].__class__(quanta=r.infos[ik].quanta.__class__(
+                        {kk: r.infos[ik].quanta[kk]}))
+        else:
+            raise TypeError("Unknown index type %r" % key.__class__)
+        r.infos = tuple(r.infos)
+        return r
 
     @staticmethod
     @implements(np.tensordot)
@@ -245,16 +275,14 @@ class SliceableTensor(np.ndarray):
             idxa, idxb = list(range(-axes, 0)), list(range(0, axes))
         else:
             idxa, idxb = axes
-        idxa = [x if x >= 0 else a.ndim + x for x in idxa]
-        idxb = [x if x >= 0 else b.ndim + x for x in idxb]
-        out_idx_a = np.array(
-            list(set(range(0, a.ndim)) - set(idxa)), dtype=int)
-        out_idx_b = np.array(
-            list(set(range(0, b.ndim)) - set(idxb)), dtype=int)
+        idxa = [x if x >= 0 else len(a.infos) + x for x in idxa]
+        idxb = [x if x >= 0 else len(b.infos) + x for x in idxb]
+        out_idx_a = sorted(set(range(0, len(a.infos))) - set(idxa))
+        out_idx_b = sorted(set(range(0, len(b.infos))) - set(idxb))
+        new_infos = (*[a.infos[i] for i in out_idx_a],
+                     *[b.infos[i] for i in out_idx_b])
 
-        new_infos = tuple(a.infos[out_idx_a] + b.infos[out_idx_b])
-
-        return np.tensordot(a.to_sparse(), b.to_sparse(), axes=(idxa, idxb)).to_sliceable(infos=new_infos)
+        return np.tensordot(a.to_sparse(), b.to_sparse(), axes=axes).to_sliceable(infos=new_infos)
 
     def tensordot(self, b, axes=2):
         return np.tensordot(self, b, axes)
@@ -281,7 +309,9 @@ class SliceableTensor(np.ndarray):
     @property
     def density(self):
         """Ratio of number of non-zero elements to total number of elements."""
-        return np.argwhere(self).size / self.size
+        idx = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
+        p = np.asarray(self)
+        return len([0 for ix in idx if p[tuple(ix)] is not 0]) / self.size
 
     @property
     def dtype(self):
@@ -295,7 +325,8 @@ class SliceableTensor(np.ndarray):
         return a.to_sparse()
 
     def to_sparse(self):
-        return SparseTensor(blocks=np.where(self != 0))
+        blocks = np.asarray(self)[tuple(np.indices(self.shape).reshape((self.ndim, -1)))]
+        return SparseTensor(blocks=blocks).quick_deflate()
 
     @staticmethod
     def _to_dense(a):
@@ -303,7 +334,7 @@ class SliceableTensor(np.ndarray):
 
     def to_dense(self):
         sh = tuple(info.n_states_total for info in self.infos)
-        aw = np.argwhere(self)
+        aw = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
         r = np.zeros(sh, dtype=self.dtype)
         idxs = []
         for ii, info in enumerate(self.infos):
@@ -312,8 +343,11 @@ class SliceableTensor(np.ndarray):
                 idx[ik + 1] = info.quanta[k] + idx[ik]
             idxs.append(idx)
         for ix in aw:
-            sl = tuple(slice(idx[k], idx[k + 1]) for k, idx in zip(ix, idxs))
-            r[sl] = np.asarray(self[tuple(ix)])
+            p = np.asarray(self)
+            if p[tuple(ix)] is not 0:
+                sl = tuple(slice(idx[k], idx[k + 1])
+                           for k, idx in zip(ix, idxs))
+                r[sl] = np.asarray(p[tuple(ix)])
         return r
 
 
@@ -391,6 +425,13 @@ class SparseTensor(NDArrayOperatorsMixin):
             else:
                 quanta[q] = block.shape[idx]
         return StateInfo(quanta)
+
+    def quick_deflate(self):
+        return SparseTensor(blocks=[b for b in self.blocks if b is not 0])
+
+    def deflate(self, cutoff=0):
+        blocks = [b for b in self.blocks if np.linalg.norm(b) > cutoff]
+        return SparseTensor(blocks=blocks)
 
     def __getitem__(self, i, idx=-1):
         if idx != -1:
@@ -495,6 +536,14 @@ class SparseTensor(NDArrayOperatorsMixin):
         return SparseTensor(blocks=list(blocks_map.values()))
 
     @staticmethod
+    @implements(np.linalg.norm)
+    def _norm(x):
+        return np.linalg.norm([np.linalg.norm(block) for block in x.blocks])
+
+    def norm(self):
+        return np.linalg.norm(self)
+
+    @staticmethod
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
         """
@@ -545,7 +594,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         return np.tensordot(self, b, axes)
 
     @staticmethod
-    def kron_add(a, b, func=np.add, infos=None):
+    def kron_add(a, b, infos=None):
         """
         Direct sum of first and last legs.
         Middle dims are summed.
@@ -580,8 +629,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         for block in b.blocks:
             qs = block.q_labels
             sh = block.shape
-            sm = sub_mp[qs][-sh[0]:, ..., -sh[-1]:]
-            func(sm, block, out=sm)
+            sub_mp[qs][-sh[0]:, ..., -sh[-1]:] += block
         return SparseTensor(blocks=list(sub_mp.values()))
 
     def left_canonicalize(self, mode='reduced'):
@@ -718,7 +766,8 @@ class SparseTensor(NDArrayOperatorsMixin):
 
         Returns:
             l, s, r : tuple(SpraseTensor)
-            error : double
+            error : float
+                Truncation error (same unit as singular value).
         """
         ss = [(i, j, v) for i, ps in enumerate(s.blocks)
               for j, v in enumerate(ps)]
@@ -737,7 +786,6 @@ class SparseTensor(NDArrayOperatorsMixin):
             ss_trunc = [x for x in ss_trunc if x[2] >= cutoff]
         if max_bond_dim != -1:
             ss_trunc = ss_trunc[:max_bond_dim]
-        assert len(ss_trunc) != 0
         ss_trunc.sort(key=lambda x: (x[0], x[1]))
         l_blocks, s_blocks, r_blocks = [], [], []
         error = 0.0
@@ -764,7 +812,9 @@ class SparseTensor(NDArrayOperatorsMixin):
             if not selected[ik]:
                 error += (s.blocks[ik] ** 2).sum()
         error = np.asarray(error).item()
-        return SparseTensor(blocks=l_blocks), SparseTensor(blocks=s_blocks), SparseTensor(blocks=r_blocks), error
+        return SparseTensor(blocks=l_blocks).deflate(), \
+            SparseTensor(blocks=s_blocks), SparseTensor(
+                blocks=r_blocks).deflate(), np.sqrt(error)
 
     @staticmethod
     @implements(np.linalg.qr)
@@ -805,7 +855,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         elif v.ndim == 1:
             for block in v.blocks:
                 blocks.append(np.diag(block))
-        else:
+        elif len(v.blocks) != 0:
             raise RuntimeError("ndim for np.diag must be 1 or 2.")
         return SparseTensor(blocks=blocks)
 
@@ -844,7 +894,7 @@ class SparseTensor(NDArrayOperatorsMixin):
     def to_sliceable(self, infos=None):
         if infos is None:
             infos = tuple(self.get_state_info(idx)
-                          for idx in range(len(self.ndim)))
+                          for idx in range(self.ndim))
         idx_infos = []
         for info in infos:
             idx_info = Counter()
@@ -855,7 +905,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         arr = np.zeros(sh, dtype=object)
         for block in self.blocks:
             idx = tuple([info[q]
-                         for q, info in zip(block.q_labels, idx_infos)], dtype=int)
+                         for q, info in zip(block.q_labels, idx_infos)])
             arr[idx] = block
         return SliceableTensor(reduced=arr, infos=infos)
 
@@ -893,7 +943,7 @@ class FermionTensor(NDArrayOperatorsMixin):
     def n_blocks(self):
         """Number of (non-zero) blocks."""
         return self.odd.n_blocks + self.even.n_blocks
-    
+
     @property
     def dtype(self):
         return self.odd.dtype if self.odd.n_blocks != 0 else self.even.dtype
@@ -935,22 +985,28 @@ class FermionTensor(NDArrayOperatorsMixin):
             elif ufunc.__name__ in ["add", "subtract"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
-                    blocks = getattr(ufunc, method)(a, b.odd), getattr(ufunc, method)(a, b.even)
+                    blocks = getattr(ufunc, method)(
+                        a, b.odd), getattr(ufunc, method)(a, b.even)
                 elif isinstance(b, numbers.Number):
-                    blocks = getattr(ufunc, method)(a.odd, b), getattr(ufunc, method)(a.even, b)
+                    blocks = getattr(ufunc, method)(
+                        a.odd, b), getattr(ufunc, method)(a.even, b)
                 else:
-                    blocks = getattr(ufunc, method)(a.odd, b.odd), getattr(ufunc, method)(a.even, b.even)
+                    blocks = getattr(ufunc, method)(a.odd, b.odd), getattr(
+                        ufunc, method)(a.even, b.even)
             elif ufunc.__name__ in ["multiply", "divide"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
-                    blocks = getattr(ufunc, method)(a, b.odd), getattr(ufunc, method)(a, b.even)
+                    blocks = getattr(ufunc, method)(
+                        a, b.odd), getattr(ufunc, method)(a, b.even)
                 elif isinstance(b, numbers.Number):
-                    blocks = getattr(ufunc, method)(a.odd, b), getattr(ufunc, method)(a.even, b)
+                    blocks = getattr(ufunc, method)(
+                        a.odd, b), getattr(ufunc, method)(a.even, b)
                 else:
                     return NotImplemented
             elif len(inputs) == 1:
                 a = inputs[0]
-                blocks = getattr(ufunc, method)(a.odd), getattr(ufunc, method)(a.even)
+                blocks = getattr(ufunc, method)(
+                    a.odd), getattr(ufunc, method)(a.even)
             else:
                 return NotImplemented
         else:
@@ -1001,6 +1057,9 @@ class FermionTensor(NDArrayOperatorsMixin):
         idx: leg index"""
         return self.odd.get_state_info(idx=idx) | self.even.get_state_info(idx=idx)
 
+    def deflate(self, cutoff=0):
+        return FermionTensor(odd=self.odd.deflate(cutoff), even=self.even.deflate(cutoff))
+
     @staticmethod
     def _fuse(a, i, j, info, rev=False):
         return a.fuse(i, j, info, rev=rev)
@@ -1038,13 +1097,17 @@ class FermionTensor(NDArrayOperatorsMixin):
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
         assert len(idxa) == len(idxb)
 
+        blocks = []
+        r = None
         # op x op
         if isinstance(a, FermionTensor) and isinstance(b, FermionTensor):
+            idx = a.ndim - len(idxa)
             odd_a = np.tensordot(a.odd, b.even, (idxa, idxb))
             odd_b = np.tensordot(a.even, b.odd, (idxa, idxb))
             even_a = np.tensordot(a.odd, b.odd, (idxa, idxb))
             even_b = np.tensordot(a.even, b.even, (idxa, idxb))
-            return FermionTensor(odd=odd_a + odd_b, even=even_a + even_b)
+            blocks = odd_a.blocks + even_a.blocks
+            r = FermionTensor(odd=odd_a + odd_b, even=even_a + even_b)
         # op x state
         elif isinstance(a, FermionTensor):
             idx = a.ndim - len(idxa)
@@ -1052,7 +1115,10 @@ class FermionTensor(NDArrayOperatorsMixin):
             odd = np.tensordot(a.odd, b, (idxa, idxb))
             # op x gauge (right multiply)
             if b.ndim == 2:
-                return FermionTensor(odd=odd, even=even)
+                r = FermionTensor(odd=odd, even=even)
+            else:
+                blocks = odd.blocks
+                r = odd + even
         # state x op
         elif isinstance(b, FermionTensor):
             idx = 0
@@ -1060,22 +1126,26 @@ class FermionTensor(NDArrayOperatorsMixin):
             odd = np.tensordot(a, b.odd, (idxa, idxb))
             # gauge x op (left multiply)
             if a.ndim == 2:
-                return FermionTensor(odd=odd, even=even)
+                r = FermionTensor(odd=odd, even=even)
+            else:
+                blocks = odd.blocks
+                r = odd + even
         else:
             raise TypeError('Unsupported tensordot for %r and %r' %
                             (a.__class__, b.__class__))
 
         # apply fermion factor
-        for block in odd.blocks:
+        for block in blocks:
             if block.q_labels[idx].is_fermion:
                 np.negative(block, out=block)
-        return odd + even
+
+        return r
 
     def tensordot(self, b, axes=2):
         return np.tensordot(self, b, axes)
 
     @staticmethod
-    def kron_add(a, b, func=np.add, infos=None):
+    def kron_add(a, b, infos=None):
         """
         Direct sum of first and last legs.
         Middle dims are summed.
@@ -1088,9 +1158,8 @@ class FermionTensor(NDArrayOperatorsMixin):
             infos = tuple(a.get_state_info(i) + b.get_state_info(i)
                           for i in [0, -1])
 
-        odd = a.odd.__class__.kron_add(a.odd, b.odd, func=func, infos=infos)
-        even = a.even.__class__.kron_add(
-            a.even, b.even, func=func, infos=infos)
+        odd = a.odd.__class__.kron_add(a.odd, b.odd, infos=infos)
+        even = a.even.__class__.kron_add(a.even, b.even, infos=infos)
         return FermionTensor(odd=odd, even=even)
 
     def left_canonicalize(self, mode='reduced'):
@@ -1245,7 +1314,8 @@ class FermionTensor(NDArrayOperatorsMixin):
 
         Returns:
             l, s, r : tuple(SpraseTensor/FermionTensor)
-            error : double
+            error : float
+                Truncation error (same unit as singular value).
         """
         ss = [(i, j, v) for i, ps in enumerate(s.blocks)
               for j, v in enumerate(ps)]
@@ -1264,24 +1334,37 @@ class FermionTensor(NDArrayOperatorsMixin):
             ss_trunc = [x for x in ss_trunc if x[2] >= cutoff]
         if max_bond_dim != -1:
             ss_trunc = ss_trunc[:max_bond_dim]
-        assert len(ss_trunc) != 0
         ss_trunc.sort(key=lambda x: (x[0], x[1]))
         if isinstance(l, FermionTensor):
+            lmps = [Counter(), Counter()]
             lbs = [l.odd.blocks, l.even.blocks]
             l_blocks = [[], []]
-            ikl = [0, 0]
+            for ip, bs in enumerate(lbs):
+                for ib, b in enumerate(bs):
+                    if b.q_labels[-1] not in lmps[ip]:
+                        lmps[ip][b.q_labels[-1]] = ib
         else:
+            lmps = [Counter()]
             lbs = [l.blocks]
             l_blocks = [[]]
-            ikl = [0]
+            for ib, b in enumerate(lbs[0]):
+                if b.q_labels[-1] not in lmps[0]:
+                    lmps[0][b.q_labels[-1]] = ib
         if isinstance(r, FermionTensor):
+            rmps = [Counter(), Counter()]
             rbs = [r.odd.blocks, r.even.blocks]
             r_blocks = [[], []]
-            ikr = [0, 0]
+            for ip, bs in enumerate(rbs):
+                for ib, b in enumerate(bs):
+                    if b.q_labels[0] not in rmps[ip]:
+                        rmps[ip][b.q_labels[0]] = ib
         else:
+            rmps = [Counter()]
             rbs = [r.blocks]
             r_blocks = [[]]
-            ikr = [0]
+            for ib, b in enumerate(rbs[0]):
+                if b.q_labels[0] not in rmps[0]:
+                    rmps[0][b.q_labels[0]] = ib
         s_blocks = []
         error = 0.0
         selected = [False] * len(s.blocks)
@@ -1290,33 +1373,31 @@ class FermionTensor(NDArrayOperatorsMixin):
             gl_inv = np.array(
                 list(set(range(0, len(s.blocks[ik]))) - set(gl)), dtype=int)
             for il, lb in enumerate(lbs):
-                while ikl[il] < len(lb) and lb[ikl[il]].q_labels[-1] != s.blocks[ik].q_labels[0]:
-                    ikl[il] += 1
-                while ikl[il] < len(lb) and lb[ikl[il]].q_labels[-1] == s.blocks[ik].q_labels[0]:
-                    l_blocks[il].append(lb[ikl[il]][..., gl])
-                    ikl[il] += 1
+                ikl = lmps[il][s.blocks[ik].q_labels[0]]
+                while ikl < len(lb) and lb[ikl].q_labels[-1] == s.blocks[ik].q_labels[0]:
+                    l_blocks[il].append(lb[ikl][..., gl])
+                    ikl += 1
             s_blocks.append(s.blocks[ik][gl])
             for ir, rb in enumerate(rbs):
-                while ikr[ir] < len(rb) and rb[ikr[ir]].q_labels[0] != s.blocks[ik].q_labels[-1]:
-                    ikr[ir] += 1
-                while ikr[ir] < len(rb) and rb[ikr[ir]].q_labels[0] == s.blocks[ik].q_labels[-1]:
-                    r_blocks[ir].append(rb[ikr[ir]][gl, ...])
-                    ikr[ir] += 1
+                ikr = rmps[ir][s.blocks[ik].q_labels[-1]]
+                while ikr < len(rb) and rb[ikr].q_labels[0] == s.blocks[ik].q_labels[-1]:
+                    r_blocks[ir].append(rb[ikr][gl, ...])
+                    ikr += 1
             error += (s.blocks[ik][gl_inv] ** 2).sum()
             selected[ik] = True
         for ik in range(len(s.blocks)):
             if not selected[ik]:
                 error += (s.blocks[ik] ** 2).sum()
         if isinstance(l, FermionTensor):
-            new_l = FermionTensor(odd=l_blocks[0], even=l_blocks[1])
+            new_l = FermionTensor(odd=l_blocks[0], even=l_blocks[1]).deflate()
         else:
-            new_l = SparseTensor(blocks=l_blocks[0])
+            new_l = SparseTensor(blocks=l_blocks[0]).deflate()
         if isinstance(r, FermionTensor):
-            new_r = FermionTensor(odd=r_blocks[0], even=r_blocks[1])
+            new_r = FermionTensor(odd=r_blocks[0], even=r_blocks[1]).deflate()
         else:
-            new_r = SparseTensor(blocks=r_blocks[0])
+            new_r = SparseTensor(blocks=r_blocks[0]).deflate()
         error = np.asarray(error).item()
-        return new_l, SparseTensor(blocks=s_blocks), new_r, error
+        return new_l, SparseTensor(blocks=s_blocks), new_r, np.sqrt(error)
 
     @staticmethod
     @implements(np.linalg.qr)

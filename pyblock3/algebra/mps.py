@@ -121,6 +121,16 @@ class MPS(NDArrayOperatorsMixin):
 
     def __len__(self):
         return len(self.tensors)
+    
+    @property
+    def T(self):
+        tensors = [None] * self.n_sites
+        for i in range(self.n_sites):
+            assert self.tensors[i].ndim % 2 == 0
+            d = self.tensors[i].ndim // 2 - 1
+            tr = (0, *tuple(range(d + 1, d + d + 1)), *tuple(range(1, d + 1)), d + d + 1)
+            tensors[i] = self.tensors[i].transpose(tr)
+        return MPS(tensors=tensors, const=self.const, opts=self.opts)
 
     @staticmethod
     def zeros(info, opts=None):
@@ -151,16 +161,17 @@ class MPS(NDArrayOperatorsMixin):
         if method == "__call__":
             if ufunc.__name__ in ["add", "subtract"]:
                 a, b = inputs
+                if ufunc.__name__ == "subtract":
+                    b = -b
                 if isinstance(a, numbers.Number):
-                    const = b.const + a
+                    const = a + b.const
                     tensors = b.tensors
                 elif isinstance(b, numbers.Number):
                     const = a.const + b
                     tensors = a.tensors
                 else:
                     const = a.const + b.const
-                    tensors = MPS._add_or_sub(
-                        a, b, getattr(ufunc, method)).tensors
+                    tensors = MPS._add(a, b).tensors
                     if len(a.opts) != 0:
                         tensors = MPS.compress(
                             MPS(tensors=tensors), left=True, **a.opts)[0].tensors
@@ -185,9 +196,14 @@ class MPS(NDArrayOperatorsMixin):
         else:
             return NotImplemented
         if out is not None:
-            out.tensors = tensors
-            out.const = const
-            out.opts = self.opts
+            if isinstance(out, tuple):
+                out[0].tensors = tensors
+                out[0].const = const
+                out[0].opts = self.opts
+            else:
+                out.tensors = tensors
+                out.const = const
+                out.opts = self.opts
         return MPS(tensors=tensors, const=const, opts=self.opts)
 
     def __array_function__(self, func, types, args, kwargs):
@@ -206,6 +222,8 @@ class MPS(NDArrayOperatorsMixin):
                 Site index of canonicalization center.
         """
         tensors = [ts for ts in self.tensors]
+        if center < 0:
+            center = self.n_sites + center
         assert 0 <= center < self.n_sites
         for i in range(0, center):
             q, r = tensors[i].left_canonicalize()
@@ -251,8 +269,8 @@ class MPS(NDArrayOperatorsMixin):
         return MPS(tensors=tensors, const=self.const, opts=self.opts), merror
 
     @staticmethod
-    def _add_or_sub(a, b, func=np.add):
-        """Add/subtract two MPS"""
+    def _add(a, b):
+        """Add two MPS."""
         assert isinstance(a, MPS) and isinstance(b, MPS)
         assert a.n_sites == b.n_sites
         n_sites = a.n_sites
@@ -270,7 +288,7 @@ class MPS(NDArrayOperatorsMixin):
         tensors = []
         for i in range(n_sites):
             tensors.append(a.tensors[i].__class__.kron_add(
-                a.tensors[i], b.tensors[i], func=func, infos=(sum_bonds[i], sum_bonds[i + 1])))
+                a.tensors[i], b.tensors[i], infos=(sum_bonds[i], sum_bonds[i + 1])))
         return MPS(tensors=tensors, const=a.const + b.const, opts=a.opts)
 
     def __getitem__(self, i):
@@ -354,7 +372,7 @@ class MPS(NDArrayOperatorsMixin):
                 aidx = list(range(d + 1, d + d + 1))
                 bidx = list(range(1, d + 1))
                 tr = tuple([0, d + 2] + list(range(1, d + 1)) +
-                           list(range(d + 3, d + d + 2)) + [d + 1, d + d + 3])
+                           list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
             # MPO x MPS
             elif a_ndim == b_ndim + b_ndim:
                 d = b_ndim
@@ -490,4 +508,5 @@ class MPS(NDArrayOperatorsMixin):
                 slice(None), *det[k:k + self[i].ndim - 2], slice(None))]
             k += self[i].ndim - 2
         assert k == len(det)
-        return reduce(np.dot, tensors).item(0)
+        r = reduce(np.dot, tensors).to_sparse()
+        return 0 if r.n_blocks == 0 else r.blocks[0].item(0)
