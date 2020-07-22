@@ -175,14 +175,14 @@ class MPS(NDArrayOperatorsMixin):
                     if len(a.opts) != 0:
                         tensors = MPS.compress(
                             MPS(tensors=tensors), left=True, **a.opts)[0].tensors
-            elif ufunc.__name__ in ["multiply", "divide"]:
+            elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
-                    const = b.const * a
+                    const = getattr(ufunc, method)(a, b.const)
                     tensors = [getattr(ufunc, method)(
                         a, b.tensors[0])] + b.tensors[1:]
                 elif isinstance(b, numbers.Number):
-                    const = a.const * b
+                    const = getattr(ufunc, method)(a.const, b)
                     tensors = [getattr(ufunc, method)(
                         a.tensors[0], b)] + a.tensors[1:]
                 else:
