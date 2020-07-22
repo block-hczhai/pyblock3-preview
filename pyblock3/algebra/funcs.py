@@ -1,6 +1,10 @@
 
 from .core import method_alias
 
+"""
+Functions at module level.
+The actual implementation depends on argument types.
+"""
 
 @method_alias('amplitude')
 def amplitude(a, *args, **kwargs):

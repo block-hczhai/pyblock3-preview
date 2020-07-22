@@ -56,6 +56,10 @@ class StateInfo:
     def n_states_total(self):
         return sum(self.quanta.values())
 
+    def item(self):
+        assert len(self.quanta) == 1
+        return list(self.quanta)[0]
+
     @staticmethod
     def tensor_product(a, b, ref=None):
         quanta = Counter()

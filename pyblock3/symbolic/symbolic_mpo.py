@@ -26,7 +26,6 @@ class SymbolicMPO:
         """Number of sites"""
         return len(self.tensors)
 
-
 class QCSymbolicMPO(SymbolicMPO):
     """Quantum chemistry symbolic Matrix Product Operator"""
 

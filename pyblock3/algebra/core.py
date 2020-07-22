@@ -93,6 +93,19 @@ class SubTensor(np.ndarray):
         return obj
 
     @staticmethod
+    def identity(n, q, ndim=2):
+        qs = q if isinstance(q, tuple) else (q, ) * ndim
+        return SubTensor(reduced=np.identity(n=n).reshape((n, ) * ndim), q_labels=qs)
+
+    @staticmethod
+    @implements(np.copy)
+    def _copy(x):
+        return SubTensor(reduced=np.asarray(x).copy(), q_labels=x.q_labels)
+
+    def copy(self):
+        return np.copy(self)
+
+    @staticmethod
     @implements(np.linalg.norm)
     def _norm(x):
         return np.linalg.norm(np.asarray(x))
@@ -107,9 +120,9 @@ class SubTensor(np.ndarray):
         Contract two SubTensor to form a new SubTensor.
 
         Args:
-            spta : SubTensor
+            a : SubTensor
                 SubTensor a, as left operand.
-            sptb : SubTensor
+            b : SubTensor
                 SubTensor b, as right operand.
             axes : int or (2,) array_like
                 If an int N, sum over the last N axes of a and the first N axes of b in order.
@@ -253,15 +266,23 @@ class SliceableTensor(np.ndarray):
         return r
 
     @staticmethod
+    @implements(np.copy)
+    def _copy(x):
+        return SliceableTensor(reduced=np.asarray(x).copy(), infos=tuple(x.infos))
+
+    def copy(self):
+        return np.copy(self)
+
+    @staticmethod
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
         """
         Contract two SliceableTensor to form a new SliceableTensor.
 
         Args:
-            spta : SliceableTensor
+            a : SliceableTensor
                 SliceableTensor a, as left operand.
-            sptb : SliceableTensor
+            b : SliceableTensor
                 SliceableTensor b, as right operand.
             axes : int or (2,) array_like
                 If an int N, sum over the last N axes of a and the first N axes of b in order.
@@ -415,6 +436,10 @@ class SparseTensor(NDArrayOperatorsMixin):
             blocks.append(SubTensor.random(shape=sh, q_labels=qs, dtype=dtype))
         return SparseTensor(blocks=blocks)
 
+    @staticmethod
+    def identity(n, q, ndim=3):
+        return SparseTensor(blocks=[SubTensor.identity(n=n, q=q, ndim=ndim)])
+
     def get_state_info(self, idx):
         """get state info associated with one of the legs
         idx: leg index"""
@@ -431,22 +456,27 @@ class SparseTensor(NDArrayOperatorsMixin):
         return SparseTensor(blocks=[b for b in self.blocks if b is not 0])
 
     def deflate(self, cutoff=0):
+        """Remove zero blocks."""
         blocks = [b for b in self.blocks if np.linalg.norm(b) > cutoff]
         return SparseTensor(blocks=blocks)
 
     def __getitem__(self, i, idx=-1):
-        if idx != -1:
-            for j in range(self.n_blocks):
-                if self.blocks[j].q_labels[idx] == i:
-                    return self.blocks[j]
-        elif isinstance(i, tuple):
+        if isinstance(i, tuple):
             for j in range(self.n_blocks):
                 if self.blocks[j].q_labels == i:
                     return self.blocks[j]
-        else:
+        elif isinstance(i, slice) or isinstance(i, int):
             return self.blocks[i]
+        else:
+            for j in range(self.n_blocks):
+                if self.blocks[j].q_labels[idx] == i:
+                    return self.blocks[j]
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        if ufunc in _sprase_tensor_numpy_func_impls:
+            types = tuple(
+                x.__class__ for x in inputs if not isinstance(x, numbers.Number))
+            return self.__array_function__(ufunc, types, inputs, kwargs)
         out = kwargs.pop("out", None)
         if out is not None and not all(isinstance(x, SparseTensor) for x in out):
             return NotImplemented
@@ -507,6 +537,14 @@ class SparseTensor(NDArrayOperatorsMixin):
         return _sprase_tensor_numpy_func_impls[func](*args, **kwargs)
 
     @staticmethod
+    @implements(np.copy)
+    def _copy(x):
+        return SparseTensor(blocks=[b.copy() for b in x.blocks])
+
+    def copy(self):
+        return np.copy(self)
+
+    @staticmethod
     def _fuse(a, i, j, info, rev=False):
         return a.fuse(i, j, info, rev=rev)
 
@@ -551,9 +589,9 @@ class SparseTensor(NDArrayOperatorsMixin):
         Contract two SparseTensor to form a new SparseTensor.
 
         Args:
-            spta : SparseTensor
+            a : SparseTensor
                 SparseTensor a, as left operand.
-            sptb : SparseTensor
+            b : SparseTensor
                 SparseTensor b, as right operand.
             axes : int or (2,) array_like
                 If an int N, sum over the last N axes of a and the first N axes of b in order.
@@ -597,6 +635,7 @@ class SparseTensor(NDArrayOperatorsMixin):
     @staticmethod
     @implements(np.dot)
     def _dot(a, b, out=None):
+        """Horizontal contraction."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
 
@@ -612,10 +651,35 @@ class SparseTensor(NDArrayOperatorsMixin):
         return np.dot(self, b, out=out)
 
     @staticmethod
+    @implements(np.matmul)
+    def _matmul(a, b, out=None):
+        """Vertical contraction (all middle dims)."""
+        if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
+            return np.multiply(a, b, out=out)
+        
+        assert isinstance(a, SparseTensor) and isinstance(b, SparseTensor)
+
+        assert a.ndim == b.ndim
+        d = a.ndim - 2
+        aidx = list(range(1, d + 1))
+        bidx = list(range(1, d + 1))
+        tr = (0, 2, 1, 3)
+
+        r = np.tensordot(a, b, axes=(aidx, bidx)).transpose(axes=tr)
+
+        if out is not None:
+            out.blocks = r.blocks
+
+        return r
+
+    def matmul(self, b, out=None):
+        return np.matmul(self, b, out=out)
+
+    @staticmethod
     def kron_add(a, b, infos=None):
         """
         Direct sum of first and last legs.
-        Middle dims are summed.
+        Middle legs are summed.
 
         Args:
             infos : (StateInfo, Stateinfo) or None
@@ -769,7 +833,7 @@ class SparseTensor(NDArrayOperatorsMixin):
     @staticmethod
     def truncate_svd(l, s, r, max_bond_dim=-1, cutoff=0.0, max_dw=0.0, norm_cutoff=0.0):
         """
-        Internal method for truncation.
+        Truncate tensors obtained from SVD.
 
         Args:
             l, s, r : tuple(SpraseTensor)
@@ -944,6 +1008,12 @@ _numpy_func_impls = _fermion_tensor_numpy_func_impls
 class FermionTensor(NDArrayOperatorsMixin):
     """
     block-sparse tensor with fermion factors.
+
+    Attributes:
+        odd : SparseTensor
+            Including blocks with odd fermion parity.
+        even : SparseTensor
+            Including blocks with even fermion parity.
     """
 
     def __init__(self, odd=None, even=None):
@@ -969,6 +1039,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         return self.odd.dtype if self.odd.n_blocks != 0 else self.even.dtype
 
     def item(self):
+        """Return scalar element."""
         if self.n_blocks == 0:
             return 0
         assert self.odd.n_blocks == 0
@@ -1076,6 +1147,10 @@ class FermionTensor(NDArrayOperatorsMixin):
         else:
             return FermionTensor(even=SparseTensor(blocks=blocks))
 
+    @staticmethod
+    def identity(n, q, ndim=4):
+        return FermionTensor(even=SparseTensor.identity(n=n, q=q, ndim=ndim))
+
     def get_state_info(self, idx):
         """get state info associated with one of the legs
         idx: leg index"""
@@ -1083,6 +1158,14 @@ class FermionTensor(NDArrayOperatorsMixin):
 
     def deflate(self, cutoff=0):
         return FermionTensor(odd=self.odd.deflate(cutoff), even=self.even.deflate(cutoff))
+
+    @staticmethod
+    @implements(np.copy)
+    def _copy(x):
+        return FermionTensor(odd=x.odd.copy(), even=x.even.copy())
+
+    def copy(self):
+        return np.copy(self)
 
     @staticmethod
     def _fuse(a, i, j, info, rev=False):
@@ -1101,9 +1184,9 @@ class FermionTensor(NDArrayOperatorsMixin):
         Contract two FermionTensor/SparseTensor to form a new FermionTensor/SparseTensor.
 
         Args:
-            spta : FermionTensor/SparseTensor
+            a : FermionTensor/SparseTensor
                 FermionTensor/SparseTensor a, as left operand.
-            sptb : FermionTensor/SparseTensor
+            b : FermionTensor/SparseTensor
                 FermionTensor/SparseTensor b, as right operand.
             axes : int or (2,) array_like
                 If an int N, sum over the last N axes of a and the first N axes of b in order.
@@ -1145,8 +1228,8 @@ class FermionTensor(NDArrayOperatorsMixin):
             idx = a.ndim - len(idxa)
             even = np.tensordot(a.even, b, (idxa, idxb))
             odd = np.tensordot(a.odd, b, (idxa, idxb))
-            # op x gauge (right multiply)
-            if b.ndim == 2:
+            # op rotation / op x gauge (right multiply)
+            if b.ndim - len(idxb) == 1:
                 r = FermionTensor(odd=odd, even=even)
             else:
                 blocks = odd.blocks
@@ -1156,8 +1239,8 @@ class FermionTensor(NDArrayOperatorsMixin):
             idx = 0
             even = np.tensordot(a, b.even, (idxa, idxb))
             odd = np.tensordot(a, b.odd, (idxa, idxb))
-            # gauge x op (left multiply)
-            if a.ndim == 2:
+            # op rotation / gauge x op (left multiply)
+            if a.ndim - len(idxa) == 1:
                 r = FermionTensor(odd=odd, even=even)
             else:
                 blocks = odd.blocks
@@ -1177,6 +1260,9 @@ class FermionTensor(NDArrayOperatorsMixin):
                     np.negative(block, out=block)
 
         return r
+
+    def tensordot(self, b, axes=2):
+        return np.tensordot(self, b, axes)
 
     @staticmethod
     @implements(np.dot)
@@ -1202,8 +1288,53 @@ class FermionTensor(NDArrayOperatorsMixin):
     def dot(self, b, out=None):
         return np.dot(self, b, out=out)
 
-    def tensordot(self, b, axes=2):
-        return np.tensordot(self, b, axes)
+    @staticmethod
+    @implements(np.matmul)
+    def _matmul(a, b, out=None):
+        """Vertical contraction (all middle dims)."""
+        if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
+            return np.multiply(a, b, out=out)
+        
+        assert isinstance(a, FermionTensor) or isinstance(b, FermionTensor)
+
+        # MPO x MPO
+        if isinstance(a, FermionTensor) and isinstance(b, FermionTensor):
+            assert a.ndim == b.ndim and a.ndim % 2 == 0
+            d = a.ndim // 2 - 1
+            aidx = list(range(d + 1, d + d + 1))
+            bidx = list(range(1, d + 1))
+            tr = tuple([0, d + 2] + list(range(1, d + 1)) +
+                        list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
+        # MPO x MPS
+        elif isinstance(a, FermionTensor):
+            assert a.ndim > b.ndim
+            dau, db = a.ndim - b.ndim, b.ndim - 2
+            aidx = list(range(dau + 1, dau + db + 1))
+            bidx = list(range(1, db + 1))
+            tr = tuple([0, dau + 2] + list(range(1, dau + 1)) + [dau + 1, dau + 3])
+        # MPS x MPO
+        elif isinstance(b, FermionTensor):
+            assert a.ndim < b.ndim
+            da, dbd = a.ndim - 2, b.ndim - a.ndim
+            aidx = list(range(1, da + 1))
+            bidx = list(range(1, da + 1))
+            tr = tuple([0, 2] + list(range(3, dbd + 3)) + [1, dbd + 3])
+        else:
+            raise RuntimeError("Cannot matmul tensors with ndim: %d x %d" % (a.ndim, b.ndim))
+
+        r = np.tensordot(a, b, axes=(aidx, bidx)).transpose(axes=tr)
+
+        if out is not None:
+            if isinstance(r, SparseTensor):
+                out.blocks = r.blocks
+            else:
+                out.odd = r.odd
+                out.even = r.even
+
+        return r
+
+    def matmul(self, b, out=None):
+        return np.matmul(self, b, out=out)
 
     @staticmethod
     def kron_add(a, b, infos=None):
@@ -1360,7 +1491,7 @@ class FermionTensor(NDArrayOperatorsMixin):
     @staticmethod
     def truncate_svd(l, s, r, max_bond_dim=-1, cutoff=0.0, max_dw=0.0, norm_cutoff=0.0):
         """
-        Internal method for truncation.
+        Truncate tensors obtained from SVD.
 
         Args:
             l, s, r : tuple(SpraseTensor/FermionTensor)

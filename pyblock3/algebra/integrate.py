@@ -1,4 +1,8 @@
 
+"""
+Integrate functions at module level.
+"""
+
 # apply exp(a) * b
 def rk4_apply(a, b):
     k1 = a @ b

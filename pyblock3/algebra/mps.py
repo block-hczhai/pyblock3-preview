@@ -19,7 +19,7 @@ class MPSInfo:
     """
     StateInfo in every site in MPS
     (a) For constrution of initial MPS.
-    (b) For limiting active space in DMRG.
+    (b) For tracking basis info in construction of SliceableTensor.
     Attributes:
         n_sites : int
             Number of sites
@@ -102,7 +102,7 @@ class MPS(NDArrayOperatorsMixin):
         opts : dict or None
             options indicating how bond dimension trunctation
             should be done after MPO @ MPS, etc.
-            Possible options are: max_bond_dim, cutoff, max_dw
+            Possible options are: max_bond_dim, cutoff, max_dw, norm_cutoff
     """
 
     def __init__(self, tensors, const=0, opts=None):
@@ -121,14 +121,15 @@ class MPS(NDArrayOperatorsMixin):
 
     def __len__(self):
         return len(self.tensors)
-    
+
     @property
     def T(self):
         tensors = [None] * self.n_sites
         for i in range(self.n_sites):
             assert self.tensors[i].ndim % 2 == 0
             d = self.tensors[i].ndim // 2 - 1
-            tr = (0, *tuple(range(d + 1, d + d + 1)), *tuple(range(1, d + 1)), d + d + 1)
+            tr = (0, *tuple(range(d + 1, d + d + 1)),
+                  *tuple(range(1, d + 1)), d + d + 1)
             tensors[i] = self.tensors[i].transpose(tr)
         return MPS(tensors=tensors, const=self.const, opts=self.opts)
 
@@ -298,6 +299,14 @@ class MPS(NDArrayOperatorsMixin):
         self.tensors[i] = ts
 
     @staticmethod
+    @implements(np.copy)
+    def _copy(x):
+        return MPS(tensors=[t.copy() for t in x.tensors], const=x.const, opts=x.opts.copy())
+
+    def copy(self):
+        return np.copy(self)
+
+    @staticmethod
     @implements(np.dot)
     def _dot(a, b, out=None):
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
@@ -357,41 +366,7 @@ class MPS(NDArrayOperatorsMixin):
             return np.dot(a, b, out=out)
 
         for i in range(n_sites):
-            a_ndim = a.tensors[i].ndim - 2
-            b_ndim = b.tensors[i].ndim - 2
-
-            # MPS x MPS
-            if a_ndim == b_ndim and a_ndim % 2 == 1:
-                d = a_ndim
-                aidx = list(range(1, d + 1))
-                bidx = list(range(1, d + 1))
-                tr = (0, 2, 1, 3)
-            # MPO x MPO
-            elif a_ndim == b_ndim:
-                d = a_ndim // 2
-                aidx = list(range(d + 1, d + d + 1))
-                bidx = list(range(1, d + 1))
-                tr = tuple([0, d + 2] + list(range(1, d + 1)) +
-                           list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
-            # MPO x MPS
-            elif a_ndim == b_ndim + b_ndim:
-                d = b_ndim
-                aidx = list(range(d + 1, d + d + 1))
-                bidx = list(range(1, d + 1))
-                tr = tuple([0, d + 2] + list(range(1, d + 1)) + [d + 1, d + 3])
-            # MPS x MPO
-            elif a_ndim + a_ndim == b_ndim:
-                d = a_ndim
-                aidx = list(range(1, d + 1))
-                bidx = list(range(1, d + 1))
-                tr = tuple([0, 2] + list(range(3, d + 3)) + [1, d + 3])
-            else:
-                raise RuntimeError(
-                    "Cannot matmul tensors with number phyiscal indices: %d x %d" % (a_ndim, b_ndim))
-
-            tensors[i] = np.tensordot(
-                a.tensors[i], b.tensors[i], axes=(aidx, bidx))
-            tensors[i] = np.transpose(tensors[i], axes=tr)
+            tensors[i] = np.matmul(a.tensors[i], b.tensors[i])
 
         # merge virtual dims
         prod_bonds = []

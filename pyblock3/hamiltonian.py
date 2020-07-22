@@ -1,7 +1,7 @@
 
-from pyblock3.symmetry import SZ, StateInfo
-from pyblock3.expr import OpNames, OpElement
-from pyblock3.tensor import SparseTensor
+from .algebra.symmetry import SZ, StateInfo
+from .algebra.core import FermionTensor
+from .symbolic.expr import OpNames, OpElement
 from functools import lru_cache
 import numpy as np
 
@@ -55,37 +55,35 @@ class QCHamiltonian:
 
         @lru_cache(maxsize=None)
         def i_operator():
-            repr = SparseTensor.init_operator_tensor(SZ(0, 0, 0), basis, basis)
-            repr[SZ(0, 0, 0)].reduced[0, 0] = 1
-            repr[SZ(1, -1, ipg)].reduced[0, 0] = 1
-            repr[SZ(1, 1, ipg)].reduced[0, 0] = 1
-            repr[SZ(2, 0, 0)].reduced[0, 0] = 1
+            repr = FermionTensor.zeros(SZ(0, 0, 0), basis, basis)
+            repr.even[SZ(0, 0, 0)][0, 0] = 1
+            repr.even[SZ(1, -1, ipg)][0, 0] = 1
+            repr.even[SZ(1, 1, ipg)][0, 0] = 1
+            repr.even[SZ(2, 0, 0)][0, 0] = 1
             return repr
 
         @lru_cache(maxsize=None)
         def h_operator():
-            repr = SparseTensor.init_operator_tensor(SZ(0, 0, 0), basis, basis)
-            repr[SZ(0, 0, 0)].reduced[0, 0] = 0
-            repr[SZ(1, -1, ipg)].reduced[0, 0] = t(1, m, m)
-            repr[SZ(1, 1, ipg)].reduced[0, 0] = t(0, m, m)
-            repr[SZ(2, 0, 0)].reduced[0, 0] = t(0, m, m) + t(1, m, m) \
+            repr = FermionTensor.zeros(SZ(0, 0, 0), basis, basis)
+            repr.even[SZ(0, 0, 0)][0, 0] = 0
+            repr.even[SZ(1, -1, ipg)][0, 0] = t(1, m, m)
+            repr.even[SZ(1, 1, ipg)][0, 0] = t(0, m, m)
+            repr.even[SZ(2, 0, 0)][0, 0] = t(0, m, m) + t(1, m, m) \
                 + 0.5 * (v(0, 1, m, m, m, m) + v(1, 0, m, m, m, m))
             return repr
 
         @lru_cache(maxsize=None)
         def c_operator(s):
-            repr = SparseTensor.init_operator_tensor(
-                SZ(1, sz[s], ipg), basis, basis)
-            repr[SZ(0, 0, 0)].reduced[0, 0] = 1
-            repr[SZ(1, -sz[s], ipg)].reduced[0, 0] = -1 if s else 1
+            repr = FermionTensor.zeros(SZ(1, sz[s], ipg), basis, basis)
+            repr.odd[SZ(0, 0, 0)][0, 0] = 1
+            repr.odd[SZ(1, -sz[s], ipg)][0, 0] = -1 if s else 1
             return repr
 
         @lru_cache(maxsize=None)
         def d_operator(s):
-            repr = SparseTensor.init_operator_tensor(
-                SZ(-1, -sz[s], ipg), basis, basis)
-            repr[SZ(1, sz[s], ipg)].reduced[0, 0] = 1
-            repr[SZ(2, 0, 0)].reduced[0, 0] = -1 if s else 1
+            repr = FermionTensor.zeros(SZ(-1, -sz[s], ipg), basis, basis)
+            repr.odd[SZ(1, sz[s], ipg)][0, 0] = 1
+            repr.odd[SZ(2, 0, 0)][0, 0] = -1 if s else 1
             return repr
 
         @lru_cache(maxsize=None)
