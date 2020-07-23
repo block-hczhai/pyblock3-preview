@@ -8,7 +8,7 @@ from itertools import accumulate, groupby
 from .symmetry import StateInfo
 
 def _is_zero(x):
-    return isscalar(x) and x == 0
+    return np.isscalar(x) and x == 0
 
 
 def method_alias(name):
