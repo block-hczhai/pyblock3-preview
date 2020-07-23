@@ -71,7 +71,7 @@ class StateInfo:
 
     def __neg__(self):
         return StateInfo(quanta=Counter({-k: v for k, v in self.quanta.items()}))
-    
+
     def __or__(self, other):
         return StateInfo(quanta=self.quanta | other.quanta)
 

@@ -373,8 +373,8 @@ class SliceableTensor(np.ndarray):
         return r
 
 
-_sprase_tensor_numpy_func_impls = {}
-_numpy_func_impls = _sprase_tensor_numpy_func_impls
+_sparse_tensor_numpy_func_impls = {}
+_numpy_func_impls = _sparse_tensor_numpy_func_impls
 
 
 class SparseTensor(NDArrayOperatorsMixin):
@@ -473,7 +473,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                     return self.blocks[j]
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        if ufunc in _sprase_tensor_numpy_func_impls:
+        if ufunc in _sparse_tensor_numpy_func_impls:
             types = tuple(
                 x.__class__ for x in inputs if not isinstance(x, numbers.Number))
             return self.__array_function__(ufunc, types, inputs, kwargs)
@@ -530,11 +530,11 @@ class SparseTensor(NDArrayOperatorsMixin):
         return SparseTensor(blocks=blocks)
 
     def __array_function__(self, func, types, args, kwargs):
-        if func not in _sprase_tensor_numpy_func_impls:
+        if func not in _sparse_tensor_numpy_func_impls:
             return NotImplemented
         if not all(issubclass(t, self.__class__) for t in types):
             return NotImplemented
-        return _sprase_tensor_numpy_func_impls[func](*args, **kwargs)
+        return _sparse_tensor_numpy_func_impls[func](*args, **kwargs)
 
     @staticmethod
     @implements(np.copy)
