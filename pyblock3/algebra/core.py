@@ -373,8 +373,8 @@ class SliceableTensor(np.ndarray):
         return r
 
 
-_sprase_tensor_numpy_func_impls = {}
-_numpy_func_impls = _sprase_tensor_numpy_func_impls
+_sparse_tensor_numpy_func_impls = {}
+_numpy_func_impls = _sparse_tensor_numpy_func_impls
 
 
 class SparseTensor(NDArrayOperatorsMixin):
@@ -473,7 +473,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                     return self.blocks[j]
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        if ufunc in _sprase_tensor_numpy_func_impls:
+        if ufunc in _sparse_tensor_numpy_func_impls:
             types = tuple(
                 x.__class__ for x in inputs if not isinstance(x, numbers.Number))
             return self.__array_function__(ufunc, types, inputs, kwargs)
@@ -530,11 +530,11 @@ class SparseTensor(NDArrayOperatorsMixin):
         return SparseTensor(blocks=blocks)
 
     def __array_function__(self, func, types, args, kwargs):
-        if func not in _sprase_tensor_numpy_func_impls:
+        if func not in _sparse_tensor_numpy_func_impls:
             return NotImplemented
         if not all(issubclass(t, self.__class__) for t in types):
             return NotImplemented
-        return _sprase_tensor_numpy_func_impls[func](*args, **kwargs)
+        return _sparse_tensor_numpy_func_impls[func](*args, **kwargs)
 
     @staticmethod
     @implements(np.copy)
@@ -777,7 +777,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         Left svd needs to collect all left indices for each specific right index.
 
         Returns:
-            l, s, r : tuple(SpraseTensor)
+            l, s, r : tuple(SparseTensor)
         """
         collected_rows = {}
         for block in self.blocks:
@@ -806,7 +806,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         Right svd needs to collect all right indices for each specific left index.
 
         Returns:
-            l, s, r : tuple(SpraseTensor)
+            l, s, r : tuple(SparseTensor)
         """
         collected_cols = {}
         for block in self.blocks:
@@ -819,7 +819,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             r_shapes = [np.prod(b.shape[1:]) for b in blocks]
             mat = np.concatenate([np.asarray(b).reshape((-1, sh))
                                   for sh, b in zip(r_shapes, blocks)], axis=1)
-            u, s, vh = np.linalg.svd(mat, full_matrices=False)
+            u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
             qs = np.split(vh, list(accumulate(r_shapes[:-1])), axis=1)
             assert(len(qs) == len(blocks))
             for q, b in zip(qs, blocks):
@@ -836,20 +836,20 @@ class SparseTensor(NDArrayOperatorsMixin):
         Truncate tensors obtained from SVD.
 
         Args:
-            l, s, r : tuple(SpraseTensor)
+            l, s, r : tuple(SparseTensor)
                 SVD tensors.
             max_bond_dim : int
                 Maximal total bond dimension.
                 If `k == -1`, no restriction in total bond dimension.
             cutoff : double
-                Minimal kept singluar value.
+                Minimal kept singular value.
             max_dw : double
-                Maximal sum of square of discarded singluar values.
+                Maximal sum of square of discarded singular values.
             norm_cutoff : double
                 Blocks with norm smaller than norm_cutoff will be deleted.
 
         Returns:
-            l, s, r : tuple(SpraseTensor)
+            l, s, r : tuple(SparseTensor)
             error : float
                 Truncation error (same unit as singular value).
         """
@@ -927,7 +927,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         Extract a diagonal or construct a diagonal array.
 
         Args:
-            v : SpraseTensor
+            v : SparseTensor
                 If v is a 2-D array, return a copy of its 0-th diagonal.
                 If v is a 1-D array, return a 2-D array with v on the 0-th diagonal.
         """
@@ -1473,7 +1473,7 @@ class FermionTensor(NDArrayOperatorsMixin):
             r_shapes = [np.prod(b.shape[1:]) for _, b in blocks]
             mat = np.concatenate([np.asarray(b).reshape((-1, sh))
                                   for sh, (_, b) in zip(r_shapes, blocks)], axis=1)
-            u, s, vh = np.linalg.svd(mat, full_matrices=False)
+            u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
             qs = np.split(vh, list(accumulate(r_shapes[:-1])), axis=1)
             assert(len(qs) == len(blocks))
             for q, (ip, b) in zip(qs, blocks):
@@ -1494,20 +1494,20 @@ class FermionTensor(NDArrayOperatorsMixin):
         Truncate tensors obtained from SVD.
 
         Args:
-            l, s, r : tuple(SpraseTensor/FermionTensor)
+            l, s, r : tuple(SparseTensor/FermionTensor)
                 SVD tensors.
             max_bond_dim : int
                 Maximal total bond dimension.
                 If `k == -1`, no restriction in total bond dimension.
             cutoff : double
-                Minimal kept singluar value.
+                Minimal kept singular value.
             max_dw : double
-                Maximal sum of square of discarded singluar values.
+                Maximal sum of square of discarded singular values.
             norm_cutoff : double
                 Blocks with norm smaller than norm_cutoff will be deleted.
 
         Returns:
-            l, s, r : tuple(SpraseTensor/FermionTensor)
+            l, s, r : tuple(SparseTensor/FermionTensor)
             error : float
                 Truncation error (same unit as singular value).
         """
@@ -1620,7 +1620,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         Extract a diagonal or construct a diagonal array.
 
         Args:
-            v : SpraseTensor
+            v : SparseTensor
                 If v is a 2-D array, return a copy of its 0-th diagonal.
                 If v is a 1-D array, return a 2-D array with v on the 0-th diagonal.
         """
