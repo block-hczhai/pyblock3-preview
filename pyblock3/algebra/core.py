@@ -7,6 +7,9 @@ from itertools import accumulate, groupby
 
 from .symmetry import StateInfo
 
+def _is_zero(x):
+    return np.isscalar(x) and x == 0
+
 
 def method_alias(name):
     def ff(f):
@@ -228,12 +231,12 @@ class SliceableTensor(np.ndarray):
     def __repr__(self):
         idx = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
         p = np.asarray(self)
-        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if p[tuple(ix)] is not 0)
+        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if not _is_zero(p[tuple(ix)]))
 
     def __str__(self):
         idx = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
         p = np.asarray(self)
-        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if p[tuple(ix)] is not 0)
+        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if not _is_zero(p[tuple(ix)]))
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _sliceable_tensor_numpy_func_impls:
@@ -332,7 +335,7 @@ class SliceableTensor(np.ndarray):
         """Ratio of number of non-zero elements to total number of elements."""
         idx = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
         p = np.asarray(self)
-        return len([0 for ix in idx if p[tuple(ix)] is not 0]) / self.size
+        return len([0 for ix in idx if not _is_zero(p[tuple(ix)])]) / self.size
 
     @property
     def dtype(self):
@@ -366,7 +369,7 @@ class SliceableTensor(np.ndarray):
             idxs.append(idx)
         for ix in aw:
             p = np.asarray(self)
-            if p[tuple(ix)] is not 0:
+            if not _is_zero(p[tuple(ix)]):
                 sl = tuple(slice(idx[k], idx[k + 1])
                            for k, idx in zip(ix, idxs))
                 r[sl] = np.asarray(p[tuple(ix)])
@@ -453,7 +456,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         return StateInfo(quanta)
 
     def quick_deflate(self):
-        return SparseTensor(blocks=[b for b in self.blocks if b is not 0])
+        return SparseTensor(blocks=[b for b in self.blocks if not _is_zero(b)])
 
     def deflate(self, cutoff=0):
         """Remove zero blocks."""
