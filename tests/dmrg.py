@@ -1,6 +1,6 @@
 
 import sys
-sys.path[:0] = ['..']
+sys.path[:0] = ['..', "../../block2/build"]
 
 from pyblock3.aux.hamil import HamilTools
 from pyblock3.moving_environment import MovingEnvironment
@@ -27,7 +27,7 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
             iw, "backward" if iw % 2 else "forward", me.ket.opts["max_bond_dim"]))
         for i in range(0, me.n_sites - dot + 1)[::(-1) ** iw]:
             tt = time.perf_counter()
-            eners[iw], me[i:i+dot], ndav = np.linalg.eigh(me[i:i+dot])
+            eners[iw], me[i:i+dot], ndav = me[i:i+dot].eigh()
             print(" %3s Site = %4d-%4d .. Ndav = %4d E = %20.12f T = %8.3f" %(
                 "<--" if iw % 2 else "-->", i, i + dot - 1, ndav, eners[iw], time.perf_counter() - tt))
         if abs(reduce(np.subtract, eners[:iw + 1][-2:])) < tol:

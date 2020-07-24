@@ -3,12 +3,15 @@ import numpy as np
 from functools import reduce
 from .algebra.linalg import davidson
 
+
 def implements(np_func):
     global _numpy_func_impls
     return lambda f: (_numpy_func_impls.update({np_func: f}), f)[1]
 
+
 _me_numpy_func_impls = {}
 _numpy_func_impls = _me_numpy_func_impls
+
 
 class MovingEnvironment:
     """Original and partially contracted tensor network <bra|mpo|ket>."""
@@ -22,9 +25,8 @@ class MovingEnvironment:
         self.left_envs = {}
         self.right_envs = {}
         if opts is not None:
-            self.bra.opts = opts
-            self.mpo.opts = opts
-            self.ket.opts = opts
+            self.bra.opts = self.mpo.opts = self.ket.opts = opts
+        self._init_identities()
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _me_numpy_func_impls:
@@ -32,6 +34,18 @@ class MovingEnvironment:
         if not all(issubclass(t, self.__class__) for t in types):
             return NotImplemented
         return _me_numpy_func_impls[func](*args, **kwargs)
+
+    def _init_identities(self):
+        qbl, qkl, qml = self.bra[0].infos[0], self.ket[0].infos[0], self.mpo[0].infos[0]
+        qbr, qkr, qmr = self.bra[-1].infos[-1], self.ket[-1].infos[-1], self.mpo[-1].infos[-1]
+        self.l_mpo_id = self.mpo[0].ones(
+            bond_infos=(qml, qbl, qkl, qml), pattern="++--")
+        self.r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr,
+                                                      qbr, qkr, qmr), pattern="++--")
+        self.l_bra_id = self.bra[0].ones(bond_infos=(qbl, ))
+        self.r_bra_id = self.bra[-1].ones(bond_infos=(qbr, ))
+        self.l_ket_id = self.ket[0].ones(bond_infos=(qkl, ))
+        self.r_ket_id = self.ket[-1].ones(bond_infos=(qkr, ))
 
     def _left_canonicalize_site(self, mps, i):
         """Left canonicalize mps at site i."""
@@ -47,35 +61,38 @@ class MovingEnvironment:
         """Left canonicalize bra and ket at site i.
         Contract left-side contracted mpo with mpo at site i."""
         if i == -1:
-            return self.mpo[0].__class__.identity(n=1, q=self.ket[0].get_state_info(0).item())
+            return self.l_mpo_id
         # contract
-        r = np.dot(prev, self.mpo[i])
+        r = prev.hdot(self.mpo[i])
         # left canonicalize
         self._left_canonicalize_site(self.ket, i)
         if self.ket is not self.bra:
             self._left_canonicalize_site(self.bra, i)
         # rotate
         du, dd = self.bra[i].ndim - 2, self.ket[i].ndim - 2
-        r = np.tensordot(r, self.ket[i], axes=([*range(du + 2, du + dd + 3)], [*range(0, dd + 1)]))
-        r = np.tensordot(self.bra[i], r, axes=([*range(0, du + 1)], [*range(1, du + 2)]))
+        r = np.tensordot(r, self.ket[i], axes=(
+            [*range(du + 2, du + dd + 3)], [*range(0, dd + 1)]))
+        r = np.tensordot(self.bra[i], r, axes=(
+            [*range(0, du + 1)], [*range(1, du + 2)]))
         return r.transpose((1, 0, 3, 2))
 
     def _right_contract_rotate(self, i, prev=None):
         """Right canonicalize bra and ket at site i.
         Contract right-side contracted mpo with mpo at site i."""
         if i == self.n_sites:
-            qk, qm = self.ket[-1].get_state_info(-1).item(), self.mpo[-1].get_state_info(-1).item()
-            return self.mpo[-1].__class__.identity(n=1, q=(qm, qk, qk, qm))
+            return self.r_mpo_id
         # contract
-        r = np.dot(self.mpo[i], prev)
+        r = self.mpo[i].hdot(prev)
         # right canonicalize
         self._right_canonicalize_site(self.ket, i)
         if self.ket is not self.bra:
             self._right_canonicalize_site(self.bra, i)
         # rotate
         du, dd = self.bra[i].ndim - 2, self.ket[i].ndim - 2
-        r = np.tensordot(r, self.ket[i], axes=([*range(du + 2, du + dd + 3)], [*range(1, dd + 2)]))
-        r = np.tensordot(self.bra[i], r, axes=([*range(1, du + 2)], [*range(1, du + 2)]))
+        r = np.tensordot(r, self.ket[i], axes=(
+            [*range(du + 2, du + dd + 3)], [*range(1, dd + 2)]))
+        r = np.tensordot(self.bra[i], r, axes=(
+            [*range(1, du + 2)], [*range(1, du + 2)]))
         return r.transpose((1, 0, 3, 2))
 
     def _initialize(self, l=0, r=2):
@@ -84,59 +101,58 @@ class MovingEnvironment:
         self.right_envs[self.n_sites + 1] = None
         for i in range(-1, l):
             if i not in self.left_envs or self.left_envs[i] is None:
-                self.left_envs[i] = self._left_contract_rotate(i, prev=self.left_envs[i - 1])
+                self.left_envs[i] = self._left_contract_rotate(
+                    i, prev=self.left_envs[i - 1])
         for i in range(self.n_sites, r - 1, -1):
             if i not in self.right_envs or self.right_envs[i] is None:
-                self.right_envs[i] = self._right_contract_rotate(i, prev=self.right_envs[i + 1])
+                self.right_envs[i] = self._right_contract_rotate(
+                    i, prev=self.right_envs[i + 1])
 
     def _effective_mpo(self, l=0, r=2):
         """Get mpo in sub-system with sites [l, r)"""
         tensors = [self.left_envs[l - 1], *self.mpo[l:r], self.right_envs[r]]
-        tensors[:2] = [reduce(np.dot, tensors[:2])]
-        tensors[-2:] = [reduce(np.dot, tensors[-2:])]
+        tensors[:2] = [tensors[0].hdot(tensors[1])]
+        tensors[-2:] = [tensors[-2].hdot(tensors[-1])]
         return self.mpo.__class__(tensors=tensors, const=self.mpo.const, opts=self.mpo.opts)
 
-    def _effective_mps(self, mps, l=0, r=2):
+    def _effective_mps(self, mps, lid, rid, l=0, r=2):
         """Get mps in sub-system with sites [l, r)"""
-        tensors = [
-            mps[0].__class__.identity(n=1, q=mps[0].get_state_info(0).item(), ndim=1),
-            *mps[l:r],
-            mps[-1].__class__.identity(n=1, q=mps[-1].get_state_info(-1).item(), ndim=1)
-        ]
-        tensors[:2] = [reduce(lambda a, b: np.tensordot(a, b, axes=0), tensors[:2])]
-        tensors[-2:] = [reduce(lambda a, b: np.tensordot(a, b, axes=0), tensors[-2:])]
-        return mps.__class__(tensors=tensors, opts=mps.opts)
-
-    def _effective_ket(self, l=0, r=2):
-        """Get ket in sub-system with sites [l, r)"""
-        return self._effective_mps(self.ket, l=l, r=r)
+        tensors = [lid, *self.ket[l:r], rid]
+        tensors[:2] = [
+            reduce(lambda a, b: np.tensordot(a, b, axes=0), tensors[:2])]
+        tensors[-2:] = [reduce(lambda a, b: np.tensordot(a,
+                                                         b, axes=0), tensors[-2:])]
+        return self.ket.__class__(tensors=tensors, opts=mps.opts)
 
     def _effective_bra(self, l=0, r=2):
         """Get bra in sub-system with sites [l, r)"""
-        return self._effective_mps(self.bra, l=l, r=r)
+        return self._effective_mps(self.bra, self.l_bra_id, self.r_bra_id, l=l, r=r)
 
-    def _embedded_mps(self, mps):
+    def _effective_ket(self, l=0, r=2):
+        """Get ket in sub-system with sites [l, r)"""
+        return self._effective_mps(self.ket, self.l_ket_id, self.r_ket_id, l=l, r=r)
+
+    def _embedded_mps(self, mps, lid, rid):
         """Change mps format for embedding into larger system."""
         tensors = mps.tensors
-        lt = mps[0].__class__.identity(n=1, q=mps[0].get_state_info(0).item(), ndim=1)
-        rt = mps[-1].__class__.identity(n=1, q=mps[-1].get_state_info(-1).item(), ndim=1)
-        tensors[0] = np.tensordot(lt, tensors[0], axes=1)
-        tensors[-1] = np.tensordot(tensors[-1], rt, axes=1)
+        tensors[0] = np.tensordot(lid, tensors[0], axes=1)
+        tensors[-1] = np.tensordot(tensors[-1], rid, axes=1)
         return mps.__class__(tensors=tensors, opts=mps.opts)
 
     def _embedded_bra(self):
         """Change bra format for embedding into larger system."""
-        return self._embedded_mps(self.bra)
+        return self._embedded_mps(self.bra, self.l_bra_id, self.r_bra_id)
 
     def _embedded_ket(self):
         """Change ket format for embedding into larger system."""
-        return self._embedded_mps(self.ket)
+        return self._embedded_mps(self.ket, self.l_ket_id, self.r_ket_id)
 
     def _effective(self, l=0, r=2):
         """Get sub-system with sites [l, r)"""
         self._initialize(l=l, r=r)
         eff_ket = self._effective_ket(l=l, r=r)
-        eff_bra = eff_ket if self.bra is self.ket else self._effective_bra(l=l, r=r)
+        eff_bra = eff_ket if self.bra is self.ket else self._effective_bra(
+            l=l, r=r)
         eff_mpo = self._effective_mpo(l=l, r=r)
         return MovingEnvironment(bra=eff_bra, mpo=eff_mpo, ket=eff_ket)
 
@@ -186,15 +202,14 @@ class MovingEnvironment:
         return np.dot(self.bra, self.mpo @ self.ket)
 
     @staticmethod
-    @implements(np.linalg.eigh)
-    def _eigh(x):
+    def _eigh(x, iprint=False):
         """Return ground-state energy and ground-state system."""
-        w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=False)
+        w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint)
         return w[0], MovingEnvironment(bra=v[0], mpo=x.mpo, ket=v[0]), ndav
 
-    def eigh(self):
+    def eigh(self, iprint=False):
         """Return ground-state energy and ground-state system."""
-        return np.linalg.eigh(self)
+        return self._eigh(self, iprint=iprint)
 
     @property
     def n_sites(self):

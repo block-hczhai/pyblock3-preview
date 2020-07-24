@@ -24,10 +24,7 @@ MPS/MPO format transform between block2 and pyblock2.
 import numpy as np
 from ..algebra.core import SparseTensor, SubTensor, FermionTensor
 from ..algebra.mps import MPS
-from ..algebra.symmetry import StateInfo as AStateInfo, SZ as ASZ
-
-import sys
-sys.path[:0] = ['/Users/hczhai/Projects/block2/build']
+from ..algebra.symmetry import SZ as ASZ
 
 from block2 import OpTypes, QCTypes, SZ
 from block2.sz import StateInfo, MPOQC

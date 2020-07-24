@@ -6,7 +6,7 @@ import numbers
 from collections import Counter
 from functools import reduce
 
-from .symmetry import StateInfo, StateFusingInfo
+from .symmetry import BondInfo, BondFusingInfo
 from .core import SparseTensor, SubTensor, SliceableTensor
 
 
@@ -17,7 +17,7 @@ def implements(np_func):
 
 class MPSInfo:
     """
-    StateInfo in every site in MPS
+    BondInfo in every site in MPS
     (a) For constrution of initial MPS.
     (b) For tracking basis info in construction of SliceableTensor.
     Attributes:
@@ -27,11 +27,11 @@ class MPSInfo:
             vacuum state
         target : SZ
             target state
-        basis : list(StateInfo)
-            StateInfo in each site
-        left_dims : list(StateInfo)
+        basis : list(BondInfo)
+            BondInfo in each site
+        left_dims : list(BondInfo)
             Truncated states for left block
-        right_dims : list(StateInfo)
+        right_dims : list(BondInfo)
             Truncated states for right block
     """
 
@@ -47,23 +47,21 @@ class MPSInfo:
         """FCI bond dimensions"""
 
         self.left_dims = [None] * (self.n_sites + 1)
-        self.left_dims[0] = StateInfo(quanta=Counter({self.vacuum: 1}))
+        self.left_dims[0] = BondInfo({self.vacuum: 1})
         for d in range(0, self.n_sites):
-            self.left_dims[d + 1] = StateInfo.tensor_product(
-                self.left_dims[d], self.basis[d])
+            self.left_dims[d + 1] = self.left_dims[d] * self.basis[d]
 
         self.right_dims = [None] * (self.n_sites + 1)
-        self.right_dims[-1] = StateInfo(quanta=Counter({self.target: 1}))
+        self.right_dims[-1] = BondInfo({self.target: 1})
         for d in range(self.n_sites - 1, -1, -1):
-            self.right_dims[d] = StateInfo.tensor_product(
-                -self.basis[d], self.right_dims[d + 1])
+            self.right_dims[d] = (-self.basis[d]) * self.right_dims[d + 1]
 
         if call_back is not None:
             call_back(self)
 
         for d in range(0, self.n_sites + 1):
-            self.left_dims[d].filter(self.right_dims[d])
-            self.right_dims[d].filter(self.left_dims[d])
+            self.left_dims[d] = self.left_dims[d].filter(self.right_dims[d])
+            self.right_dims[d] = self.right_dims[d].filter(self.left_dims[d])
 
     def set_bond_dimension_occ(self, bond_dim, occ, bias=1):
         """bond dimensions from occupation numbers"""
@@ -77,11 +75,10 @@ class MPSInfo:
             self.set_bond_dimension_fci(call_back=call_back)
 
         for d in range(0, self.n_sites):
-            ref = StateInfo.tensor_product(self.left_dims[d], self.basis[d])
+            ref = self.left_dims[d] * self.basis[d]
             self.left_dims[d + 1].truncate(bond_dim, ref)
         for d in range(self.n_sites - 1, -1, -1):
-            ref = StateInfo.tensor_product(
-                -self.basis[d], self.right_dims[d + 1])
+            ref = (-self.basis[d]) * self.right_dims[d + 1]
             self.right_dims[d].truncate(bond_dim, ref)
 
 
@@ -276,20 +273,19 @@ class MPS(NDArrayOperatorsMixin):
         assert a.n_sites == b.n_sites
         n_sites = a.n_sites
 
+        ainfos = [t.infos for t in a.tensors]
+        binfos = [t.infos for t in b.tensors]
         sum_bonds = []
-        sum_bonds.append(a.tensors[0].get_state_info(idx=0))
+        sum_bonds.append(ainfos[0][0])
         for i in range(n_sites - 1):
-            x = a.tensors[i +
-                          1].get_state_info(idx=0) | a.tensors[i].get_state_info(idx=-1)
-            y = b.tensors[i +
-                          1].get_state_info(idx=0) | b.tensors[i].get_state_info(idx=-1)
+            x = ainfos[i + 1][0] | ainfos[i][-1]
+            y = binfos[i + 1][0] | binfos[i][-1]
             sum_bonds.append(x + y)
-        sum_bonds.append(a.tensors[-1].get_state_info(idx=-1))
+        sum_bonds.append(ainfos[-1][-1])
 
         tensors = []
         for i in range(n_sites):
-            tensors.append(a.tensors[i].__class__.kron_add(
-                a.tensors[i], b.tensors[i], infos=(sum_bonds[i], sum_bonds[i + 1])))
+            tensors.append(a.tensors[i].kron_add(b.tensors[i], infos=(sum_bonds[i], sum_bonds[i + 1])))
         return MPS(tensors=tensors, const=a.const + b.const, opts=a.opts)
 
     def __getitem__(self, i):
@@ -366,20 +362,18 @@ class MPS(NDArrayOperatorsMixin):
             return np.dot(a, b, out=out)
 
         for i in range(n_sites):
-            tensors[i] = np.matmul(a.tensors[i], b.tensors[i])
+            tensors[i] = a.tensors[i].vdot(b.tensors[i])
 
         # merge virtual dims
         prod_bonds = []
-        x = tensors[0].get_state_info(idx=0)
-        y = tensors[0].get_state_info(idx=1)
-        prod_bonds.append(StateFusingInfo.tensor_product(x, y, x * y))
-        for tl, tr in zip(tensors[1:], tensors[:-1]):
-            x = tl.get_state_info(idx=0) | tr.get_state_info(idx=-2)
-            y = tl.get_state_info(idx=1) | tr.get_state_info(idx=-1)
-            prod_bonds.append(StateFusingInfo.tensor_product(x, y, x * y))
-        x = tensors[-1].get_state_info(idx=-2)
-        y = tensors[-1].get_state_info(idx=-1)
-        prod_bonds.append(StateFusingInfo.tensor_product(x, y, x * y))
+        infos = [t.infos for t in tensors]
+        x, y = infos[0][:2]
+        prod_bonds.append(BondFusingInfo.tensor_product(x, y))
+        for tl, tr in zip(infos[1:], infos[:-1]):
+            x, y = tl[0] | tr[-2], tl[1] | tr[-1]
+            prod_bonds.append(BondFusingInfo.tensor_product(x, y))
+        x, y = infos[-1][-2:]
+        prod_bonds.append(BondFusingInfo.tensor_product(x, y))
 
         for i in range(n_sites):
             tensors[i] = tensors[i].fuse(-2, -1, info=prod_bonds[i + 1]
@@ -412,13 +406,13 @@ class MPS(NDArrayOperatorsMixin):
 
     def show_bond_dims(self):
         bonds = []
-        bonds.append(self.tensors[0].get_state_info(idx=0))
+        infos = [t.infos for t in self.tensors]
+        infos = [i if i != () else (BondInfo(), ) for i in infos]
+        bonds.append(infos[0][0])
         for i in range(self.n_sites - 1):
-            l = self.tensors[i + 1].get_state_info(idx=0)
-            r = self.tensors[i].get_state_info(idx=-1)
-            bonds.append(l | r)
-        bonds.append(self.tensors[-1].get_state_info(idx=-1))
-        r = '|'.join([str(x.n_states_total) for x in bonds])
+            bonds.append(infos[i + 1][0] | infos[i][-1])
+        bonds.append(infos[-1][-1])
+        r = '|'.join([str(x.n_bonds) for x in bonds])
         return r if self.const == 0 else r + " (%+12.5f)" % self.const
 
     @staticmethod
@@ -431,31 +425,29 @@ class MPS(NDArrayOperatorsMixin):
 
         Args:
             info : MPSInfo, optional
-                MPSInfo containing the complete basis StateInfo.
-                If not specified, the StateInfo will be generated from the MPS,
+                MPSInfo containing the complete basis BondInfo.
+                If not specified, the BondInfo will be generated from the MPS,
                 which may be incomplete.
         """
 
         # virtual dims
+        infos = [t.infos for t in self.tensors]
         bonds = []
-        bonds.append(self[0].get_state_info(idx=0))
+        bonds.append(infos[0][0])
         for i in range(self.n_sites - 1):
-            bonds.append(self[i + 1].get_state_info(idx=0)
-                         | self[i].get_state_info(idx=-1))
-        bonds.append(self[-1].get_state_info(idx=-1))
+            bonds.append(infos[i + 1][0] | infos[i][-1])
+        bonds.append(infos[-1][-1])
 
         tensors = [None] * self.n_sites
         k = 0
         for i in range(self.n_sites):
             if info is None:
-                minfos = tuple(self[i].get_state_info(idx=j)
-                               for j in range(1, self[i].ndim - 1))
+                minfos = infos[i][1:self[i].ndim - 1]
             else:
-                minfos = tuple(info.basis[j]
-                               for j in range(k, k + self[i].ndim - 2))
+                minfos = info.basis[k:k + self[i].ndim - 2]
                 k += self[i].ndim - 2
-            infos = (bonds[i], *minfos, bonds[i + 1])
-            tensors[i] = self[i].to_sliceable(infos=infos)
+            sinfos = (bonds[i], *minfos, bonds[i + 1])
+            tensors[i] = self[i].to_sliceable(infos=sinfos)
 
         return MPS(tensors=tensors, const=self.const, opts=self.opts)
 

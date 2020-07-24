@@ -5,10 +5,7 @@ import numbers
 from collections import Counter
 from itertools import accumulate, groupby
 
-from .symmetry import StateInfo
-
-def _is_zero(x):
-    return np.isscalar(x) and x == 0
+from .symmetry import BondInfo
 
 
 def method_alias(name):
@@ -77,9 +74,23 @@ class SubTensor(np.ndarray):
             return NotImplemented
         return _sub_tensor_numpy_func_impls[func](*args, **kwargs)
 
+    def __reduce__(self):
+        r = super().__reduce__()
+        return r[:2] + (r[2] + (self.q_labels, ), )
+
+    def __setstate__(self, state):
+        self.q_labels = state[-1]
+        super().__setstate__(state[:-1])
+
     @classmethod
     def zeros(cls, shape, q_labels=None, dtype=float):
         obj = np.asarray(np.zeros(shape, dtype=dtype)).view(cls)
+        obj.q_labels = q_labels
+        return obj
+
+    @classmethod
+    def ones(cls, shape, q_labels=None, dtype=float):
+        obj = np.asarray(np.ones(shape, dtype=dtype)).view(cls)
         obj.q_labels = q_labels
         return obj
 
@@ -95,10 +106,11 @@ class SubTensor(np.ndarray):
         obj.q_labels = q_labels
         return obj
 
-    @staticmethod
-    def identity(n, q, ndim=2):
-        qs = q if isinstance(q, tuple) else (q, ) * ndim
-        return SubTensor(reduced=np.identity(n=n).reshape((n, ) * ndim), q_labels=qs)
+    @classmethod
+    def identity(cls, n, q_labels=None, dtype=None):
+        obj = np.asarray(np.identity(n=n, dtype=dtype)).view(cls)
+        obj.q_labels = q_labels
+        return obj
 
     @staticmethod
     @implements(np.copy)
@@ -231,12 +243,12 @@ class SliceableTensor(np.ndarray):
     def __repr__(self):
         idx = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
         p = np.asarray(self)
-        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if not _is_zero(p[tuple(ix)]))
+        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if p[tuple(ix)] is not None)
 
     def __str__(self):
         idx = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
         p = np.asarray(self)
-        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if not _is_zero(p[tuple(ix)]))
+        return "\n".join("%10s %r" % (ix, p[tuple(ix)]) for ix in idx if p[tuple(ix)] is not None)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _sliceable_tensor_numpy_func_impls:
@@ -245,24 +257,25 @@ class SliceableTensor(np.ndarray):
             return NotImplemented
         return _sliceable_tensor_numpy_func_impls[func](*args, **kwargs)
 
-    def get_state_info(self, idx):
-        """get state info associated with one of the legs
-        idx: leg index"""
-        return self.infos[idx]
+    def __reduce__(self):
+        r = super().__reduce__()
+        return r[:2] + (r[2] + (self.infos, ), )
+
+    def __setstate__(self, state):
+        self.infos = state[-1]
+        super().__setstate__(state[:-1])
 
     def __getitem__(self, key):
         r = super().__getitem__(key)
         r.infos = list(r.infos)
         if isinstance(key, int):
-            kk = sorted(r.infos[0].quanta)[key]
-            r.infos[0] = r.infos[0].__class__(quanta=r.infos[0].quanta.__class__(
-                {kk: r.infos[0].quanta[kk]}))
+            kk = sorted(r.infos[0])[key]
+            r.infos[0] = r.infos[0].__class__({kk: r.infos[0][kk]})
         elif isinstance(key, tuple):
             for ik, k in enumerate(key):
                 if isinstance(k, int):
-                    kk = sorted(r.infos[ik].quanta)[k]
-                    r.infos[ik] = r.infos[ik].__class__(quanta=r.infos[ik].quanta.__class__(
-                        {kk: r.infos[ik].quanta[kk]}))
+                    kk = sorted(r.infos[ik])[k]
+                    r.infos[ik] = r.infos[ik].__class__({kk: r.infos[ik][kk]})
         else:
             raise TypeError("Unknown index type %r" % key.__class__)
         r.infos = tuple(r.infos)
@@ -335,7 +348,7 @@ class SliceableTensor(np.ndarray):
         """Ratio of number of non-zero elements to total number of elements."""
         idx = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
         p = np.asarray(self)
-        return len([0 for ix in idx if not _is_zero(p[tuple(ix)])]) / self.size
+        return len([0 for ix in idx if p[tuple(ix)] is not None]) / self.size
 
     @property
     def dtype(self):
@@ -358,18 +371,18 @@ class SliceableTensor(np.ndarray):
         return a.to_dense()
 
     def to_dense(self):
-        sh = tuple(info.n_states_total for info in self.infos)
+        sh = tuple(info.n_bonds for info in self.infos)
         aw = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
         r = np.zeros(sh, dtype=self.dtype)
         idxs = []
         for ii, info in enumerate(self.infos):
             idx = np.zeros((self.shape[ii] + 1, ), dtype=int)
-            for ik, k in enumerate(sorted(info.quanta)):
-                idx[ik + 1] = info.quanta[k] + idx[ik]
+            for ik, k in enumerate(sorted(info)):
+                idx[ik + 1] = info[k] + idx[ik]
             idxs.append(idx)
         for ix in aw:
             p = np.asarray(self)
-            if not _is_zero(p[tuple(ix)]):
+            if p[tuple(ix)] is not None:
                 sl = tuple(slice(idx[k], idx[k + 1])
                            for k, idx in zip(ix, idxs))
                 r[sl] = np.asarray(p[tuple(ix)])
@@ -415,52 +428,66 @@ class SparseTensor(NDArrayOperatorsMixin):
         return "\n".join("%3d %r" % (ib, b) for ib, b in enumerate(self.blocks))
 
     @staticmethod
-    def _skeleton(l, m, r):
-        """Create 3-index MPS tensor skeleton."""
-        for kl, vl in l.quanta.items():
-            for km, vm in m.quanta.items():
-                kr = kl + km
-                if kr in r.quanta:
-                    yield (vl, vm, r.quanta[kr]), (kl, km, kr)
+    def _skeleton(bond_infos, pattern=None, dq=None):
+        """Create tensor skeleton from tuple of BondInfo."""
+        it = np.zeros(tuple(len(i) for i in bond_infos), dtype=int)
+        qsh = [sorted(i.items(), key=lambda x: x[0]) for i in bond_infos]
+        q = [[k for k, v in i] for i in qsh]
+        sh = [[v for k, v in i] for i in qsh]
+        if pattern is None:
+            pattern = ("+" * (len(bond_infos) - 1)) + "-"
+        elif pattern[-1] == "+":
+            pattern = "".join({"+": "-", "-": "+"}[i] for i in pattern)
+        nit = np.nditer(it, flags=['multi_index'])
+        for _ in nit:
+            x = nit.multi_index
+            ps = [iq[ix] if ip == '+' else -iq[ix] for iq, ix, ip in zip(q, x, pattern)]
+            if len(ps) == 1 or np.add.reduce(ps[:-1]) == (-ps[-1] if dq is None else dq - ps[-1]):
+                qs = tuple(iq[ix] for iq, ix in zip(q, x))
+                sh = tuple(ish[ix] for ish, ix in zip(sh, x))
+                yield sh, qs
 
     @staticmethod
-    def zeros(l, m, r, dtype=float):
-        """Create 3-index MPS tensor with zero elements."""
+    def zeros(bond_infos, pattern=None, dq=None, dtype=float):
+        """Create tensor from tuple of BondInfo with zero elements."""
         blocks = []
-        for sh, qs in SparseTensor._skeleton(l, m, r):
+        for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
             blocks.append(SubTensor.zeros(shape=sh, q_labels=qs, dtype=dtype))
         return SparseTensor(blocks=blocks)
 
     @staticmethod
-    def random(l, m, r, dtype=float):
-        """Create 3-index MPS tensor with random elements."""
+    def ones(bond_infos, pattern=None, dq=None, dtype=float):
+        """Create tensor from tuple of BondInfo with zero elements."""
         blocks = []
-        for sh, qs in SparseTensor._skeleton(l, m, r):
-            blocks.append(SubTensor.random(shape=sh, q_labels=qs, dtype=dtype))
+        for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
+            blocks.append(SubTensor.ones(shape=sh, q_labels=qs, dtype=dtype))
         return SparseTensor(blocks=blocks)
 
     @staticmethod
-    def identity(n, q, ndim=3):
-        return SparseTensor(blocks=[SubTensor.identity(n=n, q=q, ndim=ndim)])
+    def random(bond_infos, pattern=None, dq=None, dtype=float):
+        """Create tensor from tuple of BondInfo with random elements."""
+        blocks = []
+        for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
+            blocks.append(SubTensor.random(shape=sh, q_labels=qs, dtype=dtype))
+        return SparseTensor(blocks=blocks)
 
-    def get_state_info(self, idx):
-        """get state info associated with one of the legs
-        idx: leg index"""
-        quanta = Counter()
+    @property
+    def infos(self):
+        bond_infos = tuple(BondInfo() for _ in range(self.ndim))
         for block in self.blocks:
-            q = block.q_labels[idx]
-            if q in quanta:
-                assert block.shape[idx] == quanta[q]
-            else:
-                quanta[q] = block.shape[idx]
-        return StateInfo(quanta)
+            for iq, q in enumerate(block.q_labels):
+                if q in bond_infos[iq]:
+                    assert block.shape[iq] == bond_infos[iq][q]
+                else:
+                    bond_infos[iq][q] = block.shape[iq]
+        return bond_infos
 
     def quick_deflate(self):
-        return SparseTensor(blocks=[b for b in self.blocks if not _is_zero(b)])
+        return SparseTensor(blocks=[b for b in self.blocks if b is not None])
 
     def deflate(self, cutoff=0):
         """Remove zero blocks."""
-        blocks = [b for b in self.blocks if np.linalg.norm(b) > cutoff]
+        blocks = [b for b in self.blocks if b is not None and np.linalg.norm(b) > cutoff]
         return SparseTensor(blocks=blocks)
 
     def __getitem__(self, i, idx=-1):
@@ -561,7 +588,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             ns = block.shape
             qij = qs[i] + qs[j] if not rev else qs[j] - qs[i]
             nij = ns[i] * ns[j]
-            xij = info.quanta[qij]
+            xij = info[qij]
             kij = info.finfo[qij][(qs[i], qs[j])]
             new_qs = tuple(q if iq != i else qij for iq,
                            q in enumerate(qs) if iq != j)
@@ -636,8 +663,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         return np.tensordot(self, b, axes)
 
     @staticmethod
-    @implements(np.dot)
-    def _dot(a, b, out=None):
+    def _hdot(a, b, out=None):
         """Horizontal contraction."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
@@ -650,12 +676,15 @@ class SparseTensor(NDArrayOperatorsMixin):
 
         return r
 
-    def dot(self, b, out=None):
-        return np.dot(self, b, out=out)
+    def hdot(self, b, out=None):
+        """Horizontal contraction."""
+        if b.__class__ != self.__class__:
+            return b._hdot(self, b, out=out)
+        else:
+            return self._hdot(self, b, out=out)
 
     @staticmethod
-    @implements(np.matmul)
-    def _matmul(a, b, out=None):
+    def _vdot(a, b, out=None):
         """Vertical contraction (all middle dims)."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
@@ -675,24 +704,28 @@ class SparseTensor(NDArrayOperatorsMixin):
 
         return r
 
-    def matmul(self, b, out=None):
-        return np.matmul(self, b, out=out)
+    def vdot(self, b, out=None):
+        """Vertical contraction (all middle dims)."""
+        if b.__class__ != self.__class__:
+            return b._vdot(self, b, out=out)
+        else:
+            return self._vdot(self, b, out=out)
 
     @staticmethod
-    def kron_add(a, b, infos=None):
+    def _kron_add(a, b, infos=None):
         """
         Direct sum of first and last legs.
         Middle legs are summed.
 
         Args:
-            infos : (StateInfo, Stateinfo) or None
-                StateInfo of first and last legs for the result.
+            infos : (BondInfo, BondInfo) or None
+                BondInfo of first and last legs for the result.
         """
         if infos is None:
-            infos = tuple(a.get_state_info(i) + b.get_state_info(i)
-                          for i in [0, -1])
+            abi, bbi = a.infos, b.infos
+            infos = (abi[0] + bbi[0], abi[-1], bbi[-1])
 
-        lb, rb = infos
+        lb, rb = infos[0], infos[-1]
 
         sub_mp = {}
         # find required new blocks and their shapes
@@ -701,8 +734,8 @@ class SparseTensor(NDArrayOperatorsMixin):
             sh = block.shape
             if qs not in sub_mp:
                 mshape = list(sh)
-                mshape[0] = lb.quanta[qs[0]]
-                mshape[-1] = rb.quanta[qs[-1]]
+                mshape[0] = lb[qs[0]]
+                mshape[-1] = rb[qs[-1]]
                 sub_mp[qs] = SubTensor.zeros(shape=tuple(
                     mshape), q_labels=qs, dtype=a.dtype)
         # copy block self.blocks to smaller index in new block
@@ -716,6 +749,11 @@ class SparseTensor(NDArrayOperatorsMixin):
             sh = block.shape
             sub_mp[qs][-sh[0]:, ..., -sh[-1]:] += block
         return SparseTensor(blocks=list(sub_mp.values()))
+    
+    def kron_add(self, b, infos=None):
+        """Direct sum of first and last legs.
+        Middle legs are summed."""
+        return self._kron_add(self, b, infos=infos)
 
     def left_canonicalize(self, mode='reduced'):
         """
@@ -980,16 +1018,16 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     def to_sliceable(self, infos=None):
         if infos is None:
-            infos = tuple(self.get_state_info(idx)
-                          for idx in range(self.ndim))
+            infos = self.infos
         idx_infos = []
         for info in infos:
             idx_info = Counter()
-            for ik, k in enumerate(sorted(info.quanta)):
+            for ik, k in enumerate(sorted(info)):
                 idx_info[k] = ik
             idx_infos.append(idx_info)
-        sh = tuple(len(info.quanta) for info in infos)
+        sh = tuple(len(info) for info in infos)
         arr = np.zeros(sh, dtype=object)
+        arr[:] = None
         for block in self.blocks:
             idx = tuple([info[q]
                          for q, info in zip(block.q_labels, idx_infos)])
@@ -1121,43 +1159,40 @@ class FermionTensor(NDArrayOperatorsMixin):
         return _fermion_tensor_numpy_func_impls[func](*args, **kwargs)
 
     @staticmethod
-    def _skeleton(dq, l, r):
-        """Create 2-index operator tensor skeleton."""
-        for kr in r.quanta:
-            kl = kr + dq
-            if kl in l.quanta:
-                yield (l.quanta[kl], r.quanta[kr]), (kl, kr)
-
-    @staticmethod
-    def zeros(dq, l, r, dtype=float):
-        """Create 2-index operator tensor with zero elements."""
-        blocks = []
-        for sh, qs in FermionTensor._skeleton(dq, l, r):
-            blocks.append(SubTensor.zeros(shape=sh, q_labels=qs, dtype=dtype))
-        if dq.is_fermion:
-            return FermionTensor(odd=SparseTensor(blocks=blocks))
+    def zeros(bond_infos, pattern=None, dq=None, dtype=float):
+        """Create operator tensor with zero elements."""
+        spt = SparseTensor.zeros(bond_infos, pattern=pattern, dq=dq, dtype=dtype)
+        if dq is not None and dq.is_fermion:
+            return FermionTensor(odd=spt)
         else:
-            return FermionTensor(even=SparseTensor(blocks=blocks))
+            return FermionTensor(even=spt)
 
     @staticmethod
-    def random(dq, l, r, dtype=float):
-        """Create 2-index operator tensor with random elements."""
-        blocks = []
-        for sh, qs in FermionTensor._skeleton(dq, l, r):
-            blocks.append(SubTensor.random(shape=sh, q_labels=qs, dtype=dtype))
-        if dq.is_fermion:
-            return FermionTensor(odd=SparseTensor(blocks=blocks))
+    def ones(bond_infos, pattern=None, dq=None, dtype=float):
+        """Create operator tensor with random elements."""
+        spt = SparseTensor.ones(bond_infos, pattern=pattern, dq=dq, dtype=dtype)
+        if dq is not None and dq.is_fermion:
+            return FermionTensor(odd=spt)
         else:
-            return FermionTensor(even=SparseTensor(blocks=blocks))
+            return FermionTensor(even=spt)
 
     @staticmethod
-    def identity(n, q, ndim=4):
-        return FermionTensor(even=SparseTensor.identity(n=n, q=q, ndim=ndim))
+    def random(bond_infos, pattern=None, dq=None, dtype=float):
+        """Create operator tensor with random elements."""
+        spt = SparseTensor.random(bond_infos, pattern=pattern, dq=dq, dtype=dtype)
+        if dq is not None and dq.is_fermion:
+            return FermionTensor(odd=spt)
+        else:
+            return FermionTensor(even=spt)
 
-    def get_state_info(self, idx):
-        """get state info associated with one of the legs
-        idx: leg index"""
-        return self.odd.get_state_info(idx=idx) | self.even.get_state_info(idx=idx)
+    @property
+    def infos(self):
+        if self.odd.ndim == 0:
+            return self.even.infos
+        elif self.even.ndim == 0:
+            return self.odd.infos
+        else:
+            return tuple(o | e for o, e in zip(self.odd.infos, self.even.infos))
 
     def deflate(self, cutoff=0):
         return FermionTensor(odd=self.odd.deflate(cutoff), even=self.even.deflate(cutoff))
@@ -1268,8 +1303,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         return np.tensordot(self, b, axes)
 
     @staticmethod
-    @implements(np.dot)
-    def _dot(a, b, out=None):
+    def _hdot(a, b, out=None):
         """Horizontally contract operator tensors."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
@@ -1288,20 +1322,19 @@ class FermionTensor(NDArrayOperatorsMixin):
 
         return r
 
-    def dot(self, b, out=None):
-        return np.dot(self, b, out=out)
+    def hdot(self, b, out=None):
+        return self._hdot(self, b, out=out)
 
     @staticmethod
-    @implements(np.matmul)
-    def _matmul(a, b, out=None):
+    def _vdot(a, b, out=None):
         """Vertical contraction (all middle dims)."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
         
         assert isinstance(a, FermionTensor) or isinstance(b, FermionTensor)
 
-        # MPO x MPO
-        if isinstance(a, FermionTensor) and isinstance(b, FermionTensor):
+        # MPO x MPO [can be FT x FT or FT x SPT (MPDO) or SPT (MPDO) x FT]
+        if a.ndim == b.ndim and a.ndim % 2 == 0:
             assert a.ndim == b.ndim and a.ndim % 2 == 0
             d = a.ndim // 2 - 1
             aidx = list(range(d + 1, d + d + 1))
@@ -1309,15 +1342,15 @@ class FermionTensor(NDArrayOperatorsMixin):
             tr = tuple([0, d + 2] + list(range(1, d + 1)) +
                         list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
         # MPO x MPS
-        elif isinstance(a, FermionTensor):
-            assert a.ndim > b.ndim
+        elif a.ndim > b.ndim:
+            assert isinstance(a, FermionTensor)
             dau, db = a.ndim - b.ndim, b.ndim - 2
             aidx = list(range(dau + 1, dau + db + 1))
             bidx = list(range(1, db + 1))
             tr = tuple([0, dau + 2] + list(range(1, dau + 1)) + [dau + 1, dau + 3])
         # MPS x MPO
-        elif isinstance(b, FermionTensor):
-            assert a.ndim < b.ndim
+        elif a.ndim < b.ndim:
+            assert isinstance(b, FermionTensor)
             da, dbd = a.ndim - 2, b.ndim - a.ndim
             aidx = list(range(1, da + 1))
             bidx = list(range(1, da + 1))
@@ -1336,26 +1369,31 @@ class FermionTensor(NDArrayOperatorsMixin):
 
         return r
 
-    def matmul(self, b, out=None):
-        return np.matmul(self, b, out=out)
+    def vdot(self, b, out=None):
+        return self._vdot(self, b, out=out)
 
     @staticmethod
-    def kron_add(a, b, infos=None):
+    def _kron_add(a, b, infos=None):
         """
         Direct sum of first and last legs.
         Middle dims are summed.
 
         Args:
-            infos : (StateInfo, Stateinfo) or None
-                StateInfo of first and last legs for the result.
+            infos : (BondInfo, BondInfo) or None
+                BondInfo of first and last legs for the result.
         """
         if infos is None:
-            infos = tuple(a.get_state_info(i) + b.get_state_info(i)
-                          for i in [0, -1])
+            abi, bbi = a.infos, b.infos
+            infos = (abi[0] + bbi[0], abi[-1], bbi[-1])
 
-        odd = a.odd.__class__.kron_add(a.odd, b.odd, infos=infos)
-        even = a.even.__class__.kron_add(a.even, b.even, infos=infos)
+        odd = a.odd.kron_add(b.odd, infos=infos)
+        even = a.even.kron_add(b.even, infos=infos)
         return FermionTensor(odd=odd, even=even)
+    
+    def kron_add(self, b, infos=None):
+        """Direct sum of first and last legs.
+        Middle legs are summed."""
+        return self._kron_add(self, b, infos=infos)
 
     def left_canonicalize(self, mode='reduced'):
         """
