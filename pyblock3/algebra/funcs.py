@@ -25,6 +25,10 @@ def tensordot(a, *args, **kwargs):
 def dot(a, *args, **kwargs):
     return NotImplemented
 
+@method_alias('hdot')
+def hdot(a, *args, **kwargs):
+    return NotImplemented
+
 
 @method_alias('to_dense')
 def to_dense(a, *args, **kwargs):

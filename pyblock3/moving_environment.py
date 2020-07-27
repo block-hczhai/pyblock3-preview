@@ -21,7 +21,7 @@ class MovingEnvironment:
         self.mpo = mpo
         self.ket = ket
         assert self.bra.n_sites == self.ket.n_sites
-        assert self.mpo.n_sites == self.ket.n_sites
+        # assert self.mpo.n_sites == self.ket.n_sites
         self.left_envs = {}
         self.right_envs = {}
         if opts is not None:
@@ -43,9 +43,9 @@ class MovingEnvironment:
         self.r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr,
                                                       qbr, qkr, qmr), pattern="++--")
         self.l_bra_id = self.bra[0].ones(bond_infos=(qbl, ))
-        self.r_bra_id = self.bra[-1].ones(bond_infos=(qbr, ))
+        self.r_bra_id = self.bra[-1].ones(bond_infos=(qbl, ))
         self.l_ket_id = self.ket[0].ones(bond_infos=(qkl, ))
-        self.r_ket_id = self.ket[-1].ones(bond_infos=(qkr, ))
+        self.r_ket_id = self.ket[-1].ones(bond_infos=(qkl, ))
 
     def _left_canonicalize_site(self, mps, i):
         """Left canonicalize mps at site i."""

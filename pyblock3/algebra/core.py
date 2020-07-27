@@ -5,7 +5,7 @@ import numbers
 from collections import Counter
 from itertools import accumulate, groupby
 
-from .symmetry import BondInfo
+from .symmetry import BondInfo, BondFusingInfo
 
 
 def method_alias(name):
@@ -441,7 +441,8 @@ class SparseTensor(NDArrayOperatorsMixin):
         nit = np.nditer(it, flags=['multi_index'])
         for _ in nit:
             x = nit.multi_index
-            ps = [iq[ix] if ip == '+' else -iq[ix] for iq, ix, ip in zip(q, x, pattern)]
+            ps = [iq[ix] if ip == '+' else -iq[ix]
+                  for iq, ix, ip in zip(q, x, pattern)]
             if len(ps) == 1 or np.add.reduce(ps[:-1]) == (-ps[-1] if dq is None else dq - ps[-1]):
                 qs = tuple(iq[ix] for iq, ix in zip(q, x))
                 sh = tuple(ish[ix] for ish, ix in zip(sh, x))
@@ -487,7 +488,8 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     def deflate(self, cutoff=0):
         """Remove zero blocks."""
-        blocks = [b for b in self.blocks if b is not None and np.linalg.norm(b) > cutoff]
+        blocks = [
+            b for b in self.blocks if b is not None and np.linalg.norm(b) > cutoff]
         return SparseTensor(blocks=blocks)
 
     def __getitem__(self, i, idx=-1):
@@ -575,33 +577,95 @@ class SparseTensor(NDArrayOperatorsMixin):
         return np.copy(self)
 
     @staticmethod
-    def _fuse(a, i, j, info, rev=False):
-        return a.fuse(i, j, info, rev=rev)
+    def _unfuse(a, i, info):
+        return a.unfuse(i, info)
 
-    def fuse(self, i, j, info, rev=False):
-        """Fuse leg i and j to leg i."""
+    def unfuse(self, i, info):
+        """Unfuse one leg to several legs.
+
+        Args:
+            i : int
+                index of the leg to be unfused. The new unfused indices will be i, i + 1, ...
+            info : BondFusingInfo
+                Indicating how quantum numbers are collected.
+        """
+        blocks = []
+        for block in self.blocks:
+            qs = block.q_labels
+            ns = list(block.shape)
+            # fused q
+            q = qs[i]
+            if q not in info:
+                continue
+            assert ns[i] == info[q]
+            # (unfused q, (starting index in fused dim, unfused shape))
+            sl = [slice(None) for _ in range(len(ns))]
+            for sqs, (k, sh) in info.finfo[q].items():
+                nk = np.multiply.reduce(sh)
+                sl[i] = slice(k, k + nk)
+                new_ns = (ns[:i], *sh, ns[i + 1:])
+                new_qs = (qs[:i], *sqs, qs[i + 1:])
+                mat = np.asarray(block)[tuple(sl)].reshape(new_ns)
+                blocks.append(SubTensor(mat, q_labels=new_qs))
+        return SparseTensor(blocks=blocks)
+
+    @staticmethod
+    def _fuse(a, *idxs, info=None, pattern=None):
+        return a.fuse(*idxs, info=info, pattern=pattern)
+
+    def fuse(self, *idxs, info=None, pattern=None):
+        """Fuse several legs to one leg.
+
+        Args:
+            idxs : tuple(int)
+                Leg indices to be fused. The new fused index will be idxs[0].
+            info : BondFusingInfo (optional)
+                Indicating how quantum numbers are collected.
+                If not specified, the direct sum of quantum numbers will be used.
+                This will generate minimal and (often) incomplete fused shape.
+            pattern : str (optional)
+                A str of '+'/'-'. Only required when info is not specified.
+                Indicating how quantum numbers are linearly combined.
+        """
         blocks_map = {}
-        i = i if i >= 0 else self.ndim + i
-        j = j if j >= 0 else self.ndim + j
+        idxs = [i if i >= 0 else self.ndim + i for i in idxs]
+        if info is None:
+            items = []
+            for block in self.blocks:
+                qs = tuple(block.q_labels[i] for i in idxs)
+                shs = tuple(block.shape[i] for i in idxs)
+                items.append((qs, shs))
+            # using minimal fused dimension
+            info = BondFusingInfo.kron_sum(items, pattern=pattern)
+        if pattern is None:
+            pattern = info.pattern
         for block in self.blocks:
             qs = block.q_labels
             ns = block.shape
-            qij = qs[i] + qs[j] if not rev else qs[j] - qs[i]
-            nij = ns[i] * ns[j]
-            xij = info[qij]
-            kij = info.finfo[qij][(qs[i], qs[j])]
-            new_qs = tuple(q if iq != i else qij for iq,
-                           q in enumerate(qs) if iq != j)
-            sh = list(x if ix != i else xij for ix,
-                      x in enumerate(ns) if ix != j)
+            # unfused q
+            sqs = tuple(qs[ix] for ix in idxs)
+            # fused q
+            q = np.add.reduce([iq if ip == "+" else -iq for iq,
+                               ip in zip(sqs, pattern)])
+            # fused shape for fused leg
+            x = info[q]
+            # starting index in fused dim for this block
+            k = info.finfo[q][sqs][0]
+            # shape in fused dim for this block
+            nk = np.multiply.reduce([ns[ix] for ix in idxs])
+            if q not in info:
+                continue
+            new_qs = tuple(iq if iiq != idxs[0] else q for iiq, iq in enumerate(
+                qs) if iiq not in idxs[1:])
+            new_ns = [ix if iiq != idxs[0] else x for iiq,
+                      ix in enumerate(ns) if iiq not in idxs[1:]]
             if new_qs not in blocks_map:
                 blocks_map[new_qs] = SubTensor.zeros(
-                    tuple(sh), q_labels=new_qs, dtype=block.dtype)
-            sh[i] = nij
-            sl = tuple(slice(None) if ix != i else slice(kij, kij + nij)
-                       for ix in range(len(ns)) if ix != j)
-            blocks_map[new_qs][sl] = np.asarray(block).reshape(tuple(sh))
-
+                    tuple(new_ns), q_labels=new_qs, dtype=block.dtype)
+            new_ns[idxs[0]] = nk
+            sl = tuple(slice(None) if ix != idxs[0] else slice(
+                k, k + nk) for ix in range(len(ns)) if ix not in idxs[1:])
+            blocks_map[new_qs][sl] = np.asarray(block).reshape(tuple(new_ns))
         return SparseTensor(blocks=list(blocks_map.values()))
 
     @staticmethod
@@ -664,7 +728,7 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     @staticmethod
     def _hdot(a, b, out=None):
-        """Horizontal contraction."""
+        """Horizontal contraction (contracting connected virtual dimensions)."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
 
@@ -677,18 +741,18 @@ class SparseTensor(NDArrayOperatorsMixin):
         return r
 
     def hdot(self, b, out=None):
-        """Horizontal contraction."""
+        """Horizontal contraction (contracting connected virtual dimensions)."""
         if b.__class__ != self.__class__:
             return b._hdot(self, b, out=out)
         else:
             return self._hdot(self, b, out=out)
 
     @staticmethod
-    def _vdot(a, b, out=None):
-        """Vertical contraction (all middle dims)."""
+    def _pdot(a, b, out=None):
+        """Vertical contraction (all middle/physical dims)."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
-        
+
         assert isinstance(a, SparseTensor) and isinstance(b, SparseTensor)
 
         assert a.ndim == b.ndim
@@ -704,12 +768,12 @@ class SparseTensor(NDArrayOperatorsMixin):
 
         return r
 
-    def vdot(self, b, out=None):
+    def pdot(self, b, out=None):
         """Vertical contraction (all middle dims)."""
         if b.__class__ != self.__class__:
-            return b._vdot(self, b, out=out)
+            return b._pdot(self, b, out=out)
         else:
-            return self._vdot(self, b, out=out)
+            return self._pdot(self, b, out=out)
 
     @staticmethod
     def _kron_add(a, b, infos=None):
@@ -749,7 +813,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             sh = block.shape
             sub_mp[qs][-sh[0]:, ..., -sh[-1]:] += block
         return SparseTensor(blocks=list(sub_mp.values()))
-    
+
     def kron_add(self, b, infos=None):
         """Direct sum of first and last legs.
         Middle legs are summed."""
@@ -869,6 +933,77 @@ class SparseTensor(NDArrayOperatorsMixin):
             s_blocks.append(SubTensor(reduced=s, q_labels=(q_label_l, )))
             l_blocks.append(
                 SubTensor(reduced=u, q_labels=(q_label_l, q_label_l)))
+        return SparseTensor(blocks=l_blocks), SparseTensor(blocks=s_blocks), SparseTensor(blocks=r_blocks)
+
+    def tensor_svd(self, idx=2, linfo=None, rinfo=None, pattern=None, full_matrices=True):
+        """
+        Separate tensor in the middle, collecting legs as [0, idx) and [idx, ndim), then perform SVD.
+
+        Returns:
+            l, s, r : tuple(SparseTensor)
+        """
+        assert idx >= 1 and idx <= self.ndim - 1
+        if pattern is None:
+            pattern = '+' * self.ndim
+        if linfo is None:
+            items = []
+            for block in self.blocks:
+                items.append((block.q_labels[:idx], block.shape[:idx]))
+            linfo = BondFusingInfo.kron_sum(items, pattern=pattern[:idx])
+        if rinfo is None:
+            items = []
+            for block in self.blocks:
+                items.append((block.q_labels[idx:], block.shape[idx:]))
+            rinfo = BondFusingInfo.kron_sum(items, pattern=pattern[idx:])
+        info = linfo | rinfo
+        mats = {}
+        for q in info:
+            if q not in linfo or q not in rinfo:
+                continue
+            mats[q] = np.zeros((linfo[q], rinfo[q]))
+        pattern = linfo.pattern + rinfo.pattern
+        items = {}
+        for block in self.blocks:
+            qls, qrs = block.q_labels[:idx], block.q_labels[idx:]
+            ql = np.add.reduce([iq if ip == '+' else -iq for iq, ip in zip(qls, pattern[:idx])])
+            qr = np.add.reduce([iq if ip == '+' else -iq for iq, ip in zip(qrs, pattern[idx:])])
+            assert ql == qr
+            q = ql
+            if q not in mats:
+                continue
+            if q not in items:
+                items[q] = [], []
+            items[q][0].append(qls)
+            items[q][1].append(qrs)
+            mat = mats[q]
+            lk, lkn = linfo.finfo[q][qls][0], np.multiply.reduce(linfo.finfo[q][qls][1])
+            rk, rkn = rinfo.finfo[q][qrs][0], np.multiply.reduce(rinfo.finfo[q][qrs][1])
+            mats[q][lk:lk + lkn, rk:rk +
+                    rkn] = np.asarray(block).reshape((lkn, rkn))
+        l_blocks, s_blocks, r_blocks = [], [], []
+        for q, mat in mats.items():
+            u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
+            s_blocks.append(SubTensor(reduced=s, q_labels=(q, )))
+            items[q][0].sort(key=lambda x: x[0])
+            items[q][1].sort(key=lambda x: x[0])
+            psqs = None
+            for sqs in items[q][0]:
+                if sqs == psqs:
+                    continue
+                k, sh = linfo.finfo[q][sqs]
+                nk = np.multiply.reduce(sh)
+                mat = u[k:k + nk, :].reshape(sh + (-1, ))
+                l_blocks.append(SubTensor(reduced=mat, q_labels=sqs + (q, )))
+                psqs = sqs
+            psqs = None
+            for sqs in items[q][1]:
+                if sqs == psqs:
+                    continue
+                k, sh = rinfo.finfo[q][sqs]
+                nk = np.multiply.reduce(sh)
+                mat = vh[:, k:k + nk].reshape((-1, ) + sh)
+                r_blocks.append(SubTensor(reduced=mat, q_labels=(q, ) + sqs))
+                psqs = sqs
         return SparseTensor(blocks=l_blocks), SparseTensor(blocks=s_blocks), SparseTensor(blocks=r_blocks)
 
     @staticmethod
@@ -1161,7 +1296,8 @@ class FermionTensor(NDArrayOperatorsMixin):
     @staticmethod
     def zeros(bond_infos, pattern=None, dq=None, dtype=float):
         """Create operator tensor with zero elements."""
-        spt = SparseTensor.zeros(bond_infos, pattern=pattern, dq=dq, dtype=dtype)
+        spt = SparseTensor.zeros(
+            bond_infos, pattern=pattern, dq=dq, dtype=dtype)
         if dq is not None and dq.is_fermion:
             return FermionTensor(odd=spt)
         else:
@@ -1170,7 +1306,8 @@ class FermionTensor(NDArrayOperatorsMixin):
     @staticmethod
     def ones(bond_infos, pattern=None, dq=None, dtype=float):
         """Create operator tensor with random elements."""
-        spt = SparseTensor.ones(bond_infos, pattern=pattern, dq=dq, dtype=dtype)
+        spt = SparseTensor.ones(
+            bond_infos, pattern=pattern, dq=dq, dtype=dtype)
         if dq is not None and dq.is_fermion:
             return FermionTensor(odd=spt)
         else:
@@ -1179,7 +1316,8 @@ class FermionTensor(NDArrayOperatorsMixin):
     @staticmethod
     def random(bond_infos, pattern=None, dq=None, dtype=float):
         """Create operator tensor with random elements."""
-        spt = SparseTensor.random(bond_infos, pattern=pattern, dq=dq, dtype=dtype)
+        spt = SparseTensor.random(
+            bond_infos, pattern=pattern, dq=dq, dtype=dtype)
         if dq is not None and dq.is_fermion:
             return FermionTensor(odd=spt)
         else:
@@ -1206,13 +1344,52 @@ class FermionTensor(NDArrayOperatorsMixin):
         return np.copy(self)
 
     @staticmethod
-    def _fuse(a, i, j, info, rev=False):
-        return a.fuse(i, j, info, rev=rev)
+    def _unfuse(a, i, info):
+        return a.unfuse(i, info)
 
-    def fuse(self, i, j, info, rev=False):
-        """Fuse leg i and j to leg i."""
-        odd = self.odd.fuse(i, j, info=info, rev=rev)
-        even = self.even.fuse(i, j, info=info, rev=rev)
+    def unfuse(self, i, info):
+        """Unfuse one leg to several legs.
+        May introduce some additional zero blocks.
+
+        Args:
+            i : int
+                index of the leg to be unfused. The new unfused indices will be i, i + 1, ...
+            info : BondFusingInfo
+                Indicating how quantum numbers are collected.
+        """
+        odd = self.odd.unfuse(i, info=info)
+        even = self.even.unfuse(i, info=info)
+        return FermionTensor(odd=odd, even=even)
+
+    @staticmethod
+    def _fuse(a, *idxs, info=None, pattern=None):
+        return a.fuse(*idxs, info=info, pattern=pattern)
+
+    def fuse(self, *idxs, info=None, pattern=None):
+        """Fuse several legs to one leg.
+
+        Args:
+            idxs : tuple(int)
+                Leg indices to be fused. The new fused index will be idxs[0].
+            info : BondFusingInfo (optional)
+                Indicating how quantum numbers are collected.
+                If not specified, the direct sum of quantum numbers will be used.
+                This will generate minimal and (often) incomplete fused shape.
+            pattern : str (optional)
+                A str of '+'/'-'. Only required when info is not specified.
+                Indicating how quantum numbers are linearly combined.
+        """
+        idxs = [i if i >= 0 else self.ndim + i for i in idxs]
+        if info is None:
+            items = []
+            for block in self.odd.blocks + self.even.blocks:
+                qs = tuple(block.q_labels[i] for i in idxs)
+                shs = tuple(block.shape[i] for i in idxs)
+                items.append((qs, shs))
+            # using minimal fused dimension
+            info = BondFusingInfo.kron_sum(items, pattern=pattern)
+        odd = self.odd.fuse(*idxs, info=info, pattern=pattern)
+        even = self.even.fuse(*idxs, info=info, pattern=pattern)
         return FermionTensor(odd=odd, even=even)
 
     @staticmethod
@@ -1260,6 +1437,8 @@ class FermionTensor(NDArrayOperatorsMixin):
             # vertical
             else:
                 idx = a.ndim - len(idxa)
+                # 1-site op x n-site op
+                idx = range(idx, idx + min(idxb))
                 blocks = odd_a.blocks + even_a.blocks
         # op x state
         elif isinstance(a, FermionTensor):
@@ -1270,6 +1449,8 @@ class FermionTensor(NDArrayOperatorsMixin):
             if b.ndim - len(idxb) == 1:
                 r = FermionTensor(odd=odd, even=even)
             else:
+                # 1-site op x n-site state
+                idx = range(idx, idx + min(idxb))
                 blocks = odd.blocks
                 r = odd + even
         # state x op
@@ -1281,6 +1462,8 @@ class FermionTensor(NDArrayOperatorsMixin):
             if a.ndim - len(idxa) == 1:
                 r = FermionTensor(odd=odd, even=even)
             else:
+                # n-site state x 1-site op
+                idx = range(idx, idx + min(idxa))
                 blocks = odd.blocks
                 r = odd + even
         else:
@@ -1304,7 +1487,7 @@ class FermionTensor(NDArrayOperatorsMixin):
 
     @staticmethod
     def _hdot(a, b, out=None):
-        """Horizontally contract operator tensors."""
+        """Horizontally contract operator tensors (contracting connected virtual dimensions)."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
 
@@ -1323,42 +1506,91 @@ class FermionTensor(NDArrayOperatorsMixin):
         return r
 
     def hdot(self, b, out=None):
+        """Horizontally contract operator tensors (contracting connected virtual dimensions)."""
         return self._hdot(self, b, out=out)
 
     @staticmethod
-    def _vdot(a, b, out=None):
-        """Vertical contraction (all middle dims)."""
+    def _pdot(a, b, out=None):
+        """Vertical contraction (all middle/physical dims)."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
-        
-        assert isinstance(a, FermionTensor) or isinstance(b, FermionTensor)
 
-        # MPO x MPO [can be FT x FT or FT x SPT (MPDO) or SPT (MPDO) x FT]
-        if a.ndim == b.ndim and a.ndim % 2 == 0:
-            assert a.ndim == b.ndim and a.ndim % 2 == 0
-            d = a.ndim // 2 - 1
-            aidx = list(range(d + 1, d + d + 1))
-            bidx = list(range(1, d + 1))
-            tr = tuple([0, d + 2] + list(range(1, d + 1)) +
-                        list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
-        # MPO x MPS
-        elif a.ndim > b.ndim:
-            assert isinstance(a, FermionTensor)
-            dau, db = a.ndim - b.ndim, b.ndim - 2
-            aidx = list(range(dau + 1, dau + db + 1))
-            bidx = list(range(1, db + 1))
-            tr = tuple([0, dau + 2] + list(range(1, dau + 1)) + [dau + 1, dau + 3])
-        # MPS x MPO
-        elif a.ndim < b.ndim:
-            assert isinstance(b, FermionTensor)
-            da, dbd = a.ndim - 2, b.ndim - a.ndim
-            aidx = list(range(1, da + 1))
-            bidx = list(range(1, da + 1))
-            tr = tuple([0, 2] + list(range(3, dbd + 3)) + [1, dbd + 3])
+        if isinstance(a, list):
+            p, ps = 1, []
+            for i in range(len(a)):
+                ps.append(p)
+                p += a[i].ndim // 2 - 1
+            r = b
+            # [MPO] x MPO
+            if isinstance(b, FermionTensor):
+                for i in range(len(a))[::-1]:
+                    d = a[i].ndim // 2 - 1
+                    d2 = r.ndim // 2 - 1
+                    if i == len(a) - 1:
+                        aidx = list(range(d + 1, d + d + 1))
+                        bidx = list(range(ps[i], ps[i] + d))
+                        tr = (*range(d + 2, ps[i] + d + 2), *range(0, d + 1), 
+                            *range(ps[i] + d + 2, ps[i] + d + 2 + d2), d + 1, ps[i] + d + 2 + d2)
+                    else:
+                        aidx = list(range(d + 1, d + d + 2))
+                        bidx = list(range(ps[i], ps[i] + d + 1))
+                        tr = (*range(d + 1, ps[i] + d + 1), *range(0, d + 1), 
+                            *range(ps[i] + d + 1, d2 + d2 + 2))
+                    r = np.tensordot(a[i], r, axes=(aidx, bidx)).transpose(axes=tr)
+                r = r.transpose(axes=(1, 0, *range(2, r.ndim)))
+            # [MPO] x MPS
+            elif isinstance(b, SparseTensor):
+                for i in range(len(a))[::-1]:
+                    d = a[i].ndim // 2 - 1
+                    d2 = r.ndim - 2
+                    if i == len(a) - 1:
+                        aidx = list(range(d + 1, d + d + 1))
+                        bidx = list(range(ps[i], ps[i] + d))
+                        tr = (*range(d + 2, ps[i] + d + 2), *range(0, d + 2), ps[i] + d + 2)
+                    else:
+                        aidx = list(range(d + 1, d + d + 2))
+                        bidx = list(range(ps[i], ps[i] + d + 1))
+                        tr = (*range(d + 1, ps[i] + d + 1), *range(0, d + 1), 
+                            *range(ps[i] + d + 1, d2 + 2))
+                    r = np.tensordot(a[i], r, axes=(aidx, bidx)).transpose(axes=tr)
+                r = r.transpose(axes=(1, 0, *range(2, r.ndim)))
+            else:
+                raise RuntimeError(
+                    "Cannot matmul tensors with types %r x %r" % (a.__class__, b.__class__))
+        elif isinstance(b, list):
+            raise NotImplementedError("not implemented.")
         else:
-            raise RuntimeError("Cannot matmul tensors with ndim: %d x %d" % (a.ndim, b.ndim))
 
-        r = np.tensordot(a, b, axes=(aidx, bidx)).transpose(axes=tr)
+            assert isinstance(a, FermionTensor) or isinstance(b, FermionTensor)
+
+            # MPO x MPO [can be FT x FT or FT x SPT (MPDO) or SPT (MPDO) x FT]
+            if a.ndim == b.ndim and a.ndim % 2 == 0:
+                assert a.ndim == b.ndim and a.ndim % 2 == 0
+                d = a.ndim // 2 - 1
+                aidx = list(range(d + 1, d + d + 1))
+                bidx = list(range(1, d + 1))
+                tr = tuple([0, d + 2] + list(range(1, d + 1)) +
+                        list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
+            # MPO x MPS
+            elif a.ndim > b.ndim:
+                assert isinstance(a, FermionTensor)
+                dau, db = a.ndim - b.ndim, b.ndim - 2
+                aidx = list(range(dau + 1, dau + db + 1))
+                bidx = list(range(1, db + 1))
+                tr = tuple([0, dau + 2] + list(range(1, dau + 1)) +
+                        [dau + 1, dau + 3])
+            # MPS x MPO
+            elif a.ndim < b.ndim:
+                assert isinstance(b, FermionTensor)
+                da, dbd = a.ndim - 2, b.ndim - a.ndim
+                aidx = list(range(1, da + 1))
+                bidx = list(range(1, da + 1))
+                tr = tuple([0, 2] + list(range(3, dbd + 3)) + [1, dbd + 3])
+            else:
+                raise RuntimeError(
+                    "Cannot matmul tensors with ndim: %d x %d" % (a.ndim, b.ndim))
+
+            r = np.tensordot(a, b, axes=(aidx, bidx)).transpose(axes=tr)
 
         if out is not None:
             if isinstance(r, SparseTensor):
@@ -1369,8 +1601,8 @@ class FermionTensor(NDArrayOperatorsMixin):
 
         return r
 
-    def vdot(self, b, out=None):
-        return self._vdot(self, b, out=out)
+    def pdot(self, b, out=None):
+        return FermionTensor._pdot(self, b, out=out)
 
     @staticmethod
     def _kron_add(a, b, infos=None):
@@ -1389,7 +1621,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         odd = a.odd.kron_add(b.odd, infos=infos)
         even = a.even.kron_add(b.even, infos=infos)
         return FermionTensor(odd=odd, even=even)
-    
+
     def kron_add(self, b, infos=None):
         """Direct sum of first and last legs.
         Middle legs are summed."""
@@ -1624,13 +1856,17 @@ class FermionTensor(NDArrayOperatorsMixin):
             if not selected[ik]:
                 error += (s.blocks[ik] ** 2).sum()
         if isinstance(l, FermionTensor):
-            new_l = FermionTensor(odd=l_blocks[0], even=l_blocks[1]).deflate(cutoff=norm_cutoff)
+            new_l = FermionTensor(odd=l_blocks[0], even=l_blocks[1]).deflate(
+                cutoff=norm_cutoff)
         else:
-            new_l = SparseTensor(blocks=l_blocks[0]).deflate(cutoff=norm_cutoff)
+            new_l = SparseTensor(blocks=l_blocks[0]).deflate(
+                cutoff=norm_cutoff)
         if isinstance(r, FermionTensor):
-            new_r = FermionTensor(odd=r_blocks[0], even=r_blocks[1]).deflate(cutoff=norm_cutoff)
+            new_r = FermionTensor(odd=r_blocks[0], even=r_blocks[1]).deflate(
+                cutoff=norm_cutoff)
         else:
-            new_r = SparseTensor(blocks=r_blocks[0]).deflate(cutoff=norm_cutoff)
+            new_r = SparseTensor(blocks=r_blocks[0]).deflate(
+                cutoff=norm_cutoff)
         error = np.asarray(error).item()
         return new_l, SparseTensor(blocks=s_blocks), new_r, np.sqrt(error)
 

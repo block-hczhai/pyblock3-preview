@@ -68,7 +68,7 @@ class BondInfo(Counter):
                 if ref is None or ka + kb in ref:
                     quanta[ka + kb] += va * vb
         return quanta
-    
+
     def __or__(self, other):
         return BondInfo(super().__or__(other))
 
@@ -94,7 +94,6 @@ class BondInfo(Counter):
                     self[k] = min(self[k], ref[k])
 
     def __repr__(self):
-        print(self.items())
         return " ".join(["%r = %d" % (k, v) for k, v in sorted(self.items(), key=lambda x: x[0])])
 
 
@@ -106,24 +105,83 @@ class BondFusingInfo(BondInfo):
     Attributes:
         self : Counter
             dict of quantum label and number of states
-        finfo : dict(SZ -> Counter((SZ, SZ) -> int))
+        finfo : dict(SZ -> dict(tuple(SZ) -> (int, tuple(int))))
+            For each fused q and unfused q,
+            the starting index in fused dim and the shape of unfused block
+        pattern : str
+            a str of '+'/'-' indicating how quantum numbers are combined
     """
 
     def __init__(self, *args, **kwargs):
         finfo = kwargs.pop("finfo", None)
+        self.pattern = kwargs.pop("pattern", None)
         self.finfo = finfo if finfo is not None else {}
         super().__init__(*args, **kwargs)
 
     @staticmethod
-    def tensor_product(a, b, ref=None):
+    def tensor_product(*infos, ref=None, pattern=None):
+        """
+        Direct product of a collection of BondInfo.
+
+        Args:
+            infos : tuple(BondInfo)
+                BondInfo for each unfused leg.
+            ref : BondInfo (optional)
+                Reference fused BondInfo.
+        """
         quanta = BondInfo()
         finfo = {}
-        for ka, va in sorted(a.items(), key=lambda x: x[0]):
-            for kb, vb in sorted(b.items(), key=lambda x: x[0]):
-                kc = ka + kb
-                if ref is None or kc in ref:
-                    if kc not in finfo:
-                        finfo[kc] = Counter()
-                    finfo[kc][(ka, kb)] = quanta[kc]
-                    quanta[kc] += va * vb
-        return BondFusingInfo(quanta, finfo=finfo)
+        qs = [sorted(q.items(), key=lambda x: x[0]) for q in infos]
+        if pattern is None:
+            pattern = "+" * len(qs)
+        it = np.zeros(tuple(len(q) for q in qs), dtype=int)
+        nit = np.nditer(it, flags=['multi_index'])
+        for _ in nit:
+            x = nit.multi_index
+            ps = [iq[ix][0] if ip == '+' else -iq[ix][0]
+                  for iq, ix, ip in zip(qs, x, pattern)]
+            qls = tuple(iq[ix][0] for iq, ix in zip(qs, x))
+            shs = tuple(iq[ix][1] for iq, ix in zip(qs, x))
+            q = np.add.reduce(ps)
+            if ref is None or q in ref:
+                if q not in finfo:
+                    finfo[q] = {}
+                finfo[q][qls] = quanta[q], shs
+                quanta[q] += np.multiply.reduce(shs)
+        return BondFusingInfo(quanta, finfo=finfo, pattern=pattern)
+
+    @staticmethod
+    def kron_sum(items, ref=None, pattern=None):
+        """
+        Direct sum of combination of quantum numbers.
+
+        Args:
+            items : list((tuple(SZ), tuple(int)))
+                The items to be summed.
+                For every item, the q_labels and matrix shape are given.
+                Repeated items are okay (will not be considered).
+            ref : BondInfo (optional)
+                Reference fused BondInfo.
+        """
+        quanta = BondInfo()
+        finfo = {}
+        collected = {}
+        if pattern is None:
+            pattern = "+" * len(items[0][0])
+        for qs, shs in items:
+            q = np.add.reduce(
+                [iq if ip == "+" else -iq for iq, ip in zip(qs, pattern)])
+            if ref is None or q in ref:
+                if q not in collected:
+                    collected[q] = []
+                collected[q].append((qs, shs))
+        for q, v in collected.items():
+            v.sort(key=lambda x: x[0])
+            finfo[q] = {}
+            for qs, shs in v:
+                if qs not in finfo[q]:
+                    finfo[q][qs] = quanta[q], shs
+                    quanta[q] += np.multiply.reduce(shs)
+                else:
+                    assert finfo[q][qs][1] == shs
+        return BondFusingInfo(quanta, finfo=finfo, pattern=pattern)

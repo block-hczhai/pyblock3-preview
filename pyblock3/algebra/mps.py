@@ -352,35 +352,50 @@ class MPS(NDArrayOperatorsMixin):
             return np.multiply(a, b, out=out)
 
         assert isinstance(a, MPS) and isinstance(b, MPS)
-        assert a.n_sites == b.n_sites
 
-        n_sites = a.n_sites
-        tensors = [None] * n_sites
         opts = {**a.opts, **b.opts}
 
-        if all(ta.ndim == tb.ndim and ta.ndim % 2 == 1 for ta, tb in zip(a.tensors, b.tensors)):
-            return np.dot(a, b, out=out)
+        if b.n_sites == 1:
+            r = a.tensors[0].__class__.pdot(a.tensors, b.tensors[0])
+            ir = r.infos
+            rl = r.ones(bond_infos=(ir[1], ir[0], ir[1]), pattern="-++")
+            rr = r.ones(bond_infos=(ir[-2], ir[-1], ir[-1]), pattern="++-")
+            r = np.tensordot(rl, r, axes=2)
+            r = np.tensordot(r, rr, axes=2)
+            tensors = [r]
+        elif a.n_sites == 1:
+            raise NotImplementedError("not implemented yet")
+        else:
 
-        for i in range(n_sites):
-            tensors[i] = a.tensors[i].vdot(b.tensors[i])
+            assert a.n_sites == b.n_sites
 
-        # merge virtual dims
-        prod_bonds = []
-        infos = [t.infos for t in tensors]
-        x, y = infos[0][:2]
-        prod_bonds.append(BondFusingInfo.tensor_product(x, y))
-        for tl, tr in zip(infos[1:], infos[:-1]):
-            x, y = tl[0] | tr[-2], tl[1] | tr[-1]
+            n_sites = a.n_sites
+            tensors = [None] * n_sites
+
+            if all(ta.ndim == tb.ndim and ta.ndim % 2 == 1 for ta, tb in zip(a.tensors, b.tensors)):
+                return np.dot(a, b, out=out)
+
+            for i in range(n_sites):
+                tensors[i] = a.tensors[i].pdot(b.tensors[i])
+
+            # merge virtual dims
+            prod_bonds = []
+            infos = [t.infos for t in tensors]
+            x, y = infos[0][:2]
             prod_bonds.append(BondFusingInfo.tensor_product(x, y))
-        x, y = infos[-1][-2:]
-        prod_bonds.append(BondFusingInfo.tensor_product(x, y))
+            for tl, tr in zip(infos[1:], infos[:-1]):
+                x, y = tl[0] | tr[-2], tl[1] | tr[-1]
+                prod_bonds.append(BondFusingInfo.tensor_product(x, y))
+            x, y = infos[-1][-2:]
+            prod_bonds.append(BondFusingInfo.tensor_product(x, y))
 
-        for i in range(n_sites):
-            tensors[i] = tensors[i].fuse(-2, -1, info=prod_bonds[i + 1]
-                                         ).fuse(0, 1, info=prod_bonds[i])
+            for i in range(n_sites):
+                tensors[i] = tensors[i].fuse(-2, -1, info=prod_bonds[i + 1]
+                                            ).fuse(0, 1, info=prod_bonds[i])
+
+        r = MPS(tensors=tensors)
 
         # const terms
-        r = MPS(tensors=tensors)
         if a.const != 0 and b.const == 0:
             r += a.const * b
         elif a.const == 0 and b.const != 0:
@@ -391,7 +406,8 @@ class MPS(NDArrayOperatorsMixin):
 
         # compression
         if len(opts) != 0:
-            r, _ = MPS.compress(r, left=True, **opts)
+            if r.n_sites > 1:
+                r, _ = MPS.compress(r, left=True, **opts)
             r.opts = opts
 
         if out is not None:
