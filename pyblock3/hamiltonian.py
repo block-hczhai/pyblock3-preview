@@ -1,5 +1,5 @@
 
-from .algebra.symmetry import SZ, StateInfo
+from .algebra.symmetry import SZ, BondInfo
 from .algebra.core import FermionTensor
 from .symbolic.expr import OpNames, OpElement
 from functools import lru_cache
@@ -11,8 +11,8 @@ class QCHamiltonian:
     Quantum chemistry Hamiltonian.
     For construction of QCMPO
     Attributes:
-        basis : list(StateInfo)
-            StateInfo in each site
+        basis : list(BondInfo)
+            BondInfo in each site
         orb_sym : list(int)
             Point group symmetry for each site
         n_sites : int
@@ -36,11 +36,11 @@ class QCHamiltonian:
         self.target = SZ(fcidump.n_elec, fcidump.twos, fcidump.ipg)
         self.basis = [None] * self.n_sites
         for i, ipg in enumerate(self.orb_sym):
-            self.basis[i] = StateInfo()
-            self.basis[i].quanta[SZ(0, 0, 0)] = 1
-            self.basis[i].quanta[SZ(1, 1, ipg)] = 1
-            self.basis[i].quanta[SZ(1, -1, ipg)] = 1
-            self.basis[i].quanta[SZ(2, 0, 0)] = 1
+            self.basis[i] = BondInfo()
+            self.basis[i][SZ(0, 0, 0)] = 1
+            self.basis[i][SZ(1, 1, ipg)] = 1
+            self.basis[i][SZ(1, -1, ipg)] = 1
+            self.basis[i][SZ(2, 0, 0)] = 1
 
     def get_site_ops(self, m, op_names, cutoff=1E-20):
         """Get dict for matrix representation of site operators in mat
@@ -55,7 +55,7 @@ class QCHamiltonian:
 
         @lru_cache(maxsize=None)
         def i_operator():
-            repr = FermionTensor.zeros(SZ(0, 0, 0), basis, basis)
+            repr = FermionTensor.zeros(bond_infos=(basis, basis), dq=SZ(0, 0, 0))
             repr.even[SZ(0, 0, 0)][0, 0] = 1
             repr.even[SZ(1, -1, ipg)][0, 0] = 1
             repr.even[SZ(1, 1, ipg)][0, 0] = 1
@@ -64,7 +64,7 @@ class QCHamiltonian:
 
         @lru_cache(maxsize=None)
         def h_operator():
-            repr = FermionTensor.zeros(SZ(0, 0, 0), basis, basis)
+            repr = FermionTensor.zeros(bond_infos=(basis, basis), dq=SZ(0, 0, 0))
             repr.even[SZ(0, 0, 0)][0, 0] = 0
             repr.even[SZ(1, -1, ipg)][0, 0] = t(1, m, m)
             repr.even[SZ(1, 1, ipg)][0, 0] = t(0, m, m)
@@ -74,14 +74,14 @@ class QCHamiltonian:
 
         @lru_cache(maxsize=None)
         def c_operator(s):
-            repr = FermionTensor.zeros(SZ(1, sz[s], ipg), basis, basis)
+            repr = FermionTensor.zeros(bond_infos=(basis, basis), dq=SZ(1, sz[s], ipg))
             repr.odd[SZ(0, 0, 0)][0, 0] = 1
             repr.odd[SZ(1, -sz[s], ipg)][0, 0] = -1 if s else 1
             return repr
 
         @lru_cache(maxsize=None)
         def d_operator(s):
-            repr = FermionTensor.zeros(SZ(-1, -sz[s], ipg), basis, basis)
+            repr = FermionTensor.zeros(bond_infos=(basis, basis), dq=SZ(-1, -sz[s], ipg))
             repr.odd[SZ(1, sz[s], ipg)][0, 0] = 1
             repr.odd[SZ(2, 0, 0)][0, 0] = -1 if s else 1
             return repr

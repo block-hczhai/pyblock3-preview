@@ -29,9 +29,6 @@ from .io import MPSTools, MPOTools
 from ..algebra.mps import MPS as PYMPS
 from ..algebra.core import SparseTensor, SubTensor
 
-import sys
-sys.path[:0] = ['/Users/hczhai/Projects/block2/build']
-
 from block2 import SZ, Global
 from block2 import init_memory, release_memory, set_mkl_num_threads
 from block2 import VectorUInt8, VectorUInt16, VectorDouble, PointGroup
@@ -195,15 +192,20 @@ class HamilTools:
             with HamilTools._from_fcidump(fcidump, pg='c1') as hamil:
                 yield hamil
 
-    def get_mpo(self, mode="NC", mu=0.0, ancilla=False):
+    @contextlib.contextmanager
+    def get_mpo_block2(self, mode="NC", mu=0.0, ancilla=False):
         self.hamil.mu = mu
-        bmpo = MPOQC(self.hamil, QCTypes.NC if mode == "NC" else QCTypes.CN)
+        mpo = MPOQC(self.hamil, QCTypes.NC if mode == "NC" else QCTypes.CN)
         self.hamil.mu = 0.0
         if ancilla:
-            bmpo = AncillaMPO(bmpo)
-        mpo = MPOTools.from_block2(bmpo)
-        bmpo.deallocate()
-        return mpo
+            mpo = AncillaMPO(mpo)
+        yield mpo
+        mpo.deallocate()
+
+    def get_mpo(self, mode="NC", mu=0.0, ancilla=False):
+        with self.get_mpo_block2(mode=mode, mu=mu, ancilla=ancilla) as mpo:
+            xmpo = MPOTools.from_block2(mpo)
+        return xmpo
     
     @contextlib.contextmanager
     def get_thermal_limit_mps_block2(self, dot=2):

@@ -444,9 +444,9 @@ class SparseTensor(NDArrayOperatorsMixin):
             ps = [iq[ix] if ip == '+' else -iq[ix]
                   for iq, ix, ip in zip(q, x, pattern)]
             if len(ps) == 1 or np.add.reduce(ps[:-1]) == (-ps[-1] if dq is None else dq - ps[-1]):
-                qs = tuple(iq[ix] for iq, ix in zip(q, x))
-                sh = tuple(ish[ix] for ish, ix in zip(sh, x))
-                yield sh, qs
+                xqs = tuple(iq[ix] for iq, ix in zip(q, x))
+                xsh = tuple(ish[ix] for ish, ix in zip(sh, x))
+                yield xsh, xqs
 
     @staticmethod
     def zeros(bond_infos, pattern=None, dq=None, dtype=float):
@@ -1428,8 +1428,14 @@ class FermionTensor(NDArrayOperatorsMixin):
             even_a = np.tensordot(a.odd, b.odd, (idxa, idxb))
             even_b = np.tensordot(a.even, b.even, (idxa, idxb))
             r = FermionTensor(odd=odd_a + odd_b, even=even_a + even_b)
+            # symbolic horizontal
+            if idxa == [] and idxb == []:
+                assert a.ndim % 2 == 0
+                d = a.ndim // 2
+                idx = range(d, d + d) if d != 1 else d
+                blocks = odd_b.blocks + even_a.blocks
             # horizontal
-            if idxa == [a.ndim - 1] and idxb == [0]:
+            elif idxa == [a.ndim - 1] and idxb == [0]:
                 assert a.ndim % 2 == 0
                 d = (a.ndim - 2) // 2
                 idx = range(d + 1, d + d + 1) if d != 1 else d + 1
@@ -1484,6 +1490,33 @@ class FermionTensor(NDArrayOperatorsMixin):
 
     def tensordot(self, b, axes=2):
         return np.tensordot(self, b, axes)
+    
+    @staticmethod
+    def _shdot(a, b, out=None):
+        """Horizontally contract operator tensors (matrices) in symbolic matrix."""
+        if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
+            return np.multiply(a, b, out=out)
+
+        assert isinstance(a, FermionTensor) and isinstance(b, FermionTensor)
+        r = np.tensordot(a, b, axes=0)
+
+        if isinstance(a, FermionTensor) and isinstance(b, FermionTensor) and a.ndim % 2 == 0 and b.ndim % 2 == 0:
+            da, db = a.ndim // 2, b.ndim // 2
+            r = r.transpose((*range(da), *range(da + da, da + da + db),
+                             *range(da, da + da), *range(da + da + db, da + da + db + db)))
+
+        if out is not None:
+            out.odd = r.odd
+            out.even = r.even
+
+        return r
+    
+    def shdot(self, b, out=None):
+        """Horizontally contract operator tensors (matrices) in symbolic matrix."""
+        return self._shdot(self, b, out=out)
+    
+    def __xor__(self, other):
+        return self._shdot(self, other)
 
     @staticmethod
     def _hdot(a, b, out=None):

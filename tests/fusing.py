@@ -37,14 +37,14 @@ mpo[-1] = mpo[-1].fuse(4, 5, 6, info=info).fuse(1, 2, 3, info=info)
 print('MPS energy = ', mps @ (mpo @ mps))
 
 me = MovingEnvironment(mps, mpo, mps)
-mex = me[1:3]
+mex = me[0:2]
 # print(mex.ket[-2])
 # print(mex.ket[-1])
 mex.ket[:] = [reduce(pbalg.hdot, mex.ket[:])]
 print(mex.expectation)
-l, s, r = mex.ket[0].tensor_svd(idx=3, pattern='+++-++', full_matrices=False)
-ls = np.tensordot(l, s.diag(), axes=1)
-mex.ket[:] = [ls, r]
-# print(mex.ket[-2])
-# print(mex.ket[-1])
-print(mex.expectation)
+# l, s, r = mex.ket[0].tensor_svd(idx=3, pattern='+++-++', full_matrices=False)
+# ls = np.tensordot(l, s.diag(), axes=1)
+# mex.ket[:] = [ls, r]
+# # print(mex.ket[-2])
+# # print(mex.ket[-1])
+# print(mex.expectation)

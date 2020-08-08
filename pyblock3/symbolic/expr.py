@@ -65,13 +65,17 @@ class OpElement(OpExpr):
 
     def __repr__(self):
         if self.factor != 1:
-            return '(%10.5f %r)' % (self.factor, abs(self))
+            if self.factor == -1:
+                return '(-1 %r)' % abs(self)
+            else:
+                return '(%f %r)' % (self.factor, abs(self))
         if len(self.site_index) == 0:
             return repr(self.name)
         elif len(self.site_index) == 1:
             return repr(self.name) + repr(self.site_index[0])
         else:
-            return repr(self.name) + repr(self.site_index)
+            ssi = " ".join([str(x) for x in self.site_index])
+            return repr(self.name) + "[ " + ssi + " ]"
 
     def __mul__(self, other):
         if other == 0:
@@ -149,6 +153,8 @@ class OpElement(OpExpr):
             return ()
         elif expr.startswith('('):
             return tuple([int(x.strip()) for x in expr[1:-1].split(',')])
+        elif expr.startswith('['):
+            return tuple([int(x.strip()) for x in expr[1:-1].strip().split(' ')])
         else:
             return (int(expr), )
 

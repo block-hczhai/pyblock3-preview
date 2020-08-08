@@ -119,7 +119,7 @@ class BondFusingInfo(BondInfo):
         super().__init__(*args, **kwargs)
 
     @staticmethod
-    def tensor_product(*infos, ref=None, pattern=None):
+    def tensor_product(*infos, ref=None, pattern=None, trans=None):
         """
         Direct product of a collection of BondInfo.
 
@@ -131,7 +131,10 @@ class BondFusingInfo(BondInfo):
         """
         quanta = BondInfo()
         finfo = {}
-        qs = [sorted(q.items(), key=lambda x: x[0]) for q in infos]
+        if trans is None:
+            qs = [sorted(q.items(), key=lambda x: x[0]) for q in infos]
+        else:
+            qs = [sorted(q.items(), key=lambda x: trans(x[0])) for q in infos]
         if pattern is None:
             pattern = "+" * len(qs)
         it = np.zeros(tuple(len(q) for q in qs), dtype=int)

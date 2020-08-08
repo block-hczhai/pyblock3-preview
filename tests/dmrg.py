@@ -9,8 +9,8 @@ import numpy as np
 import time
 from functools import reduce
 
-with HamilTools.hubbard(n_sites=6, u=2, t=1) as hamil:
-    mps = hamil.get_init_mps(bond_dim=50)
+with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
+    mps = hamil.get_init_mps(bond_dim=100)
     mpo = hamil.get_mpo()
 
 print('MPS = ', mps.show_bond_dims())

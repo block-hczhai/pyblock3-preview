@@ -1,41 +1,19 @@
 
 from .expr import OpElement, OpNames
-from .symmetry import SZ
-from .symbolic import SymbolicMatrix, SymbolicRowVector, SymbolicColumnVector, SparseSymbolicTensor
+from ..algebra.symmetry import SZ
+from ..algebra.mps import MPS
+from .symbolic import SymbolicMatrix, SymbolicRowVector, SymbolicColumnVector, SymbolicSparseTensor
 import numpy as np
 
-
-class SymbolicMPO:
-    """
-    Symbolic Matrix Product Operator.
-    Attributes:
-        tensors : list(SparseSymbolicTensor)
-            A list of MPO tensors.
-        const_e : float
-            constant energy term.
-        n_sites : int
-            Number of sites.
-    """
-
-    def __init__(self, tensors, const_e=0):
-        self.tensors = tensors if tensors is not None else []
-        self.const_e = const_e
-
-    @property
-    def n_sites(self):
-        """Number of sites"""
-        return len(self.tensors)
-
-class QCSymbolicMPO(SymbolicMPO):
+class QCSymbolicMPO(MPS):
     """Quantum chemistry symbolic Matrix Product Operator"""
 
-    def __init__(self, hamil, symmetrized_p=True):
+    def __init__(self, hamil, symmetrized_p=True, opts=None):
         n_sites = hamil.n_sites
         vac = SZ(0, 0, 0)
         sz = [1, -1]
 
-        self.const_e = hamil.fcidump.const_e
-        self.tensors = [None] * n_sites
+        tensors = [None] * n_sites
 
         v = hamil.fcidump.v
 
@@ -139,18 +117,18 @@ class QCSymbolicMPO(SymbolicMPO):
                     mat[p, 0] = c_op[m, s]
                     p += n_sites - m
             if m == 0:
-                for sl in range(2):
-                    for sr in range(2):
-                        mat[0, p + s] = a_op[m, m, sl, sr]
-                p += 4
-                for sl in range(2):
-                    for sr in range(2):
-                        mat[0, p + s] = ad_op[m, m, sl, sr]
-                p += 4
-                for sl in range(2):
-                    for sr in range(2):
-                        mat[0, p + s] = b_op[m, m, sl, sr]
-                p += 4
+                for sr in range(2):
+                    for sl in range(2):
+                        mat[0, p] = a_op[m, m, sl, sr]
+                        p += 1
+                for sr in range(2):
+                    for sl in range(2):
+                        mat[0, p] = ad_op[m, m, sl, sr]
+                        p += 1
+                for sr in range(2):
+                    for sl in range(2):
+                        mat[0, p] = b_op[m, m, sl, sr]
+                        p += 1
                 assert p == mat.n_cols
             else:
                 if m != n_sites - 1:
@@ -171,20 +149,20 @@ class QCSymbolicMPO(SymbolicMPO):
                     for s in range(2):
                         mat[p, 0] = c_op[m, s]
                         p += n_sites - m
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for j in range(m):
                             for k in range(m):
                                 mat[p + k, 0] = 0.5 * p_op[j, k, sl, sr]
                             p += m
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for j in range(m):
                             for k in range(m):
                                 mat[p + k, 0] = 0.5 * pd_op[j, k, sl, sr]
                             p += m
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for j in range(m):
                             for k in range(m):
                                 mat[p + k, 0] = q_op[j, k, sl, sr]
@@ -307,8 +285,8 @@ class QCSymbolicMPO(SymbolicMPO):
                                         i - (m + 1)] = f * d_op[m, sp]
                     p += n_sites - (m + 1)
                 # A
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for i in range(m):
                             for j in range(m):
                                 mat[pa[sl, sr] + i * m + j,
@@ -319,8 +297,8 @@ class QCSymbolicMPO(SymbolicMPO):
                         mat[pi, p + m * (m + 1) + m] = a_op[m, m, sl, sr]
                         p += (m + 1) * (m + 1)
                 # AD
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for i in range(m):
                             for j in range(m):
                                 mat[pad[sl, sr] + i * m + j,
@@ -331,8 +309,8 @@ class QCSymbolicMPO(SymbolicMPO):
                         mat[pi, p + m * (m + 1) + m] = ad_op[m, m, sl, sr]
                         p += (m + 1) * (m + 1)
                 # B
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for i in range(m):
                             for j in range(m):
                                 mat[pb[sl, sr] + i * m + j,
@@ -368,20 +346,20 @@ class QCSymbolicMPO(SymbolicMPO):
                     for j in range(m, n_sites):
                         lop[p + j - m] = c_op[j, s]
                     p += n_sites - m
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for j in range(m):
                             for k in range(m):
                                 lop[p + k] = 0.5 * p_op[j, k, sl, sr]
                             p += m
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for j in range(m):
                             for k in range(m):
                                 lop[p + k] = 0.5 * pd_op[j, k, sl, sr]
                             p += m
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for j in range(m):
                             for k in range(m):
                                 lop[p + k] = q_op[j, k, sl, sr]
@@ -410,20 +388,20 @@ class QCSymbolicMPO(SymbolicMPO):
                     for j in range(m + 1, n_sites):
                         rop[p + j - (m + 1)] = mr_op[j, s]
                     p += n_sites - (m + 1)
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for j in range(m + 1):
                             for k in range(m + 1):
                                 rop[p + k] = a_op[j, k, sl, sr]
                             p += m + 1
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for j in range(m + 1):
                             for k in range(m + 1):
                                 rop[p + k] = ad_op[j, k, sl, sr]
                             p += m + 1
-                for sl in range(2):
-                    for sr in range(2):
+                for sr in range(2):
+                    for sl in range(2):
                         for j in range(m + 1):
                             for k in range(m + 1):
                                 rop[p + k] = b_op[j, k, sl, sr]
@@ -431,4 +409,6 @@ class QCSymbolicMPO(SymbolicMPO):
                 assert p == rshape
 
             ops = hamil.get_site_ops(m, mat.get_symbols())
-            self.tensors[m] = SparseSymbolicTensor(mat, ops, lop, rop).deflate()
+            tensors[m] = SymbolicSparseTensor(mat, ops, lop, rop).deflate()
+
+        super().__init__(tensors=tensors, const=hamil.fcidump.const_e, opts=opts)

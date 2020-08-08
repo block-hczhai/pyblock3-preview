@@ -476,6 +476,30 @@ class MPS(NDArrayOperatorsMixin):
         return MPS(tensors=tensors, const=self.const, opts=self.opts)
 
     @staticmethod
+    def _simplify(a):
+        """Reduce virtual bond dimensions for symbolic sparse tensors.
+        Only works when tensor is SparseSymbolicTensor."""
+        return a.simplify()
+
+    def simplify(self):
+        """Reduce virtual bond dimensions for symbolic sparse tensors.
+        Only works when tensor is SparseSymbolicTensor."""
+
+        tensors = self.tensors[:]
+
+        for i in range(self.n_sites - 1):
+            r = tensors[i].get_remap(left=False)
+            tensors[i] = tensors[i].simplify(r, left=False)
+            tensors[i + 1] = tensors[i + 1].simplify(r, left=True)
+
+        for i in range(self.n_sites - 1, 0, -1):
+            r = tensors[i].get_remap(left=True)
+            tensors[i] = tensors[i].simplify(r, left=True)
+            tensors[i - 1] = tensors[i - 1].simplify(r, left=False)
+
+        return MPS(tensors=tensors, const=self.const, opts=self.opts)
+
+    @staticmethod
     def _amplitude(a, det):
         return a.amplitude(det=det)
 
