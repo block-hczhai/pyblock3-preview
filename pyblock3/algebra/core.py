@@ -458,7 +458,7 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     @staticmethod
     def ones(bond_infos, pattern=None, dq=None, dtype=float):
-        """Create tensor from tuple of BondInfo with zero elements."""
+        """Create tensor from tuple of BondInfo with ones."""
         blocks = []
         for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
             blocks.append(SubTensor.ones(shape=sh, q_labels=qs, dtype=dtype))
@@ -1305,7 +1305,7 @@ class FermionTensor(NDArrayOperatorsMixin):
 
     @staticmethod
     def ones(bond_infos, pattern=None, dq=None, dtype=float):
-        """Create operator tensor with random elements."""
+        """Create operator tensor with ones."""
         spt = SparseTensor.ones(
             bond_infos, pattern=pattern, dq=dq, dtype=dtype)
         if dq is not None and dq.is_fermion:

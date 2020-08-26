@@ -273,6 +273,9 @@ class MPS(NDArrayOperatorsMixin):
         assert a.n_sites == b.n_sites
         n_sites = a.n_sites
 
+        if n_sites == 1:
+            return MPS(tensors=[a[0] + b[0]], const=a.const + b.const, opts=a.opts)
+
         ainfos = [t.infos for t in a.tensors]
         binfos = [t.infos for t in b.tensors]
         sum_bonds = []

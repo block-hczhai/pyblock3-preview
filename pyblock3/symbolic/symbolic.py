@@ -1,8 +1,8 @@
 
 import numpy as np
-from .expr import OpSum, OpString, OpElement
+from .expr import OpSum, OpString, OpElement, OpNames
 from collections import Counter
-from ..algebra.core import FermionTensor
+from ..algebra.core import FermionTensor, SparseTensor
 from ..algebra.symmetry import BondFusingInfo
 
 
@@ -32,6 +32,31 @@ class Symbolic:
         pass
 
 
+class SymbolicIdentity(Symbolic):
+    def __init__(self, n_rows, op):
+        data = np.zeros((n_rows, n_rows), dtype=object)
+        for i in range(n_rows):
+            data[i, i] = op
+        super().__init__(n_rows, n_rows, data)
+
+    def __matmul__(self, other):
+        assert isinstance(other, SymbolicRowVector)
+        r = SymbolicRowVector(other.n_cols)
+        for idx, d in enumerate(other.data):
+            r.data[idx] = self.data[0, 0] * d
+        return r
+
+    def __rmatmul__(self, other):
+        assert isinstance(other, SymbolicColumnVector)
+        r = SymbolicColumnVector(other.n_rows)
+        for idx, d in enumerate(other.data):
+            r.data[idx] = d * self.data[0, 0]
+        return r
+
+    def copy(self):
+        return SymbolicIdentity(self.n_rows, self.data[0, 0])
+
+
 class SymbolicRowVector(Symbolic):
     def __init__(self, n_cols, data=None):
         if data is None:
@@ -44,6 +69,15 @@ class SymbolicRowVector(Symbolic):
         else:
             assert idx[0] == 0
             return self.data[idx[1]]
+
+    def __matmul__(self, other):
+        if isinstance(other, SymbolicColumnVector):
+            r = SymbolicRowVector(1)
+            for idx, d in enumerate(self.data):
+                r.data[0] += d * other.data[idx]
+            return r
+        else:
+            return NotImplemented
 
     def __setitem__(self, idx, v):
         if isinstance(idx, int):
@@ -166,14 +200,25 @@ class SymbolicBondFusingInfo:
         return SymbolicBondFusingInfo(names, qs, ns)
 
 
+def implements(np_func):
+    global _numpy_func_impls
+    return lambda f: (_numpy_func_impls.update({np_func: f}), f)[1]
+
+
+_sym_sparse_numpy_func_impls = {}
+_numpy_func_impls = _sym_sparse_numpy_func_impls
+
+
 class SymbolicSparseTensor:
     """MPO tensor represented as matrix of symbols"""
 
-    def __init__(self, mat, ops, lop, rop):
+    def __init__(self, mat, ops, lop, rop, idx_perm=None):
         self.mat = mat
         self.ops = ops
         self.lop = lop
         self.rop = rop
+        # outer idx -> inner idx
+        self.idx_perm = idx_perm
 
     @property
     def ndim(self):
@@ -182,6 +227,13 @@ class SymbolicSparseTensor:
             if not isinstance(v, int):
                 return v.ndim + 2
         return 0
+
+    def __array_function__(self, func, types, args, kwargs):
+        if func not in _sym_sparse_numpy_func_impls:
+            return NotImplemented
+        if not all(issubclass(t, self.__class__) or issubclass(t, SparseTensor) for t in types):
+            return NotImplemented
+        return _sym_sparse_numpy_func_impls[func](*args, **kwargs)
 
     def deflate(self):
         for i, mop in enumerate(self.mat):
@@ -193,12 +245,26 @@ class SymbolicSparseTensor:
                 del self.ops[op]
         self.mat.deflate()
         return self
-    
+
+    @staticmethod
+    def ones(bond_infos, pattern=None, dtype=float):
+        """Create operator tensor with ones."""
+        assert bond_infos[0].n_bonds == 1
+        assert bond_infos[-1].n_bonds == 1
+        assert bond_infos[0].q_labels[0] == bond_infos[-1].q_labels[0]
+        spt = FermionTensor.ones(
+            bond_infos[1:-1], pattern=pattern[1:-1], dtype=dtype)
+        iop = OpElement(OpNames.I, (), q_label=bond_infos[0].q_labels[0])
+        mat = SymbolicIdentity(1, iop)
+        ops = {iop: spt}
+        return SymbolicSparseTensor(mat, ops, mat, mat)
+
     def copy(self):
-        return SymbolicSparseTensor(self.mat.copy(), self.ops.copy(), self.lop.copy(), self.rop.copy())
+        return SymbolicSparseTensor(self.mat.copy(), self.ops.copy(), self.lop.copy(), self.rop.copy(), self.idx_perm)
 
     def simplify(self, idx_mp, left=True):
         """Reduce virtual bond dimensions for symbolic sparse tensors."""
+        assert self.idx_perm is None
         ops = self.lop if left else self.rop
         new_ops = ops.__class__(len(idx_mp))
         new_ops.data[:] = ops.data[idx_mp]
@@ -229,6 +295,7 @@ class SymbolicSparseTensor:
         return SymbolicSparseTensor(new_mat, self.ops, lop, rop)
 
     def get_remap(self, left=True):
+        assert self.idx_perm is None
         r = []
         if isinstance(self.mat, SymbolicRowVector) or isinstance(self.mat, SymbolicColumnVector):
             for i, mop in enumerate(self.mat):
@@ -247,7 +314,7 @@ class SymbolicSparseTensor:
         minfos = ()
         for spmat in self.ops.values():
             if not isinstance(spmat, int):
-                if minfos is ():
+                if minfos == ():
                     minfos = spmat.infos
                 else:
                     assert len(minfos) == len(spmat.infos)
@@ -264,7 +331,11 @@ class SymbolicSparseTensor:
     def infos(self):
         linfo, rinfo = self.virtual_infos
         minfos = self.physical_infos
-        return (linfo, *minfos, rinfo)
+        r = (linfo, *minfos, rinfo)
+        if self.idx_perm is None:
+            return r
+        else:
+            return tuple(r[i] for i in self.idx_perm)
 
     def to_sparse(self, infos=None):
 
@@ -320,20 +391,222 @@ class SymbolicSparseTensor:
                 qr, ir = rinfo.q_labels[k]
                 nl, nr = linfo.n_states[ql], rinfo.n_states[qr]
                 add_block(spmat, expr.factor, ql, il, nl, qr, ir, nr)
-        return FermionTensor(odd=list(map_blocks[0].values()), even=list(map_blocks[1].values()))
+        r = FermionTensor(
+            odd=list(map_blocks[0].values()), even=list(map_blocks[1].values()))
+        if self.idx_perm is None:
+            return r
+        else:
+            return r.transpose(tuple(self.idx_perm))
 
-    def __matmul__(self, other):
-        return self.__class__.hdot(self, other)
+    @staticmethod
+    def _pdot(a, b, out=None):
+        """Vertical contraction (all middle/physical dims)."""
+
+        if isinstance(a, list):
+            p, ps = 1, []
+            for i in range(len(a)):
+                ps.append(p)
+                p += a[i].ndim // 2 - 1
+            r = b
+            d2 = r.ndim - 2
+            # [MPO] x MPS
+            if isinstance(b, SparseTensor):
+                for i in range(len(a))[::-1]:
+                    d = a[i].ndim // 2 - 1
+                    aidx = list(range(d, d + d))
+                    bidx = list(range(ps[i], ps[i] + d))
+                    tr = (*range(d, ps[i] + d), *range(0, d), *range(ps[i] + d, d2 + 2))
+                    if isinstance(a[i].mat, SymbolicColumnVector):
+                        ar = [0] * len(a[i].mat)
+                        for ia in range(len(a[i].mat)):
+                            if a[i].mat[ia] == 0:
+                                continue
+                            mop = a[i].mat[ia]
+                            op = abs(mop)
+                            ar[ia] = np.tensordot(a[i].ops[op] * mop.factor, r, axes=(aidx, bidx)).transpose(axes=tr)
+                    elif isinstance(a[i].mat, SymbolicRowVector):
+                        ar = 0
+                        assert len(a[i].mat) == len(r)
+                        for ia in range(len(a[i].mat)):
+                            if (isinstance(r[ia], int) and r[ia] == 0) or a[i].mat[ia] == 0:
+                                continue
+                            mop = a[i].mat[ia]
+                            op = abs(mop)
+                            ar = np.tensordot(a[i].ops[op] * mop.factor, r[ia], axes=(aidx, bidx)).transpose(axes=tr) + ar
+                    elif isinstance(a[i].mat, SymbolicMatrix):
+                        ar = [0] * a[i].mat.n_rows
+                        for (j, k), mop in zip(a[i].mat.indices, a[i].mat.data):
+                            if mop == 0 or (isinstance(r[k], int) and r[k] == 0):
+                                continue
+                            assert isinstance(mop, OpElement)
+                            op = abs(mop)
+                            ar[j] = np.tensordot(a[i].ops[op] * mop.factor, r[k], axes=(aidx, bidx)).transpose(axes=tr) + ar[j]
+                    r = ar
+                if isinstance(r, list):
+                    assert len(r) == 1
+                    r = r[0]
+                ir = r.infos
+                rl = r.ones(bond_infos=(ir[0], ir[0], ir[0]), pattern="--+")
+                rr = r.ones(bond_infos=(ir[-1], ir[0], ir[-1]), pattern="+--")
+                r = np.tensordot(rl, r, axes=1)
+                r = np.tensordot(r, rr, axes=1)
+            else:
+                raise RuntimeError(
+                    "Cannot matmul tensors with types %r x %r" % (a.__class__, b.__class__))
+        elif isinstance(b, list):
+            raise NotImplementedError("not implemented.")
+        else:
+            assert isinstance(a, SymbolicSparseTensor) or isinstance(b, SymbolicSparseTensor)
+            raise NotImplementedError("not implemented.")
+
+        if out is not None:
+            assert isinstance(r, SparseTensor)
+            out.blocks = r.blocks
+
+        return r
+
+    def pdot(self, b, out=None):
+        return SymbolicSparseTensor._pdot(self, b, out=out)
+
+    @staticmethod
+    @implements(np.tensordot)
+    def _tensordot(a, b, axes):
+        """
+        Contract with a SparseTensor to form a new SymbolicSparseTensor.
+        Only physical dims are allowed to be contracted.
+
+        Args:
+            a : SymbolicSparseTensor/SparseTensor
+                SymbolicSparseTensor/SparseTensor a, as left operand.
+            b : SymbolicSparseTensor/SparseTensor
+                SymbolicSparseTensor/SparseTensor b, as right operand.
+            axes : (2,) array_like
+                A list of axes to be summed over, first sequence applying to a, second to b.
+
+        Returns:
+            c : SymbolicSparseTensor
+                The contracted SymbolicSparseTensor.
+        """
+        idxa, idxb = axes
+        idxa = [x if x >= 0 else a.ndim + x for x in idxa]
+        idxb = [x if x >= 0 else b.ndim + x for x in idxb]
+        assert len(idxa) == len(idxb)
+
+        if isinstance(a, SymbolicSparseTensor) and isinstance(b, SparseTensor):
+            out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
+            if a.idx_perm is not None:
+                pidxa = [a.idx_perm[x] for x in idxa]
+                # expt output -> outer
+                out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
+                pout_idx_a = list(set(range(0, a.ndim)) -
+                                  set(pidxa))  # real output -> real
+                # real output -> outer
+                ppout_idx_a = [a.idx_perm.index(ip) for ip in pout_idx_a]
+                # expt output -> real output
+                pppout_idx_a = [ppout_idx_a.index(ip) for ip in out_idx_a]
+                # last vir adj
+                p4out_idx_a = [ip if ip != len(
+                    ppout_idx_a) - 1 else ip + len(out_idx_b) for ip in pppout_idx_a]
+                new_perm = p4out_idx_a + \
+                    [x + len(ppout_idx_a) - 1 for x in range(len(out_idx_b))]
+                idxa = pidxa
+            else:
+                out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
+                new_perm = list(range(0, len(out_idx_a) - 1)) + [len(out_idx_a) + len(
+                    out_idx_b) - 1] + [x + len(out_idx_a) - 1 for x in range(len(out_idx_b))]
+            assert all([x != 0 and x != a.ndim - 1 for x in idxa])
+            idxa = [x - 1 for x in idxa]
+            new_ops = {op: np.tensordot(expr, b, axes=(idxa, idxb))
+                       for op, expr in a.ops.items()}
+            if new_perm == list(range(0, len(new_perm))):
+                new_perm = None
+            return SymbolicSparseTensor(a.mat, new_ops, a.lop, a.rop, idx_perm=new_perm)
+        elif isinstance(b, SymbolicSparseTensor) and isinstance(a, SparseTensor):
+            out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
+            if b.idx_perm is not None:
+                pidxb = [b.idx_perm[x] for x in idxb]
+                # expt output -> outer
+                out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
+                pout_idx_b = list(set(range(0, b.ndim)) -
+                                  set(pidxb))  # real output -> real
+                # real output -> outer
+                ppout_idx_b = [b.idx_perm.index(ip) for ip in pout_idx_b]
+                # expt output -> real output
+                pppout_idx_b = [ppout_idx_b.index(ip) for ip in out_idx_b]
+                # first vir adj
+                p4out_idx_b = [ip if ip == 0 else ip +
+                               len(out_idx_a) for ip in pppout_idx_b]
+                new_perm = list(range(1, len(out_idx_a) + 1)) + p4out_idx_b
+                idxb = pidxb
+            else:
+                out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
+                new_perm = list(range(1, len(out_idx_a) + 1)) + [0] + list(
+                    range(len(out_idx_a) + 1, len(out_idx_a) + len(out_idx_b)))
+            assert all([x != 0 and x != b.ndim - 1 for x in idxb])
+            idxb = [x - 1 for x in idxb]
+            new_ops = {op: np.tensordot(a, expr, axes=(idxa, idxb))
+                       for op, expr in b.ops.items()}
+            if new_perm == list(range(0, len(new_perm))):
+                new_perm = None
+            return SymbolicSparseTensor(b.mat, new_ops, b.lop, b.rop, idx_perm=new_perm)
+        else:
+            raise TypeError('Unsupported tensordot for %r and %r' %
+                            (a.__class__, b.__class__))
+
+    def tensordot(self, b, axes):
+        return np.tensordot(self, b, axes)
+
+    @staticmethod
+    @implements(np.transpose)
+    def _transpose(a, axes=None):
+        """
+        Reverse or permute the axes of an array; returns the modified array.
+
+        Args:
+            a : array_like
+                Input array.
+            axes : tuple or list of ints, optional
+                If specified, it must be a tuple or list which contains a permutation of [0,1,..,N-1]
+                where N is the number of axes of a.
+                The i’th axis of the returned array will correspond to the axis numbered axes[i] of the input.
+                If not specified, defaults to ``range(a.ndim)[::-1]``, which reverses the order of the axes.
+
+        Returns
+            p : FermionTensor
+                a with its axes permuted. A view is returned whenever possible.
+        """
+        if axes is None:
+            axes = range(a.ndim)[::-1]  # new outer -> old outer
+        if a.idx_perm is not None:
+            new_perm = [a.idx_perm[x] for x in axes]
+        else:
+            new_perm = axes
+        if new_perm[0] == 0 and new_perm[-1] == a.ndim - 1:
+            paxes = [x - 1 for x in new_perm[1:-1]]
+            new_ops = {op: expr.transpose(axes=paxes)
+                       for op, expr in a.ops.items()}
+            return SymbolicSparseTensor(a.mat, new_ops, a.lop, a.rop, idx_perm=None)
+        else:
+            return SymbolicSparseTensor(a.mat, a.ops, a.lop, a.rop, idx_perm=new_perm)
+
+    def transpose(self, axes=None):
+        return np.transpose(self, axes=axes)
 
     def hdot(self, other):
+        assert self.idx_perm is None and other.idx_perm is None
         exprs = self.mat @ other.mat
-        if isinstance(other.mat, SymbolicColumnVector):
+        if isinstance(self.mat, SymbolicIdentity):
+            mat = other.rop.copy()
+        elif isinstance(other.mat, SymbolicIdentity):
+            mat = self.lop.copy()
+        elif isinstance(other.mat, SymbolicColumnVector):
             mat = self.lop.copy()
         elif isinstance(self.mat, SymbolicRowVector):
             mat = other.rop.copy()
         else:
             raise RuntimeError("Cannot perform symbolic tensor multiplication %r @ %r" %
                                (self.mat.__class__, other.mat.__class__))
+
         assert len(mat) == len(exprs)
 
         ops = {}
@@ -358,7 +631,13 @@ class SymbolicSparseTensor:
             else:
                 raise RuntimeError(
                     "Unknown expression type: %r" % expr.__class__)
-        return SymbolicSparseTensor(mat, ops, self.lop, other.rop).deflate()
+
+        if isinstance(self.mat, SymbolicIdentity):
+            return SymbolicSparseTensor(mat, ops, other.lop, other.rop).deflate()
+        elif isinstance(other.mat, SymbolicIdentity):
+            return SymbolicSparseTensor(mat, ops, self.lop, self.rop).deflate()
+        else:
+            return SymbolicSparseTensor(mat, ops, self.lop, other.rop).deflate()
 
     @staticmethod
     def _unfuse(a, i, info):
@@ -374,6 +653,7 @@ class SymbolicSparseTensor:
             info : BondFusingInfo
                 Indicating how quantum numbers are collected.
         """
+        assert self.idx_perm is None
         i = i if i >= 0 else self.ndim + i
         assert i != 0 and i != self.ndim - 1
         ops = {}
@@ -401,6 +681,7 @@ class SymbolicSparseTensor:
                 A str of '+'/'-'. Only required when info is not specified.
                 Indicating how quantum numbers are linearly combined.
         """
+        assert self.idx_perm is None
         idxs = [i if i >= 0 else self.ndim + i for i in idxs]
         for idx in idxs:
             assert idx != 0 and idx != self.ndim - 1
