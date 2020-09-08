@@ -7,12 +7,16 @@ from collections import Counter
 from functools import reduce
 
 from .symmetry import BondInfo, BondFusingInfo
-from .core import SparseTensor, SubTensor, SliceableTensor
+from .core import SparseTensor, SubTensor, SliceableTensor, FermionTensor
+from .flat import FlatFermionTensor, FlatSparseTensor
+from ..symbolic.symbolic import SymbolicSparseTensor
 
 
 def implements(np_func):
     global _numpy_func_impls
-    return lambda f: (_numpy_func_impls.update({np_func: f}), f)[1]
+    return lambda f: (_numpy_func_impls.update({np_func: f})
+                      if np_func not in _numpy_func_impls else None,
+                      _numpy_func_impls[np_func])[1]
 
 
 class MPSInfo:
@@ -476,6 +480,21 @@ class MPS(NDArrayOperatorsMixin):
 
     def to_sparse(self):
         tensors = [ts.to_sparse() for ts in self.tensors]
+        return MPS(tensors=tensors, const=self.const, opts=self.opts)
+
+    @staticmethod
+    def _to_flat(a):
+        return a.to_flat()
+
+    def to_flat(self):
+        tensors = [None] * len(self.tensors)
+        for it, ts in enumerate(self.tensors):
+            if isinstance(ts, SparseTensor):
+                tensors[it] = FlatSparseTensor.from_sparse(ts)
+            elif isinstance(ts, FermionTensor):
+                tensors[it] = FlatFermionTensor.from_fermion(ts)
+            else:
+                tensors[it] = ts.to_flat()
         return MPS(tensors=tensors, const=self.const, opts=self.opts)
 
     @staticmethod

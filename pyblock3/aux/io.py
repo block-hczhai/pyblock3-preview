@@ -128,10 +128,15 @@ class MPSTools:
         """Translate block2 MPS to pyblock2 MPS."""
         tensors = [None] * bmps.n_sites
         canonical_form = [c for c in bmps.canonical_form]
-        if canonical_form.count('C') == 1:
-            ix = canonical_form.index('C')
-            assert ix == 0 or ix == bmps.n_sites - 1
-            canonical_form[ix] = 'L' if ix == 0 else 'R'
+        if canonical_form.count('C') + canonical_form.count('K') + canonical_form.count('S') == 1:
+            if canonical_form.count('K') != 0:
+                canonical_form[canonical_form.index('K')] = 'L'
+            elif canonical_form.count('S') != 0:
+                canonical_form[canonical_form.index('S')] = 'R'
+            else:
+                ix = canonical_form.index('C')
+                assert ix == 0 or ix == bmps.n_sites - 1
+                canonical_form[ix] = 'L' if ix == 0 else 'R'
             bdot = 1
         else:
             assert canonical_form.count('C') == 2
@@ -144,8 +149,8 @@ class MPSTools:
                 bmps.info.load_left_dims(i)
                 bmps.info.load_right_dims(i + 2)
                 l = bmps.info.left_dims[i]
-                ma = bmps.info.get_basis(i)
-                mb = bmps.info.get_basis(i + 1)
+                ma = bmps.info.basis[i]
+                mb = bmps.info.basis[i + 1]
                 r = bmps.info.right_dims[i + 2]
                 lm = StateInfo.tensor_product_ref(
                     l, ma, bmps.info.left_dims_fci[i + 1])
@@ -168,7 +173,7 @@ class MPSTools:
             elif canonical_form[i] == 'L':
                 bmps.info.load_left_dims(i)
                 l = bmps.info.left_dims[i]
-                m = bmps.info.get_basis(i)
+                m = bmps.info.basis[i]
                 lm = StateInfo.tensor_product_ref(
                     l, m, bmps.info.left_dims_fci[i + 1])
                 clm = StateInfo.get_connection_info(l, m, lm)
@@ -181,7 +186,7 @@ class MPSTools:
                 l.deallocate()
             else:
                 bmps.info.load_right_dims(i + 1)
-                m = bmps.info.get_basis(i)
+                m = bmps.info.basis[i]
                 r = bmps.info.right_dims[i + 1]
                 mr = StateInfo.tensor_product_ref(
                     m, r, bmps.info.right_dims_fci[i])

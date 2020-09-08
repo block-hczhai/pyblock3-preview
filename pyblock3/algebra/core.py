@@ -7,6 +7,26 @@ from itertools import accumulate, groupby
 
 from .symmetry import BondInfo, BondFusingInfo
 
+ENABLE_FAST_IMPLS = False
+ENABLE_FAST_SZ = False
+
+if ENABLE_FAST_IMPLS:
+    import block3.sub_tensor
+    _sub_tensor_fast_impls = {
+        np.tensordot: block3.sub_tensor.tensordot
+    }
+
+    import block3.sparse_tensor
+    _sparse_tensor_fast_impls = {
+        np.tensordot: block3.sparse_tensor.tensordot,
+        np.add: block3.sparse_tensor.add
+    }
+
+if ENABLE_FAST_SZ:
+    import block3
+    from . import symmetry
+    symmetry.SZ = block3.SZ
+
 
 def method_alias(name):
     def ff(f):
@@ -24,10 +44,12 @@ def method_alias(name):
 
 def implements(np_func):
     global _numpy_func_impls
-    return lambda f: (_numpy_func_impls.update({np_func: f}), f)[1]
+    return lambda f: (_numpy_func_impls.update({np_func: f})
+                      if np_func not in _numpy_func_impls else None,
+                      _numpy_func_impls[np_func])[1]
 
 
-_sub_tensor_numpy_func_impls = {}
+_sub_tensor_numpy_func_impls = _sub_tensor_fast_impls if ENABLE_FAST_IMPLS else {}
 _numpy_func_impls = _sub_tensor_numpy_func_impls
 
 
@@ -389,7 +411,7 @@ class SliceableTensor(np.ndarray):
         return r
 
 
-_sparse_tensor_numpy_func_impls = {}
+_sparse_tensor_numpy_func_impls = _sparse_tensor_fast_impls if ENABLE_FAST_IMPLS else {}
 _numpy_func_impls = _sparse_tensor_numpy_func_impls
 
 
@@ -523,23 +545,6 @@ class SparseTensor(NDArrayOperatorsMixin):
                     blocks = [block * b for block in a.blocks]
                 else:
                     blocks = self._tensordot(a, b, axes=([-1], [0])).blocks
-            elif ufunc.__name__ in ["add", "subtract"]:
-                a, b = inputs
-                if isinstance(a, numbers.Number):
-                    blocks = [getattr(ufunc, method)(a, block)
-                              for block in b.blocks]
-                elif isinstance(b, numbers.Number):
-                    blocks = [getattr(ufunc, method)(block, b)
-                              for block in a.blocks]
-                else:
-                    blocks_map = {block.q_labels: block for block in a.blocks}
-                    for block in b.blocks:
-                        if block.q_labels in blocks_map:
-                            mb = blocks_map[block.q_labels]
-                            getattr(ufunc, method)(mb, block, out=mb)
-                        else:
-                            blocks_map[block.q_labels] = block
-                    blocks = list(blocks_map.values())
             elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
@@ -701,25 +706,32 @@ class SparseTensor(NDArrayOperatorsMixin):
             idxa, idxb = axes
         idxa = [x if x >= 0 else a.ndim + x for x in idxa]
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
+        out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
+        out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
         assert len(idxa) == len(idxb)
 
         map_idx_b = {}
         for block in b.blocks:
-            subg = tuple(block.q_labels[id] for id in idxb)
-            if subg not in map_idx_b:
-                map_idx_b[subg] = []
-            map_idx_b[subg].append(block)
+            ctrq = tuple(block.q_labels[id] for id in idxb)
+            outq = tuple(block.q_labels[id] for id in out_idx_b)
+            if ctrq not in map_idx_b:
+                map_idx_b[ctrq] = []
+            map_idx_b[ctrq].append((block, outq))
 
         blocks_map = {}
         for block_a in a.blocks:
-            subg = tuple(block_a.q_labels[id] for id in idxa)
-            if subg in map_idx_b:
-                for block_b in map_idx_b[subg]:
-                    mat = np.tensordot(block_a, block_b, axes=(idxa, idxb))
-                    if mat.q_labels not in blocks_map:
-                        blocks_map[mat.q_labels] = mat
+            ctrq = tuple(block_a.q_labels[id] for id in idxa)
+            if ctrq in map_idx_b:
+                outqa = tuple(block_a.q_labels[id] for id in out_idx_a)
+                for block_b, outqb in map_idx_b[ctrq]:
+                    outq = outqa + outqb
+                    mat = np.tensordot(np.asarray(block_a), np.asarray(
+                        block_b), axes=(idxa, idxb)).view(block_a.__class__)
+                    if outq not in blocks_map:
+                        mat.q_labels = outq
+                        blocks_map[outq] = mat
                     else:
-                        blocks_map[mat.q_labels] += mat
+                        blocks_map[outq] += mat
 
         return SparseTensor(blocks=list(blocks_map.values()))
 
@@ -774,6 +786,48 @@ class SparseTensor(NDArrayOperatorsMixin):
             return b._pdot(self, b, out=out)
         else:
             return self._pdot(self, b, out=out)
+
+    @staticmethod
+    @implements(np.add)
+    def _add(a, b):
+        if isinstance(a, numbers.Number):
+            blocks = [np.add(a, block) for block in b.blocks]
+        elif isinstance(b, numbers.Number):
+            blocks = [np.add(block, b) for block in a.blocks]
+        else:
+            blocks_map = {block.q_labels: block for block in a.blocks}
+            for block in b.blocks:
+                if block.q_labels in blocks_map:
+                    mb = blocks_map[block.q_labels]
+                    np.add(mb, block, out=mb)
+                else:
+                    blocks_map[block.q_labels] = block
+            blocks = list(blocks_map.values())
+        return SparseTensor(blocks=blocks)
+
+    def add(self, b):
+        return self._add(self, b)
+
+    @staticmethod
+    @implements(np.subtract)
+    def _subtract(a, b):
+        if isinstance(a, numbers.Number):
+            blocks = [np.subtract(a, block) for block in b.blocks]
+        elif isinstance(b, numbers.Number):
+            blocks = [np.subtract(block, b) for block in a.blocks]
+        else:
+            blocks_map = {block.q_labels: block for block in a.blocks}
+            for block in b.blocks:
+                if block.q_labels in blocks_map:
+                    mb = blocks_map[block.q_labels]
+                    np.subtract(mb, block, out=mb)
+                else:
+                    blocks_map[block.q_labels] = block
+            blocks = list(blocks_map.values())
+        return SparseTensor(blocks=blocks)
+
+    def subtract(self, b):
+        return self._subtract(self, b)
 
     @staticmethod
     def _kron_add(a, b, infos=None):
@@ -965,8 +1019,10 @@ class SparseTensor(NDArrayOperatorsMixin):
         items = {}
         for block in self.blocks:
             qls, qrs = block.q_labels[:idx], block.q_labels[idx:]
-            ql = np.add.reduce([iq if ip == '+' else -iq for iq, ip in zip(qls, pattern[:idx])])
-            qr = np.add.reduce([iq if ip == '+' else -iq for iq, ip in zip(qrs, pattern[idx:])])
+            ql = np.add.reduce(
+                [iq if ip == '+' else -iq for iq, ip in zip(qls, pattern[:idx])])
+            qr = np.add.reduce(
+                [iq if ip == '+' else -iq for iq, ip in zip(qrs, pattern[idx:])])
             assert ql == qr
             q = ql
             if q not in mats:
@@ -976,8 +1032,10 @@ class SparseTensor(NDArrayOperatorsMixin):
             items[q][0].append(qls)
             items[q][1].append(qrs)
             mat = mats[q]
-            lk, lkn = linfo.finfo[q][qls][0], np.multiply.reduce(linfo.finfo[q][qls][1])
-            rk, rkn = rinfo.finfo[q][qrs][0], np.multiply.reduce(rinfo.finfo[q][qrs][1])
+            lk, lkn = linfo.finfo[q][qls][0], np.multiply.reduce(
+                linfo.finfo[q][qls][1])
+            rk, rkn = rinfo.finfo[q][qrs][0], np.multiply.reduce(
+                rinfo.finfo[q][qrs][1])
             mats[q][lk:lk + lkn, rk:rk +
                     rkn] = np.asarray(block).reshape((lkn, rkn))
         l_blocks, s_blocks, r_blocks = [], [], []
@@ -1222,17 +1280,17 @@ class FermionTensor(NDArrayOperatorsMixin):
         return self.even.item()
 
     def __str__(self):
-        ro = "\n".join(" ODD-%3d %r" % (ib, b)
-                       for ib, b in enumerate(self.odd.blocks))
-        rd = "\n".join("EVEN-%3d %r" % (ib, b)
-                       for ib, b in enumerate(self.even.blocks))
+        ro = "\n".join(
+            [" ODD-" + x for x in str(self.odd).split("\n") if x != ""])
+        rd = "\n".join(
+            ["EVEN-" + x for x in str(self.even).split("\n") if x != ""])
         return ro + "\n" + rd
 
     def __repr__(self):
-        ro = "\n".join(" ODD-%3d %r" % (ib, b)
-                       for ib, b in enumerate(self.odd.blocks))
-        rd = "\n".join("EVEN-%3d %r" % (ib, b)
-                       for ib, b in enumerate(self.even.blocks))
+        ro = "\n".join(
+            [" ODD-" + x for x in repr(self.odd).split("\n") if x != ""])
+        rd = "\n".join(
+            ["EVEN-" + x for x in repr(self.even).split("\n") if x != ""])
         return ro + "\n" + rd
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
@@ -1490,7 +1548,7 @@ class FermionTensor(NDArrayOperatorsMixin):
 
     def tensordot(self, b, axes=2):
         return np.tensordot(self, b, axes)
-    
+
     @staticmethod
     def _shdot(a, b, out=None):
         """Horizontally contract operator tensors (matrices) in symbolic matrix."""
@@ -1510,11 +1568,11 @@ class FermionTensor(NDArrayOperatorsMixin):
             out.even = r.even
 
         return r
-    
+
     def shdot(self, b, out=None):
         """Horizontally contract operator tensors (matrices) in symbolic matrix."""
         return self._shdot(self, b, out=out)
-    
+
     def __xor__(self, other):
         return self._shdot(self, other)
 
@@ -1562,14 +1620,15 @@ class FermionTensor(NDArrayOperatorsMixin):
                     if i == len(a) - 1:
                         aidx = list(range(d + 1, d + d + 1))
                         bidx = list(range(ps[i], ps[i] + d))
-                        tr = (*range(d + 2, ps[i] + d + 2), *range(0, d + 1), 
-                            *range(ps[i] + d + 2, ps[i] + d + 2 + d2), d + 1, ps[i] + d + 2 + d2)
+                        tr = (*range(d + 2, ps[i] + d + 2), *range(0, d + 1),
+                              *range(ps[i] + d + 2, ps[i] + d + 2 + d2), d + 1, ps[i] + d + 2 + d2)
                     else:
                         aidx = list(range(d + 1, d + d + 2))
                         bidx = list(range(ps[i], ps[i] + d + 1))
-                        tr = (*range(d + 1, ps[i] + d + 1), *range(0, d + 1), 
-                            *range(ps[i] + d + 1, d2 + d2 + 2))
-                    r = np.tensordot(a[i], r, axes=(aidx, bidx)).transpose(axes=tr)
+                        tr = (*range(d + 1, ps[i] + d + 1), *range(0, d + 1),
+                              *range(ps[i] + d + 1, d2 + d2 + 2))
+                    r = np.tensordot(a[i], r, axes=(
+                        aidx, bidx)).transpose(axes=tr)
                 r = r.transpose(axes=(1, 0, *range(2, r.ndim)))
             # [MPO] x MPS
             elif isinstance(b, SparseTensor):
@@ -1579,13 +1638,15 @@ class FermionTensor(NDArrayOperatorsMixin):
                     if i == len(a) - 1:
                         aidx = list(range(d + 1, d + d + 1))
                         bidx = list(range(ps[i], ps[i] + d))
-                        tr = (*range(d + 2, ps[i] + d + 2), *range(0, d + 2), ps[i] + d + 2)
+                        tr = (*range(d + 2, ps[i] + d + 2),
+                              *range(0, d + 2), ps[i] + d + 2)
                     else:
                         aidx = list(range(d + 1, d + d + 2))
                         bidx = list(range(ps[i], ps[i] + d + 1))
-                        tr = (*range(d + 1, ps[i] + d + 1), *range(0, d + 1), 
-                            *range(ps[i] + d + 1, d2 + 2))
-                    r = np.tensordot(a[i], r, axes=(aidx, bidx)).transpose(axes=tr)
+                        tr = (*range(d + 1, ps[i] + d + 1), *range(0, d + 1),
+                              *range(ps[i] + d + 1, d2 + 2))
+                    r = np.tensordot(a[i], r, axes=(
+                        aidx, bidx)).transpose(axes=tr)
                 r = r.transpose(axes=(1, 0, *range(2, r.ndim)))
             else:
                 raise RuntimeError(
@@ -1603,7 +1664,7 @@ class FermionTensor(NDArrayOperatorsMixin):
                 aidx = list(range(d + 1, d + d + 1))
                 bidx = list(range(1, d + 1))
                 tr = tuple([0, d + 2] + list(range(1, d + 1)) +
-                        list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
+                           list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
             # MPO x MPS
             elif a.ndim > b.ndim:
                 assert isinstance(a, FermionTensor)
@@ -1611,7 +1672,7 @@ class FermionTensor(NDArrayOperatorsMixin):
                 aidx = list(range(dau + 1, dau + db + 1))
                 bidx = list(range(1, db + 1))
                 tr = tuple([0, dau + 2] + list(range(1, dau + 1)) +
-                        [dau + 1, dau + 3])
+                           [dau + 1, dau + 3])
             # MPS x MPO
             elif a.ndim < b.ndim:
                 assert isinstance(b, FermionTensor)
@@ -1930,7 +1991,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         Extract a diagonal or construct a diagonal array.
 
         Args:
-            v : SparseTensor
+            v : FermionTensor
                 If v is a 2-D array, return a copy of its 0-th diagonal.
                 If v is a 1-D array, return a 2-D array with v on the 0-th diagonal.
         """

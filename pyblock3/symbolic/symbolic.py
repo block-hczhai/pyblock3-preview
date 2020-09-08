@@ -202,7 +202,9 @@ class SymbolicBondFusingInfo:
 
 def implements(np_func):
     global _numpy_func_impls
-    return lambda f: (_numpy_func_impls.update({np_func: f}), f)[1]
+    return lambda f: (_numpy_func_impls.update({np_func: f})
+                      if np_func not in _numpy_func_impls else None,
+                      _numpy_func_impls[np_func])[1]
 
 
 _sym_sparse_numpy_func_impls = {}

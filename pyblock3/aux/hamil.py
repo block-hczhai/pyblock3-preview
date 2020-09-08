@@ -235,7 +235,7 @@ class HamilTools:
         vacuum = hamil.vacuum
         target = SZ(hamil.fcidump.n_elec, hamil.fcidump.twos, 0)
 
-        mps_info = MPSInfo(hamil.n_sites, vacuum, target, hamil.basis, hamil.orb_sym)
+        mps_info = MPSInfo(hamil.n_sites, vacuum, target, hamil.basis)
         mps_info.set_bond_dimension(bond_dim)
         mps = MPS(hamil.n_sites, 0, dot)
         mps.initialize(mps_info)

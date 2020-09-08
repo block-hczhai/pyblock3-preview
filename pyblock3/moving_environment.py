@@ -1,12 +1,15 @@
 
 import numpy as np
+import time
 from functools import reduce
 from .algebra.linalg import davidson
 
 
 def implements(np_func):
     global _numpy_func_impls
-    return lambda f: (_numpy_func_impls.update({np_func: f}), f)[1]
+    return lambda f: (_numpy_func_impls.update({np_func: f})
+                      if np_func not in _numpy_func_impls else None,
+                      _numpy_func_impls[np_func])[1]
 
 
 _me_numpy_func_impls = {}
@@ -16,7 +19,7 @@ _numpy_func_impls = _me_numpy_func_impls
 class MovingEnvironment:
     """Original and partially contracted tensor network <bra|mpo|ket>."""
 
-    def __init__(self, bra, mpo, ket, opts=None):
+    def __init__(self, bra, mpo, ket, opts=None, do_canon=True):
         self.bra = bra
         self.mpo = mpo
         self.ket = ket
@@ -24,9 +27,12 @@ class MovingEnvironment:
         # assert self.mpo.n_sites == self.ket.n_sites
         self.left_envs = {}
         self.right_envs = {}
+        self.do_canon = do_canon
         if opts is not None:
             self.bra.opts = self.mpo.opts = self.ket.opts = opts
         self._init_identities()
+        self.t_ctr = 0
+        self.t_rot = 0
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _me_numpy_func_impls:
@@ -63,18 +69,24 @@ class MovingEnvironment:
         if i == -1:
             return self.l_mpo_id
         # contract
+        t = time.perf_counter()
         r = prev.hdot(self.mpo[i])
+        self.t_ctr += time.perf_counter() - t
         # left canonicalize
-        self._left_canonicalize_site(self.ket, i)
-        if self.ket is not self.bra:
-            self._left_canonicalize_site(self.bra, i)
+        if self.do_canon:
+            self._left_canonicalize_site(self.ket, i)
+            if self.ket is not self.bra:
+                self._left_canonicalize_site(self.bra, i)
         # rotate
         du, dd = self.bra[i].ndim - 2, self.ket[i].ndim - 2
+        t = time.perf_counter()
         r = np.tensordot(r, self.ket[i], axes=(
             [*range(du + 2, du + dd + 3)], [*range(0, dd + 1)]))
         r = np.tensordot(self.bra[i], r, axes=(
             [*range(0, du + 1)], [*range(1, du + 2)]))
-        return r.transpose((1, 0, 3, 2))
+        r = r.transpose((1, 0, 3, 2))
+        self.t_rot += time.perf_counter() - t
+        return r
 
     def _right_contract_rotate(self, i, prev=None):
         """Right canonicalize bra and ket at site i.
@@ -82,18 +94,24 @@ class MovingEnvironment:
         if i == self.n_sites:
             return self.r_mpo_id
         # contract
+        t = time.perf_counter()
         r = self.mpo[i].hdot(prev)
+        self.t_ctr += time.perf_counter() - t
         # right canonicalize
-        self._right_canonicalize_site(self.ket, i)
-        if self.ket is not self.bra:
-            self._right_canonicalize_site(self.bra, i)
+        if self.do_canon:
+            self._right_canonicalize_site(self.ket, i)
+            if self.ket is not self.bra:
+                self._right_canonicalize_site(self.bra, i)
         # rotate
         du, dd = self.bra[i].ndim - 2, self.ket[i].ndim - 2
+        t = time.perf_counter()
         r = np.tensordot(r, self.ket[i], axes=(
             [*range(du + 2, du + dd + 3)], [*range(1, dd + 2)]))
         r = np.tensordot(self.bra[i], r, axes=(
             [*range(1, du + 2)], [*range(1, du + 2)]))
-        return r.transpose((1, 0, 3, 2))
+        r = r.transpose((1, 0, 3, 2))
+        self.t_rot += time.perf_counter() - t
+        return r
 
     def _initialize(self, l=0, r=2):
         """Canonicalize bra and ket around sites [l, r). Contract mpo around sites [l, r)."""
@@ -112,7 +130,8 @@ class MovingEnvironment:
         """Get mpo in sub-system with sites [l, r)"""
         tensors = [self.left_envs[l - 1], *self.mpo[l:r], self.right_envs[r]]
         tensors[:2] = [tensors[0].hdot(tensors[1])]
-        tensors[-2:] = [tensors[-2].hdot(tensors[-1])]
+        if len(tensors) > 2:
+            tensors[-2:] = [tensors[-2].hdot(tensors[-1])]
         return self.mpo.__class__(tensors=tensors, const=self.mpo.const, opts=self.mpo.opts)
 
     def _effective_mps(self, mps, lid, rid, l=0, r=2):
@@ -154,7 +173,7 @@ class MovingEnvironment:
         eff_bra = eff_ket if self.bra is self.ket else self._effective_bra(
             l=l, r=r)
         eff_mpo = self._effective_mpo(l=l, r=r)
-        return MovingEnvironment(bra=eff_bra, mpo=eff_mpo, ket=eff_ket)
+        return MovingEnvironment(bra=eff_bra, mpo=eff_mpo, ket=eff_ket, do_canon=self.do_canon)
 
     def _embedded(self, me, l=0, r=2):
         """Modify sub-system with sites [l, r)"""
@@ -205,7 +224,7 @@ class MovingEnvironment:
     def _eigh(x, iprint=False):
         """Return ground-state energy and ground-state system."""
         w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint)
-        return w[0], MovingEnvironment(bra=v[0], mpo=x.mpo, ket=v[0]), ndav
+        return w[0], MovingEnvironment(bra=v[0], mpo=x.mpo, ket=v[0], do_canon=x.do_canon), ndav
 
     def eigh(self, iprint=False):
         """Return ground-state energy and ground-state system."""
