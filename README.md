@@ -13,3 +13,4 @@ Dependence `mkl`, `block2` (optional), and `hptt` (optional).
     cmake .. -DUSE_MKL=ON -DUSE_HPTT=ON
     make
 
+Use environment variables `MKLROOT` and `HPTTHOME` to set library paths.

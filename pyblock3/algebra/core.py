@@ -432,6 +432,11 @@ class SparseTensor(NDArrayOperatorsMixin):
     def n_blocks(self):
         """Number of (non-zero) blocks."""
         return len(self.blocks)
+    
+    @property
+    def T(self):
+        """Transpose."""
+        return self.transpose()
 
     @property
     def dtype(self):
