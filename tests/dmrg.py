@@ -9,6 +9,7 @@ import pyblock3.algebra.funcs as pbalg
 from pyblock3.moving_environment import MovingEnvironment
 from pyblock3.aux.hamil import HamilTools
 
+flat = True
 
 fd = '../data/N2.STO3G.FCIDUMP'
 
@@ -24,6 +25,9 @@ mpo, _ = mpo.compress(left=True, cutoff=1E-12, norm_cutoff=1E-12)
 print('MPO (compressed) = ', mpo.show_bond_dims())
 
 mps.opts = dict(cutoff=1E-12, norm_cutoff=1E-12, max_bond_dim=200)
+if flat:
+    mps = mps.to_flat()
+    mpo = mpo.to_flat()
 me = MovingEnvironment(mps, mpo, mps)
 
 
@@ -36,11 +40,28 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
             tt = time.perf_counter()
             eff = me[i:i + dot]
             eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
-            eners[iw], eff, ndav = eff.eigh()
+            eners[iw], eff, ndav = eff.eigh(iprint=True)
             if dot == 2:
-                l, s, r = eff.ket[0].tensor_svd(
+                wfn = eff.ket[0]
+                l, s, r = wfn.tensor_svd(
                     idx=3, pattern='+++-++', full_matrices=False)
                 eff.ket[:] = [np.tensordot(l, s.diag(), axes=1), r]
+                if abs(reduce(pbalg.hdot, eff.ket[:]).norm() - wfn.norm()) > 1E-10:
+                    print(reduce(pbalg.hdot, eff.ket[:]).norm(), wfn.norm())
+                    xx = wfn.to_sparse()
+                    xx = xx.fuse(4, 5)
+                    xx.blocks = xx.blocks[11:12] + xx.blocks[14:16]
+                    print(xx)
+                    print(xx.norm())
+                    l, s, r = xx.tensor_svd(idx=3, pattern='+++-+', full_matrices=False)
+                    print('l = ', l)
+                    # print('s = ', s)
+                    # print('r = ', r)
+                    print('sr = ', np.tensordot(s.diag(), r, axes=1))
+                    lsr = pbalg.hdot(l, np.tensordot(s.diag(), r, axes=1))
+                    print('lsr = ', lsr)
+                    print(lsr.norm())
+                    exit(0)
             me[i:i + dot] = eff
             print(" %3s Site = %4d-%4d .. Ndav = %4d E = %20.12f T = %8.3f" % (
                 "<--" if iw % 2 else "-->", i, i + dot - 1, ndav, eners[iw], time.perf_counter() - tt))

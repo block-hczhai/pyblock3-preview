@@ -140,7 +140,7 @@ class MPS(NDArrayOperatorsMixin):
         tensors = [None] * info.n_sites
         for i in range(info.n_sites):
             tensors[i] = SparseTensor.zeros(
-                info.left_dims[i], info.basis[i], info.left_dims[i + 1])
+                (info.left_dims[i], BondInfo({k: 1 for k in info.basis[i]}), info.left_dims[i + 1]))
         return MPS(tensors=tensors, opts=opts)
 
     @staticmethod
@@ -149,7 +149,7 @@ class MPS(NDArrayOperatorsMixin):
         tensors = [None] * info.n_sites
         for i in range(info.n_sites):
             tensors[i] = SparseTensor.random(
-                info.left_dims[i], info.basis[i], info.left_dims[i + 1]) * (high - low) + low
+                (info.left_dims[i], BondInfo({k: 1 for k in info.basis[i]}), info.left_dims[i + 1])) * (high - low) + low
         return MPS(tensors=tensors, opts=opts)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
@@ -292,7 +292,8 @@ class MPS(NDArrayOperatorsMixin):
 
         tensors = []
         for i in range(n_sites):
-            tensors.append(a.tensors[i].kron_add(b.tensors[i], infos=(sum_bonds[i], sum_bonds[i + 1])))
+            tensors.append(a.tensors[i].kron_add(
+                b.tensors[i], infos=(sum_bonds[i], sum_bonds[i + 1])))
         return MPS(tensors=tensors, const=a.const + b.const, opts=a.opts)
 
     def __getitem__(self, i):
@@ -398,7 +399,7 @@ class MPS(NDArrayOperatorsMixin):
 
             for i in range(n_sites):
                 tensors[i] = tensors[i].fuse(-2, -1, info=prod_bonds[i + 1]
-                                            ).fuse(0, 1, info=prod_bonds[i])
+                                             ).fuse(0, 1, info=prod_bonds[i])
 
         r = MPS(tensors=tensors)
 

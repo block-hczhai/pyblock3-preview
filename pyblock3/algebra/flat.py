@@ -10,7 +10,8 @@ from .core import SparseTensor, SubTensor, FermionTensor
 
 import numba as nb
 
-ENABLE_FAST_IMPLS = True
+ENABLE_FAST_IMPLS = False
+
 
 def method_alias(name):
     def ff(f):
@@ -105,10 +106,6 @@ def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa
                 [], dtype=np.float64),
             np.array(idxs, dtype=np.uint32))
 
-if ENABLE_FAST_IMPLS:
-    import block3.flat_sparse_tensor
-    flat_sparse_tensordot = block3.flat_sparse_tensor.tensordot
-
 # einsum version, much slower
 # def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb):
 #     if len(aqs) == 0:
@@ -168,6 +165,102 @@ if ENABLE_FAST_IMPLS:
 #             np.array(shapes, dtype=np.uint32),
 #             data,
 #             np.array(idxs, dtype=np.uint32))
+
+
+def flat_sparse_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs):
+    blocks_map = {q.tobytes(): iq for iq, q in enumerate(aqs)}
+    data = adata.copy()
+    dd = []
+    bmats = []
+    for ib in range(bqs.shape[0]):
+        q = bqs[ib].tobytes()
+        if q in blocks_map:
+            ia = blocks_map[q]
+            data[aidxs[ia]:aidxs[ia + 1]
+                 ] += bdata[bidxs[ib]:bidxs[ib + 1]]
+            dd.append(ib)
+        else:
+            bmats.append(bdata[bidxs[ib]:bidxs[ib + 1]])
+
+    return (np.concatenate((aqs, np.delete(bqs, dd, axis=0))),
+            np.concatenate((ashs, np.delete(bshs, dd, axis=0))),
+            np.concatenate((data, *bmats)),
+            None)
+
+def flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs):
+    collected_rows = {}
+    for i, q in enumerate(aqs[:, -1]):
+        if q not in collected_rows:
+            collected_rows[q] = [i]
+        else:
+            collected_rows[q].append(i)
+    nblocks_r = len(collected_rows)
+    qmats = [None] * aqs.shape[0]
+    rmats = [None] * nblocks_r
+    qqs = aqs
+    qshs = ashs.copy()
+    rqs = np.zeros((nblocks_r, 2), aqs.dtype)
+    rshs = np.zeros((nblocks_r, 2), ashs.dtype)
+    ridxs = np.zeros((nblocks_r + 1), aidxs.dtype)
+    for ir, (qq, v) in enumerate(collected_rows.items()):
+        pashs = ashs[v, :-1]
+        l_shapes = np.prod(pashs, axis=1)
+        mat = np.concatenate([adata[aidxs[ia]:aidxs[ia + 1]].reshape((sh, -1)) for sh, ia in zip(l_shapes, v)], axis=0)
+        q, r = np.linalg.qr(mat, mode='reduced')
+        rqs[ir, :] = qq
+        rshs[ir] = r.shape
+        ridxs[ir + 1] = ridxs[ir] + r.size
+        rmats[ir] = r.flatten()
+        qs = np.split(q, list(accumulate(l_shapes[:-1])), axis=0)
+        assert len(qs) == len(v)
+        qshs[v, -1] = r.shape[0]
+        for q, ia in zip(qs, v):
+            qmats[ia] = q.flatten()
+    return (qqs, qshs, np.concatenate(qmats), None, rqs, rshs, np.concatenate(rmats), ridxs)
+
+def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
+    collected_cols = {}
+    for i, q in enumerate(aqs[:, 0]):
+        if q not in collected_cols:
+            collected_cols[q] = [i]
+        else:
+            collected_cols[q].append(i)
+    nblocks_l = len(collected_cols)
+    lmats = [None] * nblocks_l
+    qmats = [None] * aqs.shape[0]
+    lqs = np.zeros((nblocks_l, 2), aqs.dtype)
+    lshs = np.zeros((nblocks_l, 2), ashs.dtype)
+    lidxs = np.zeros((nblocks_l + 1), aidxs.dtype)
+    qqs = aqs
+    qshs = ashs.copy()
+    for il, (qq, v) in enumerate(collected_cols.items()):
+        pashs = ashs[v, 1:]
+        r_shapes = np.prod(pashs, axis=1)
+        mat = np.concatenate([adata[aidxs[ia]:aidxs[ia + 1]].reshape((-1, sh)).T for sh, ia in zip(r_shapes, v)], axis=0)
+        q, r = np.linalg.qr(mat, mode='reduced')
+        lqs[il, :] = qq
+        lshs[il] = r.shape[::-1]
+        lidxs[il + 1] = lidxs[il] + r.size
+        lmats[il] = r.T.flatten()
+        qs = np.split(q, list(accumulate(r_shapes[:-1])), axis=0)
+        assert len(qs) == len(v)
+        qshs[v, 0] = r.shape[0]
+        for q, ia in zip(qs, v):
+            qmats[ia] = q.T.flatten()
+    return (lqs, lshs, np.concatenate(lmats), lidxs, qqs, qshs, np.concatenate(qmats), None)
+
+if ENABLE_FAST_IMPLS:
+    import block3.flat_sparse_tensor
+    flat_sparse_tensordot = block3.flat_sparse_tensor.tensordot
+    # xadd = flat_sparse_add
+    # def flat_sparse_add(*args, **kwargs):
+    #     r = block3.flat_sparse_tensor.add(*args, **kwargs)
+    #     x = xadd(*args, **kwargs)
+    #     if abs(np.sum(r[2]) - np.sum(x[2])) > 1E-10 or len(r[0]) != len(x[0]):
+    #         print(np.sum(r[2]), np.sum(x[2]))
+    #         exit(0)
+    #     return r
+    flat_sparse_add = block3.flat_sparse_tensor.add
 
 class FlatSparseTensor(NDArrayOperatorsMixin):
     """
@@ -428,26 +521,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         elif a.n_blocks == 0:
             return b
         else:
-            blocks_map = {q.tobytes(): iq for iq, q in enumerate(a.q_labels)}
-            data = a.data.copy()
-            dd = []
-            bmats = []
-            for ib in range(b.n_blocks):
-                q = b.q_labels[ib].tobytes()
-                if q in blocks_map:
-                    ia = blocks_map[q]
-                    data[a.idxs[ia]:a.idxs[ia + 1]
-                         ] += b.data[b.idxs[ib]:b.idxs[ib + 1]]
-                    dd.append(ib)
-                else:
-                    bmats.append(b.data[b.idxs[ib]:b.idxs[ib + 1]])
-            return FlatSparseTensor(
-                q_labels=np.concatenate(
-                    (a.q_labels, np.delete(b.q_labels, dd, axis=0))),
-                shapes=np.concatenate(
-                    (a.shapes, np.delete(b.shapes, dd, axis=0))),
-                data=np.concatenate((data, *bmats))
-            )
+            return FlatSparseTensor(*flat_sparse_add(a.q_labels, a.shapes, a.data,
+                                                     a.idxs, b.q_labels, b.shapes, b.data, b.idxs))
 
     def add(self, b):
         return self._add(self, b)
@@ -490,6 +565,42 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def subtract(self, b):
         return self._subtract(self, b)
 
+    def left_canonicalize(self, mode='reduced'):
+        """
+        Left canonicalization (using QR factorization).
+        Left canonicalization needs to collect all left indices for each specific right index.
+        So that we will only have one R, but left dim of q is unchanged.
+
+        Returns:
+            q, r : tuple(FlatSparseTensor)
+        """
+        return tuple(FlatSparseTensor.from_sparse(x) for x in self.to_sparse().left_canonicalize())
+        assert mode == 'reduced'
+        r = flat_sparse_left_canonicalize(self.q_labels, self.shapes, self.data, self.idxs)
+        return FlatSparseTensor(*r[:4]), FlatSparseTensor(*r[4:])
+
+    def right_canonicalize(self, mode='reduced'):
+        """
+        Right canonicalization (using QR factorization).
+
+        Returns:
+            l, q : tuple(FlatSparseTensor)
+        """
+        return tuple(FlatSparseTensor.from_sparse(x) for x in self.to_sparse().right_canonicalize())
+        assert mode == 'reduced'
+        r = flat_sparse_right_canonicalize(self.q_labels, self.shapes, self.data, self.idxs)
+        return FlatSparseTensor(*r[:4]), FlatSparseTensor(*r[4:])
+    
+    def tensor_svd(self, *args, **kwargs):
+        """
+        Separate tensor in the middle, collecting legs as [0, idx) and [idx, ndim), then perform SVD.
+
+        Returns:
+            l, s, r : tuple(FlatSparseTensor)
+        """
+        lsr = self.to_sparse().tensor_svd(*args, **kwargs)
+        return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
+
     @staticmethod
     @implements(np.diag)
     def _diag(v):
@@ -509,9 +620,9 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
                 data=np.concatenate([np.diag(v.data[i:j].reshape(sh, sh)) for i, j, sh in zip(v.idxs[:-1][mask], v.idxs[1:][mask], shapes)]))
         elif v.ndim == 1:
             return FlatSparseTensor(
-                q_labels=np.repeat(v.q_labels[:, None], 2, axis=1),
-                shapes=np.repeat(v.shapes[:, None], 2, axis=1),
-                data=np.concatenate([np.diag(v.data[i:j]) for i, j in zip(v.idxs, v.idxs[1:])]))
+                q_labels=np.repeat(v.q_labels, 2, axis=1),
+                shapes=np.repeat(v.shapes, 2, axis=1),
+                data=np.concatenate([np.diag(v.data[i:j]).flatten() for i, j in zip(v.idxs, v.idxs[1:])]))
         elif len(v.blocks) != 0:
             raise RuntimeError("ndim for np.diag must be 1 or 2.")
 
@@ -746,14 +857,14 @@ class FlatFermionTensor(FermionTensor):
         idxb[idxb < 0] += b.ndim
 
         blocks = []
-        r = lambda: None
+        def r(): return None
         # op x op
         if isinstance(a, FlatFermionTensor) and isinstance(b, FlatFermionTensor):
             odd_a = np.tensordot(a.odd, b.even, (idxa, idxb))
             odd_b = np.tensordot(a.even, b.odd, (idxa, idxb))
             even_a = np.tensordot(a.odd, b.odd, (idxa, idxb))
             even_b = np.tensordot(a.even, b.even, (idxa, idxb))
-            r = lambda: FlatFermionTensor(odd=odd_a + odd_b, even=even_a + even_b)
+            def r(): return FlatFermionTensor(odd=odd_a + odd_b, even=even_a + even_b)
             # symbolic horizontal
             if idxa == [] and idxb == []:
                 assert a.ndim % 2 == 0
@@ -779,12 +890,12 @@ class FlatFermionTensor(FermionTensor):
             odd = np.tensordot(a.odd, b, (idxa, idxb))
             # op rotation / op x gauge (right multiply)
             if b.ndim - len(idxb) == 1:
-                r = lambda: FlatFermionTensor(odd=odd, even=even)
+                def r(): return FlatFermionTensor(odd=odd, even=even)
             else:
                 # 1-site op x n-site state
                 idx = range(idx, idx + min(idxb))
                 blocks = [odd]
-                r = lambda: odd + even
+                def r(): return odd + even
         # state x op
         elif isinstance(b, FlatFermionTensor):
             idx = 0
@@ -792,12 +903,12 @@ class FlatFermionTensor(FermionTensor):
             odd = np.tensordot(a, b.odd, (idxa, idxb))
             # op rotation / gauge x op (left multiply)
             if a.ndim - len(idxa) == 1:
-                r = lambda: FlatFermionTensor(odd=odd, even=even)
+                def r(): return FlatFermionTensor(odd=odd, even=even)
             else:
                 # n-site state x 1-site op
                 idx = range(idx, idx + min(idxa))
                 blocks = [odd]
-                r = lambda: odd + even
+                def r(): return odd + even
         else:
             raise TypeError('Unsupported tensordot for %r and %r' %
                             (a.__class__, b.__class__))
