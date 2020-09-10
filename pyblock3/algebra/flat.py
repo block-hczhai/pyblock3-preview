@@ -10,7 +10,7 @@ from .core import SparseTensor, SubTensor, FermionTensor
 
 import numba as nb
 
-ENABLE_FAST_IMPLS = False
+ENABLE_FAST_IMPLS = True
 
 
 def method_alias(name):
@@ -250,17 +250,13 @@ def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
     return (lqs, lshs, np.concatenate(lmats), lidxs, qqs, qshs, np.concatenate(qmats), None)
 
 if ENABLE_FAST_IMPLS:
-    import block3.flat_sparse_tensor
-    flat_sparse_tensordot = block3.flat_sparse_tensor.tensordot
-    # xadd = flat_sparse_add
-    # def flat_sparse_add(*args, **kwargs):
-    #     r = block3.flat_sparse_tensor.add(*args, **kwargs)
-    #     x = xadd(*args, **kwargs)
-    #     if abs(np.sum(r[2]) - np.sum(x[2])) > 1E-10 or len(r[0]) != len(x[0]):
-    #         print(np.sum(r[2]), np.sum(x[2]))
-    #         exit(0)
-    #     return r
-    flat_sparse_add = block3.flat_sparse_tensor.add
+    try:
+        import block3.flat_sparse_tensor
+        flat_sparse_tensordot = block3.flat_sparse_tensor.tensordot
+        flat_sparse_add = block3.flat_sparse_tensor.add
+    except ImportError:
+        import warnings
+        warnings.warn('Fast flat sparse implementation is not enabled.')
 
 class FlatSparseTensor(NDArrayOperatorsMixin):
     """

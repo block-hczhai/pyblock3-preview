@@ -1047,8 +1047,8 @@ class SparseTensor(NDArrayOperatorsMixin):
         for q, mat in mats.items():
             u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
             s_blocks.append(SubTensor(reduced=s, q_labels=(q, )))
-            items[q][0].sort(key=lambda x: x[0])
-            items[q][1].sort(key=lambda x: x[0])
+            items[q][0].sort()
+            items[q][1].sort()
             psqs = None
             for sqs in items[q][0]:
                 if sqs == psqs:

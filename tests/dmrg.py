@@ -13,8 +13,8 @@ flat = True
 
 fd = '../data/N2.STO3G.FCIDUMP'
 
-with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
-# with HamilTools.from_fcidump(fd) as hamil:
+# with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
+with HamilTools.from_fcidump(fd) as hamil:
     mps = hamil.get_init_mps(bond_dim=100)
     # mps = hamil.get_ground_state_mps(bond_dim=100)
     mpo = hamil.get_mpo()
@@ -46,22 +46,6 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
                 l, s, r = wfn.tensor_svd(
                     idx=3, pattern='+++-++', full_matrices=False)
                 eff.ket[:] = [np.tensordot(l, s.diag(), axes=1), r]
-                if abs(reduce(pbalg.hdot, eff.ket[:]).norm() - wfn.norm()) > 1E-10:
-                    print(reduce(pbalg.hdot, eff.ket[:]).norm(), wfn.norm())
-                    xx = wfn.to_sparse()
-                    xx = xx.fuse(4, 5)
-                    xx.blocks = xx.blocks[11:12] + xx.blocks[14:16]
-                    print(xx)
-                    print(xx.norm())
-                    l, s, r = xx.tensor_svd(idx=3, pattern='+++-+', full_matrices=False)
-                    print('l = ', l)
-                    # print('s = ', s)
-                    # print('r = ', r)
-                    print('sr = ', np.tensordot(s.diag(), r, axes=1))
-                    lsr = pbalg.hdot(l, np.tensordot(s.diag(), r, axes=1))
-                    print('lsr = ', lsr)
-                    print(lsr.norm())
-                    exit(0)
             me[i:i + dot] = eff
             print(" %3s Site = %4d-%4d .. Ndav = %4d E = %20.12f T = %8.3f" % (
                 "<--" if iw % 2 else "-->", i, i + dot - 1, ndav, eners[iw], time.perf_counter() - tt))
