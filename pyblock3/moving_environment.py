@@ -19,7 +19,7 @@ _numpy_func_impls = _me_numpy_func_impls
 class MovingEnvironment:
     """Original and partially contracted tensor network <bra|mpo|ket>."""
 
-    def __init__(self, bra, mpo, ket, opts=None, do_canon=True):
+    def __init__(self, bra, mpo, ket, opts=None, do_canon=True, idents=None):
         self.bra = bra
         self.mpo = mpo
         self.ket = ket
@@ -30,7 +30,10 @@ class MovingEnvironment:
         self.do_canon = do_canon
         if opts is not None:
             self.bra.opts = self.mpo.opts = self.ket.opts = opts
-        self._init_identities()
+        if idents is None:
+            self.idents = self._init_identities()
+        else:
+            self.idents = idents
         self.t_ctr = 0
         self.t_rot = 0
 
@@ -44,14 +47,15 @@ class MovingEnvironment:
     def _init_identities(self):
         qbl, qkl, qml = self.bra[0].infos[0], self.ket[0].infos[0], self.mpo[0].infos[0]
         qbr, qkr, qmr = self.bra[-1].infos[-1], self.ket[-1].infos[-1], self.mpo[-1].infos[-1]
-        self.l_mpo_id = self.mpo[0].ones(
+        l_mpo_id = self.mpo[0].ones(
             bond_infos=(qml, qbl, qkl, qml), pattern="++--")
-        self.r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr,
-                                                      qbr, qkr, qmr), pattern="++--")
-        self.l_bra_id = self.bra[0].ones(bond_infos=(qbl, ))
-        self.r_bra_id = self.bra[-1].ones(bond_infos=(qbl, ))
-        self.l_ket_id = self.ket[0].ones(bond_infos=(qkl, ))
-        self.r_ket_id = self.ket[-1].ones(bond_infos=(qkl, ))
+        r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr,
+                                                 qbr, qkr, qmr), pattern="++--")
+        l_bra_id = self.bra[0].ones(bond_infos=(qbl, ))
+        r_bra_id = self.bra[-1].ones(bond_infos=(qbl, ))
+        l_ket_id = self.ket[0].ones(bond_infos=(qkl, ))
+        r_ket_id = self.ket[-1].ones(bond_infos=(qkl, ))
+        return l_mpo_id, r_mpo_id, l_bra_id, r_bra_id, l_ket_id, r_ket_id
 
     def _left_canonicalize_site(self, mps, i):
         """Left canonicalize mps at site i."""
@@ -67,7 +71,7 @@ class MovingEnvironment:
         """Left canonicalize bra and ket at site i.
         Contract left-side contracted mpo with mpo at site i."""
         if i == -1:
-            return self.l_mpo_id
+            return self.idents[0]
         # contract
         t = time.perf_counter()
         r = prev.hdot(self.mpo[i])
@@ -92,7 +96,7 @@ class MovingEnvironment:
         """Right canonicalize bra and ket at site i.
         Contract right-side contracted mpo with mpo at site i."""
         if i == self.n_sites:
-            return self.r_mpo_id
+            return self.idents[1]
         # contract
         t = time.perf_counter()
         r = self.mpo[i].hdot(prev)
@@ -145,11 +149,11 @@ class MovingEnvironment:
 
     def _effective_bra(self, l=0, r=2):
         """Get bra in sub-system with sites [l, r)"""
-        return self._effective_mps(self.bra, self.l_bra_id, self.r_bra_id, l=l, r=r)
+        return self._effective_mps(self.bra, self.idents[2], self.idents[3], l=l, r=r)
 
     def _effective_ket(self, l=0, r=2):
         """Get ket in sub-system with sites [l, r)"""
-        return self._effective_mps(self.ket, self.l_ket_id, self.r_ket_id, l=l, r=r)
+        return self._effective_mps(self.ket, self.idents[4], self.idents[5], l=l, r=r)
 
     def _embedded_mps(self, mps, lid, rid):
         """Change mps format for embedding into larger system."""
@@ -160,11 +164,11 @@ class MovingEnvironment:
 
     def _embedded_bra(self):
         """Change bra format for embedding into larger system."""
-        return self._embedded_mps(self.bra, self.l_bra_id, self.r_bra_id)
+        return self._embedded_mps(self.bra, self.idents[2], self.idents[3])
 
     def _embedded_ket(self):
         """Change ket format for embedding into larger system."""
-        return self._embedded_mps(self.ket, self.l_ket_id, self.r_ket_id)
+        return self._embedded_mps(self.ket, self.idents[4], self.idents[5])
 
     def _effective(self, l=0, r=2):
         """Get sub-system with sites [l, r)"""
@@ -173,7 +177,7 @@ class MovingEnvironment:
         eff_bra = eff_ket if self.bra is self.ket else self._effective_bra(
             l=l, r=r)
         eff_mpo = self._effective_mpo(l=l, r=r)
-        return MovingEnvironment(bra=eff_bra, mpo=eff_mpo, ket=eff_ket, do_canon=self.do_canon)
+        return MovingEnvironment(bra=eff_bra, mpo=eff_mpo, ket=eff_ket, do_canon=self.do_canon, idents=self.idents)
 
     def _embedded(self, me, l=0, r=2):
         """Modify sub-system with sites [l, r)"""
@@ -221,14 +225,23 @@ class MovingEnvironment:
         return np.dot(self.bra, self.mpo @ self.ket)
 
     @staticmethod
-    def _eigh(x, iprint=False):
+    def _eigh(x, iprint=False, fast=False):
         """Return ground-state energy and ground-state system."""
-        w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint)
-        return w[0], MovingEnvironment(bra=v[0], mpo=x.mpo, ket=v[0], do_canon=x.do_canon), ndav
+        if fast and x.ket.n_sites == 1 and x.mpo.n_sites == 2:
+            from .algebra.flat_functor import FlatSparseFunctor
+            pattern = '++' + '+' * (x.ket[0].ndim - 4) + '-+'
+            fst = FlatSparseFunctor(x.mpo, pattern=pattern)
+            w, v, ndav = davidson(
+                fst, [fst.prepare_vector(x.ket[0])], k=1, iprint=iprint)
+            v = [x.ket.__class__(
+                tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
+        else:
+            w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint)
+        return w[0], MovingEnvironment(bra=v[0], mpo=x.mpo, ket=v[0], do_canon=x.do_canon, idents=x.idents), ndav
 
-    def eigh(self, iprint=False):
+    def eigh(self, iprint=False, fast=False):
         """Return ground-state energy and ground-state system."""
-        return self._eigh(self, iprint=iprint)
+        return self._eigh(self, iprint=iprint, fast=fast)
 
     @property
     def n_sites(self):

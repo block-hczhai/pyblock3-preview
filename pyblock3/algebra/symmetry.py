@@ -69,6 +69,9 @@ class BondInfo(Counter):
                     quanta[ka + kb] += va * vb
         return quanta
 
+    def __and__(self, other):
+        return BondInfo(super().__and__(other))
+
     def __or__(self, other):
         return BondInfo(super().__or__(other))
 

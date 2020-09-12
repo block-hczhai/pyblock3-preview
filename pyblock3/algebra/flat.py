@@ -8,8 +8,6 @@ from itertools import accumulate, groupby
 from .symmetry import BondInfo, BondFusingInfo, SZ
 from .core import SparseTensor, SubTensor, FermionTensor
 
-import numba as nb
-
 ENABLE_FAST_IMPLS = True
 
 
@@ -48,16 +46,10 @@ class FlatSZ:
         return SZ((x // 131072) % 16384 - 8192, (x // 8) % 16384 - 8192, x % 8)
 
 
-# @nb.jit(nb.boolean(nb.uint32), nopython=True)
 def is_fermion(x):
     return (x & 8) != 0
 
 
-# @nb.jit(nb.types.Tuple((nb.uint32[:, :], nb.uint32[:, :], nb.float64[:], nb.uint32[:]))(
-#         nb.uint32[:, :], nb.uint32[:,
-#                                    :], nb.float64[:], nb.uint32[:], nb.uint32[:, :],
-#         nb.uint32[:, :], nb.float64[:], nb.uint32[:], nb.int32[:], nb.int32[:]
-#         ), forceobj=True)
 def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb):
     if len(aqs) == 0:
         return aqs, ashs, adata, aidxs
@@ -106,67 +98,6 @@ def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa
                 [], dtype=np.float64),
             np.array(idxs, dtype=np.uint32))
 
-# einsum version, much slower
-# def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb):
-#     if len(aqs) == 0:
-#         return aqs, ashs, adata, aidxs
-#     elif len(bqs) == 0:
-#         return bqs, bshs, bdata, bidxs
-#     la, ndima = aqs.shape
-#     lb, ndimb = bqs.shape
-#     out_idx_a = np.delete(np.arange(0, ndima), idxa)
-#     out_idx_b = np.delete(np.arange(0, ndimb), idxb)
-#     ctrqas, outqas = aqs[:, idxa], aqs[:, out_idx_a]
-#     ctrqbs, outqbs = bqs[:, idxb], bqs[:, out_idx_b]
-#     outsas, outsbs = ashs[:, out_idx_a], bshs[:, out_idx_b]
-#     eidxa = np.arange(0, ndima)
-#     eidxb = np.arange(ndima, ndima + ndimb)
-#     eidxb[idxb] = idxa
-#     eidxout = np.concatenate((eidxa[out_idx_a], eidxb[out_idx_b])).tolist()
-#     eidxa, eidxb = eidxa.tolist(), eidxb.tolist()
-
-#     map_idx_b = {}
-#     for ib in range(lb):
-#         ctrq = ctrqbs[ib].tobytes()
-#         if ctrq not in map_idx_b:
-#             map_idx_b[ctrq] = []
-#         map_idx_b[ctrq].append(ib)
-
-#     blocks_map = {}
-#     idxs = [0]
-#     qs = []
-#     shapes = []
-#     mats = []
-#     for ia in range(la):
-#         ctrq = ctrqas[ia].tobytes()
-#         mata = adata[aidxs[ia]: aidxs[ia + 1]].reshape(ashs[ia])
-#         if ctrq in map_idx_b:
-#             for ib in map_idx_b[ctrq]:
-#                 outq = np.concatenate((outqas[ia], outqbs[ib]))
-#                 matb = bdata[bidxs[ib]: bidxs[ib + 1]].reshape(bshs[ib])
-#                 shape = np.concatenate((outsas[ia], outsbs[ib]))
-#                 # mat = np.tensordot(mata, matb, axes=(idxa, idxb))
-#                 outqk = outq.tobytes()
-#                 if outqk not in blocks_map:
-#                     blocks_map[outqk] = len(qs)
-#                     idxs.append(idxs[-1] + int(np.prod(shape)))
-#                     qs.append(outq)
-#                     shapes.append(shape)
-#                     mats.append((mata, matb, blocks_map[outqk]))
-#                 else:
-#                     mats.append((mata, matb, blocks_map[outqk]))
-#     data = np.zeros((idxs[-1], ), dtype=np.float64)
-#     for ma, mb, im in mats:
-#         # np.einsum(ma, eidxa, mb, eidxb, eidxout, out=data[idxs[im]:idxs[im + 1]].reshape(shapes[im]))
-#         data[idxs[im]:idxs[im + 1]] += np.einsum(ma, eidxa, mb, eidxb, eidxout).flatten()
-#         # data[idxs[im]:idxs[im + 1]] += np.tensordot(ma, mb, axes=(idxa, idxb)).flatten()
-
-#     return (np.array(qs, dtype=np.uint32),
-#             np.array(shapes, dtype=np.uint32),
-#             data,
-#             np.array(idxs, dtype=np.uint32))
-
-
 def flat_sparse_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs):
     blocks_map = {q.tobytes(): iq for iq, q in enumerate(aqs)}
     data = adata.copy()
@@ -187,6 +118,7 @@ def flat_sparse_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs):
             np.concatenate((data, *bmats)),
             None)
 
+
 def flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs):
     collected_rows = {}
     for i, q in enumerate(aqs[:, -1]):
@@ -205,7 +137,8 @@ def flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs):
     for ir, (qq, v) in enumerate(collected_rows.items()):
         pashs = ashs[v, :-1]
         l_shapes = np.prod(pashs, axis=1)
-        mat = np.concatenate([adata[aidxs[ia]:aidxs[ia + 1]].reshape((sh, -1)) for sh, ia in zip(l_shapes, v)], axis=0)
+        mat = np.concatenate([adata[aidxs[ia]:aidxs[ia + 1]].reshape((sh, -1))
+                              for sh, ia in zip(l_shapes, v)], axis=0)
         q, r = np.linalg.qr(mat, mode='reduced')
         rqs[ir, :] = qq
         rshs[ir] = r.shape
@@ -217,6 +150,7 @@ def flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs):
         for q, ia in zip(qs, v):
             qmats[ia] = q.flatten()
     return (qqs, qshs, np.concatenate(qmats), None, rqs, rshs, np.concatenate(rmats), ridxs)
+
 
 def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
     collected_cols = {}
@@ -236,7 +170,8 @@ def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
     for il, (qq, v) in enumerate(collected_cols.items()):
         pashs = ashs[v, 1:]
         r_shapes = np.prod(pashs, axis=1)
-        mat = np.concatenate([adata[aidxs[ia]:aidxs[ia + 1]].reshape((-1, sh)).T for sh, ia in zip(r_shapes, v)], axis=0)
+        mat = np.concatenate(
+            [adata[aidxs[ia]:aidxs[ia + 1]].reshape((-1, sh)).T for sh, ia in zip(r_shapes, v)], axis=0)
         q, r = np.linalg.qr(mat, mode='reduced')
         lqs[il, :] = qq
         lshs[il] = r.shape[::-1]
@@ -249,14 +184,27 @@ def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
             qmats[ia] = q.T.flatten()
     return (lqs, lshs, np.concatenate(lmats), lidxs, qqs, qshs, np.concatenate(qmats), None)
 
+
+def flat_sparse_transpose(aqs, ashs, adata, aidxs, axes):
+    data = np.concatenate(
+        [np.transpose(adata[i:j].reshape(sh), axes=axes).flatten()
+         for i, j, sh in zip(aidxs, aidxs[1:], ashs)])
+    return (aqs[:, axes], ashs[:, axes], data, aidxs)
+
 if ENABLE_FAST_IMPLS:
     try:
         import block3.flat_sparse_tensor
         flat_sparse_tensordot = block3.flat_sparse_tensor.tensordot
         flat_sparse_add = block3.flat_sparse_tensor.add
+        def flat_sparse_transpose_impl(aqs, ashs, adata, aidxs, axes):
+            data = np.zeros_like(adata)
+            block3.flat_sparse_tensor.transpose(ashs, adata, aidxs, axes, data)
+            return (aqs[:, axes], ashs[:, axes], data, aidxs)
+        flat_sparse_transpose = flat_sparse_transpose_impl
     except ImportError:
         import warnings
         warnings.warn('Fast flat sparse implementation is not enabled.')
+
 
 class FlatSparseTensor(NDArrayOperatorsMixin):
     """
@@ -316,6 +264,10 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         return repr(self.to_sparse())
 
     @staticmethod
+    def zeros_like(x):
+        return FlatSparseTensor(q_labels=x.q_labels, shapes=x.shapes, data=np.zeros_like(x.data), idxs=x.idxs)
+
+    @staticmethod
     def zeros(*args, **kwargs):
         """Create tensor from tuple of BondInfo with zero elements."""
         return FlatSparseTensor.from_sparse(SparseTensor.zeros(*args, **kwargs))
@@ -333,14 +285,25 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     @property
     def infos(self):
         bond_infos = tuple(BondInfo() for _ in range(self.ndim))
-        for i in range(self.n_blocks):
-            for j in range(self.ndim):
-                q = FlatSZ.to_sz(self.q_labels[i][j])
-                if q in bond_infos[j]:
-                    assert self.shapes[i, j] == bond_infos[j][q]
-                else:
-                    bond_infos[j][q] = self.shapes[i, j]
+        for j in range(self.ndim):
+            qs = self.q_labels[:, j]
+            shs = self.shapes[:, j]
+            bis = bond_infos[j]
+            for q, s in zip(qs, shs):
+                bis[FlatSZ.to_sz(q)] = s
         return bond_infos
+
+    def cast_assign(self, other):
+        """assign other to self, removing blocks not in self."""
+        aqs, adata, aidxs = other.q_labels, other.data, other.idxs
+        bqs, bdata, bidxs = self.q_labels, self.data, self.idxs
+        blocks_map = {q.tobytes(): iq for iq, q in enumerate(aqs)}
+        for ib in range(self.n_blocks):
+            q = bqs[ib].tobytes()
+            if q in blocks_map:
+                ia = blocks_map[q]
+                bdata[bidxs[ib]:bidxs[ib + 1]] = adata[aidxs[ia]:aidxs[ia + 1]]
+        return self
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if ufunc in _flat_sparse_tensor_numpy_func_impls:
@@ -572,7 +535,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         """
         return tuple(FlatSparseTensor.from_sparse(x) for x in self.to_sparse().left_canonicalize())
         assert mode == 'reduced'
-        r = flat_sparse_left_canonicalize(self.q_labels, self.shapes, self.data, self.idxs)
+        r = flat_sparse_left_canonicalize(
+            self.q_labels, self.shapes, self.data, self.idxs)
         return FlatSparseTensor(*r[:4]), FlatSparseTensor(*r[4:])
 
     def right_canonicalize(self, mode='reduced'):
@@ -584,9 +548,18 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         """
         return tuple(FlatSparseTensor.from_sparse(x) for x in self.to_sparse().right_canonicalize())
         assert mode == 'reduced'
-        r = flat_sparse_right_canonicalize(self.q_labels, self.shapes, self.data, self.idxs)
+        r = flat_sparse_right_canonicalize(
+            self.q_labels, self.shapes, self.data, self.idxs)
         return FlatSparseTensor(*r[:4]), FlatSparseTensor(*r[4:])
-    
+
+    def left_svd(self, *args, **kwargs):
+        lsr = self.to_sparse().left_svd(*args, **kwargs)
+        return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
+
+    def right_svd(self, *args, **kwargs):
+        lsr = self.to_sparse().right_svd(*args, **kwargs)
+        return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
+
     def tensor_svd(self, *args, **kwargs):
         """
         Separate tensor in the middle, collecting legs as [0, idx) and [idx, ndim), then perform SVD.
@@ -596,6 +569,12 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         """
         lsr = self.to_sparse().tensor_svd(*args, **kwargs)
         return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
+
+    @staticmethod
+    def truncate_svd(l, s, r, *args, **kwargs):
+        l, s, r, error = SparseTensor.truncate_svd(
+            *tuple(x.to_sparse() for x in (l, s, r)), *args, **kwargs)
+        return (*tuple(FlatSparseTensor.from_sparse(x) for x in (l, s, r)), error)
 
     @staticmethod
     @implements(np.diag)
@@ -649,12 +628,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         if a.n_blocks == 0:
             return a
         else:
-            return FlatSparseTensor(
-                q_labels=a.q_labels[:, axes],
-                shapes=a.shapes[:, axes],
-                data=np.concatenate([np.transpose(a.data[i:j].reshape(sh), axes=axes).flatten(
-                ) for i, j, sh in zip(a.idxs, a.idxs[1:], a.shapes)]),
-                idxs=a.idxs)
+            axes = np.array(axes, dtype=np.int32)
+            return FlatSparseTensor(*flat_sparse_transpose(a.q_labels, a.shapes, a.data, a.idxs, axes))
 
     def transpose(self, axes=None):
         return np.transpose(self, axes=axes)
@@ -1045,16 +1020,16 @@ class FlatFermionTensor(FermionTensor):
                 d = a.ndim // 2 - 1
                 aidx = list(range(d + 1, d + d + 1))
                 bidx = list(range(1, d + 1))
-                tr = tuple([0, d + 2] + list(range(1, d + 1)) +
-                           list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
+                tr = tuple([0, d + 2] + list(range(1, d + 1))
+                           + list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
             # MPO x MPS
             elif a.ndim > b.ndim:
                 assert isinstance(a, FlatFermionTensor)
                 dau, db = a.ndim - b.ndim, b.ndim - 2
                 aidx = list(range(dau + 1, dau + db + 1))
                 bidx = list(range(1, db + 1))
-                tr = tuple([0, dau + 2] + list(range(1, dau + 1)) +
-                           [dau + 1, dau + 3])
+                tr = tuple([0, dau + 2] + list(range(1, dau + 1))
+                           + [dau + 1, dau + 3])
             # MPS x MPO
             elif a.ndim < b.ndim:
                 assert isinstance(b, FlatFermionTensor)

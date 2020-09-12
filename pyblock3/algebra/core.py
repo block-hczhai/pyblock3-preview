@@ -7,20 +7,7 @@ from itertools import accumulate, groupby
 
 from .symmetry import BondInfo, BondFusingInfo
 
-ENABLE_FAST_IMPLS = False
 ENABLE_FAST_SZ = False
-
-if ENABLE_FAST_IMPLS:
-    import block3.sub_tensor
-    _sub_tensor_fast_impls = {
-        np.tensordot: block3.sub_tensor.tensordot
-    }
-
-    import block3.sparse_tensor
-    _sparse_tensor_fast_impls = {
-        np.tensordot: block3.sparse_tensor.tensordot,
-        np.add: block3.sparse_tensor.add
-    }
 
 if ENABLE_FAST_SZ:
     import block3
@@ -49,7 +36,7 @@ def implements(np_func):
                       _numpy_func_impls[np_func])[1]
 
 
-_sub_tensor_numpy_func_impls = _sub_tensor_fast_impls if ENABLE_FAST_IMPLS else {}
+_sub_tensor_numpy_func_impls = {}
 _numpy_func_impls = _sub_tensor_numpy_func_impls
 
 
@@ -411,7 +398,7 @@ class SliceableTensor(np.ndarray):
         return r
 
 
-_sparse_tensor_numpy_func_impls = _sparse_tensor_fast_impls if ENABLE_FAST_IMPLS else {}
+_sparse_tensor_numpy_func_impls = {}
 _numpy_func_impls = _sparse_tensor_numpy_func_impls
 
 
@@ -463,8 +450,6 @@ class SparseTensor(NDArrayOperatorsMixin):
         sh = [[v for k, v in i] for i in qsh]
         if pattern is None:
             pattern = ("+" * (len(bond_infos) - 1)) + "-"
-        elif pattern[-1] == "+":
-            pattern = "".join({"+": "-", "-": "+"}[i] for i in pattern)
         nit = np.nditer(it, flags=['multi_index'])
         for _ in nit:
             x = nit.multi_index
@@ -936,7 +921,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 q_blocks.append(SubTensor(reduced=mat, q_labels=b.q_labels))
         return SparseTensor(blocks=l_blocks), SparseTensor(blocks=q_blocks)
 
-    def left_svd(self, full_matrices=True):
+    def left_svd(self, full_matrices=False):
         """
         Left svd needs to collect all left indices for each specific right index.
 
@@ -965,7 +950,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 SubTensor(reduced=vh, q_labels=(q_label_r, q_label_r)))
         return SparseTensor(blocks=l_blocks), SparseTensor(blocks=s_blocks), SparseTensor(blocks=r_blocks)
 
-    def right_svd(self, full_matrices=True):
+    def right_svd(self, full_matrices=False):
         """
         Right svd needs to collect all right indices for each specific left index.
 
@@ -994,7 +979,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 SubTensor(reduced=u, q_labels=(q_label_l, q_label_l)))
         return SparseTensor(blocks=l_blocks), SparseTensor(blocks=s_blocks), SparseTensor(blocks=r_blocks)
 
-    def tensor_svd(self, idx=2, linfo=None, rinfo=None, pattern=None, full_matrices=True):
+    def tensor_svd(self, idx=2, linfo=None, rinfo=None, pattern=None, full_matrices=False):
         """
         Separate tensor in the middle, collecting legs as [0, idx) and [idx, ndim), then perform SVD.
 
