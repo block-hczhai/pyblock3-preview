@@ -933,6 +933,121 @@ flat_sparse_tensor_tensordot_fast(
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
+flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
+                        const py::array_t<uint32_t> &ashs,
+                        const py::array_t<double> &adata,
+                        const py::array_t<uint32_t> &aidxs,
+                        const py::array_t<int> &idxa,
+                        const py::array_t<int> &idxb) {
+    if (aqs.shape()[0] == 0)
+        return std::make_tuple(aqs, ashs, adata, aidxs);
+    int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
+    int nctr = (int)idxa.shape()[0], nctrb = (int)idxb.shape()[0];
+    assert(nctr == nctrb && nctr != 0);
+    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
+                  asj = aqs.strides()[1] / sizeof(uint32_t);
+    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
+
+    // sort contracted indices (for tensor a)
+    int pidxa[nctr], pidxb[nctr], ctr_idx[nctr];
+    const int *ppidxa = idxa.data(), *ppidxb = idxb.data();
+    for (int i = 0; i < nctr; i++)
+        ctr_idx[i] = i;
+    sort(ctr_idx, ctr_idx + nctr,
+         [ppidxa](int a, int b) { return ppidxa[a] < ppidxa[b]; });
+    for (int i = 0; i < nctr; i++)
+        pidxa[i] = ppidxa[ctr_idx[i]], pidxb[i] = ppidxb[ctr_idx[i]];
+
+    assert(pidxa[nctr - 1] - pidxa[0] == nctr - 1);
+    assert(pidxb[nctr - 1] - pidxb[0] == nctr - 1);
+    assert(pidxa[nctr - 1] + 1 == pidxb[0]);
+    assert(is_sorted(pidxb, pidxb + nctr));
+
+    // free indices
+    int ndiml = pidxa[0], ndimr = ndima - 1 - pidxb[nctr - 1];
+    int outa[ndiml], outb[ndimr];
+    for (int i = 0; i < ndiml; i++)
+        outa[i] = i;
+    for (int i = 0; i < ndimr; i++)
+        outb[i] = i + pidxb[nctr - 1] + 1;
+
+    // free and contracted dims
+    int a_free_dim[n_blocks_a], b_free_dim[n_blocks_a], a_ctr_dim[n_blocks_a],
+        b_ctr_dim[n_blocks_a];
+    const uint32_t *psh = ashs.data();
+    for (int i = 0; i < n_blocks_a; i++) {
+        a_free_dim[i] = a_ctr_dim[i] = b_ctr_dim[i] = b_free_dim[i] = 1;
+        int p = 0;
+        for (int j = 0; j < ndiml; j++, p++)
+            a_free_dim[i] *= psh[i * asi + p * asj];
+        for (int j = 0; j < nctr; j++, p++)
+            a_ctr_dim[i] *= psh[i * asi + p * asj];
+        for (int j = 0; j < nctr; j++, p++)
+            b_ctr_dim[i] *= psh[i * asi + p * asj];
+        for (int j = 0; j < ndimr; j++, p++)
+            b_free_dim[i] *= psh[i * asi + p * asj];
+        assert(p == ndima);
+    }
+
+    int n_blocks_c = 0, ndimc = ndima - nctr;
+    ssize_t csize = 0;
+    bool oks[n_blocks_a];
+    for (int ia = 0; ia < n_blocks_a; ia++) {
+        bool ok = true;
+        psh = aqs.data() + ia * asi;
+        for (int j = 0; j < nctr && ok; j++)
+            if (psh[(j + ndiml) * asj] != psh[(j + ndiml + nctr) * asj])
+                ok = false;
+        oks[ia] = ok;
+        if (!ok)
+            continue;
+        assert(a_ctr_dim[ia] == b_ctr_dim[ia]);
+        csize += (ssize_t)a_free_dim[ia] * a_ctr_dim[ia] * b_free_dim[ia];
+        n_blocks_c++;
+    }
+
+    vector<ssize_t> sh = {n_blocks_c, ndimc};
+    py::array_t<uint32_t> cqs(sh), cshs(sh),
+        cidxs(vector<ssize_t>{n_blocks_c + 1});
+    assert(cqs.strides()[1] == sizeof(uint32_t));
+    assert(cshs.strides()[1] == sizeof(uint32_t));
+    py::array_t<double> cdata(vector<ssize_t>{csize});
+    uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data(),
+             *pcidxs = cidxs.mutable_data();
+    double *pc = cdata.mutable_data();
+    const double *pa = adata.data();
+    const uint32_t *pia = aidxs.data();
+    pcidxs[0] = 0;
+    for (int ia = 0, ic = 0; ia < n_blocks_a; ia++) {
+        if (!oks[ia])
+            continue;
+        psh = aqs.data() + ia * asi;
+        for (int j = 0; j < ndiml + nctr; j++)
+            pcqs[ic * ndimc + j] = psh[j * asj];
+        for (int j = ndiml + nctr; j < ndimr + ndiml + nctr; j++)
+            pcqs[ic * ndimc + j] = psh[(j + nctr) * asj];
+        psh = ashs.data() + ia * asi;
+        for (int j = 0; j < ndiml + nctr; j++)
+            pcshs[ic * ndimc + j] = psh[j * asj];
+        for (int j = ndiml + nctr; j < ndimr + ndiml + nctr; j++)
+            pcshs[ic * ndimc + j] = psh[(j + nctr) * asj];
+        csize = (ssize_t)a_free_dim[ia] * a_ctr_dim[ia] * b_free_dim[ia];
+        int shape_ai = a_ctr_dim[ia] * a_ctr_dim[ia] * b_free_dim[ia];
+        int shape_ci = a_ctr_dim[ia] * b_free_dim[ia];
+        int inca = (a_ctr_dim[ia] + 1) * b_free_dim[ia];
+        int incc = b_free_dim[ia];
+        for (int i = 0; i < a_free_dim[ia]; i++)
+            for (int j = 0; j < b_free_dim[ia]; j++)
+                dcopy(&a_ctr_dim[ia], &pa[pia[ia] + i * shape_ai + j], &inca,
+                      &pc[pcidxs[ic] + i * shape_ci + j], &incc);
+        pcidxs[ic + 1] = pcidxs[ic] + csize;
+        ic++;
+    }
+    return std::make_tuple(cqs, cshs, cdata, cidxs);
+}
+
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>>
 flat_sparse_tensor_add(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
     const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
@@ -1481,6 +1596,9 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
                            py::arg("bqs"), py::arg("bshs"), py::arg("bdata"),
                            py::arg("bidxs"));
+    flat_sparse_tensor.def("diag", &flat_sparse_tensor_diag, py::arg("aqs"),
+                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+                           py::arg("idxa"), py::arg("idxb"));
     flat_sparse_tensor.def("transpose", &flat_sparse_tensor_transpose,
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
                            py::arg("perm"), py::arg("cdata"));

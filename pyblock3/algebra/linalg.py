@@ -65,11 +65,12 @@ def compress(a, *args, **kwargs):
 def _olsen_precondition(q, c, ld, diag):
     """Olsen precondition."""
     t = c.copy()
-    t.precondition(ld, diag)
+    mask = np.abs(ld - diag) > 1E-12
+    t[mask] /= ld - diag[mask]
     numerator = np.dot(t, q)
     denominator = np.dot(c, t)
     q += (-numerator / denominator) * c
-    q.precondition(ld, diag)
+    q[mask] /= ld - diag[mask]
 
 # E.R. Davidson, J. Comput. Phys. 17 (1), 87-94 (1975).
 def davidson(a, b, k, max_iter=500, conv_thold=5e-6, deflation_min_size=2, deflation_max_size=30, iprint=False):

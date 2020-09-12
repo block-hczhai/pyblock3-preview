@@ -73,6 +73,7 @@ class QCSymbolicMPO(MPS):
                             OpNames.Q, sid, q_label=mqm)
 
         for m in range(n_sites):
+            print('MPO site %4d / %4d' % (m, n_sites))
             lshape = 2 + 4 * n_sites + 12 * m * m
             rshape = 2 + 4 * n_sites + 12 * (m + 1) * (m + 1)
             if m == 0:

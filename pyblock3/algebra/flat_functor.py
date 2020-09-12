@@ -4,7 +4,7 @@ from .flat import FlatSparseTensor, FlatSZ, ENABLE_FAST_IMPLS
 from .symmetry import SZ
 from .mps import MPS
 
-def flat_sparse_matmul_init_x(spt, pattern, dq):
+def flat_sparse_matmul_init(spt, pattern, dq):
     tl, tr = [ts.infos for ts in spt.tensors]
     dl, dr = [(len(tl) - 2) // 2, (len(tr) - 2) // 2]
     vinfos = [tl[0], *[tl[i + 1] | tl[i + 1 + dl] for i in range(dl)], *[tr[i + 1] | tr[i + 1 + dr] for i in range(dr)], tr[-1]]
@@ -33,6 +33,7 @@ if ENABLE_FAST_IMPLS:
     flat_sparse_matmul_plan = block3.flat_sparse_tensor.matmul_plan
     flat_sparse_matmul = block3.flat_sparse_tensor.matmul
     flat_sparse_transpose = block3.flat_sparse_tensor.transpose
+    flat_sparse_diag = block3.flat_sparse_tensor.diag
 
 
 class FlatSparseFunctor:
@@ -43,7 +44,25 @@ class FlatSparseFunctor:
         self.axtr = np.array(
             (*range(dr + 1, dr + dl + 1), 0, *range(1, dr + 1)), dtype=np.int32)
         self.work2 = FlatSparseTensor(self.work.q_labels[:, self.axtr], self.work.shapes[:, self.axtr], np.zeros_like(self.work.data), self.work.idxs)
+        self.dmat = self._prepare_diag(dl, dr)
+        if self.op.const != 0:
+            self.dmat += self.op.const
         self.plan = self._matmul_plan(dl, dr)
+    
+    def diag(self):
+        return self.dmat
+
+    def _prepare_diag(self, dl, dr):
+        l, r = self.op.tensors
+        le, re = l.even, r.even
+        axlu = np.arange(1, 1 + dl, dtype=np.int32)
+        axld = np.arange(1 + dl, 1 + dl + dl, dtype=np.int32)
+        axru = np.arange(1, 1 + dr, dtype=np.int32)
+        axrd = np.arange(1 + dr, 1 + dr + dr, dtype=np.int32)
+        led = FlatSparseTensor(*flat_sparse_diag(le.q_labels, le.shapes, le.data, le.idxs, axlu, axld))
+        red = FlatSparseTensor(*flat_sparse_diag(re.q_labels, re.shapes, re.data, re.idxs, axru, axrd))
+        diag = np.tensordot(led, red, axes=1)
+        return FlatSparseTensor.zeros_like(self.vmat).cast_assign(diag).data
 
     def _matmul_plan(self, dl, dr):
         axru = np.arange(1 + dr, 1 + dr + dr, dtype=np.int32)

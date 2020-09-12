@@ -8,20 +8,32 @@ import numpy as np
 import pyblock3.algebra.funcs as pbalg
 from pyblock3.moving_environment import MovingEnvironment
 from pyblock3.aux.hamil import HamilTools
+from pyblock3.hamiltonian import QCHamiltonian
+from pyblock3.fcidump import FCIDUMP
+from pyblock3.symbolic.symbolic_mpo import QCSymbolicMPO
+from pyblock3.algebra.mps import MPSInfo, MPS
 
 flat = True
 fast = True
-dot = 1
+dot = 2
 
-fd = '../data/N2.STO3G.FCIDUMP'
+fd = '../data/H8.STO6G.R1.8.FCIDUMP'
 bdims = 200
 
 # with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
-with HamilTools.hubbard(n_sites=16, u=2, t=1) as hamil:
+# with HamilTools.hubbard(n_sites=16, u=2, t=1) as hamil:
 # with HamilTools.from_fcidump(fd) as hamil:
-    mps = hamil.get_init_mps(bond_dim=bdims)
-    # mps = hamil.get_ground_state_mps(bond_dim=100)
-    mpo = hamil.get_mpo()
+#     mps = hamil.get_init_mps(bond_dim=bdims)
+#     # mps = hamil.get_ground_state_mps(bond_dim=100)
+#     mpo = hamil.get_mpo()
+
+fcidump = FCIDUMP(pg='d2h').read(fd)
+hamil = QCHamiltonian(fcidump)
+mpo = QCSymbolicMPO(hamil).to_sparse()
+
+mps_info = MPSInfo(hamil.n_sites, hamil.vacuum, hamil.target, hamil.basis)
+mps_info.set_bond_dimension(bdims)
+mps = MPS.random(mps_info)
 
 print('MPS = ', mps.show_bond_dims())
 print('MPO (NC) =         ', mpo.show_bond_dims())
