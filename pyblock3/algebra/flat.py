@@ -7,8 +7,32 @@ from itertools import accumulate, groupby
 
 from .symmetry import BondInfo, BondFusingInfo, SZ
 from .core import SparseTensor, SubTensor, FermionTensor
+from .impl.flat import *
 
 ENABLE_FAST_IMPLS = True
+
+if ENABLE_FAST_IMPLS:
+    try:
+        import block3.flat_sparse_tensor
+        flat_sparse_tensordot = block3.flat_sparse_tensor.tensordot
+        flat_sparse_add = block3.flat_sparse_tensor.add
+        flat_sparse_get_infos = block3.flat_sparse_tensor.get_infos
+
+        def flat_sparse_transpose_impl(aqs, ashs, adata, aidxs, axes):
+            data = np.zeros_like(adata)
+            block3.flat_sparse_tensor.transpose(ashs, adata, aidxs, axes, data)
+            return (aqs[:, axes], ashs[:, axes], data, aidxs)
+        flat_sparse_transpose = flat_sparse_transpose_impl
+
+        def flat_sparse_skeleton_impl(bond_infos, pattern=None, dq=None):
+            fdq = dq.to_flat() if dq is not None else SZ(0, 0, 0).to_flat()
+            if pattern is None:
+                pattern = "+" * (len(bond_infos) - 1) + "-"
+            return block3.flat_sparse_tensor.skeleton(block3.VectorMapUIntUInt(bond_infos), pattern, fdq)
+        flat_sparse_skeleton = flat_sparse_skeleton_impl
+    except ImportError:
+        import warnings
+        warnings.warn('Fast flat sparse implementation is not enabled.')
 
 
 def method_alias(name):
@@ -34,176 +58,6 @@ def implements(np_func):
 
 _flat_sparse_tensor_numpy_func_impls = {}
 _numpy_func_impls = _flat_sparse_tensor_numpy_func_impls
-
-
-class FlatSZ:
-    @staticmethod
-    def from_sz(x):
-        return ((x.n + 8192) * 16384 + (x.twos + 8192)) * 8 + x.pg
-
-    @staticmethod
-    def to_sz(x):
-        return SZ((x // 131072) % 16384 - 8192, (x // 8) % 16384 - 8192, x % 8)
-
-
-def is_fermion(x):
-    return (x & 8) != 0
-
-
-def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb):
-    if len(aqs) == 0:
-        return aqs, ashs, adata, aidxs
-    elif len(bqs) == 0:
-        return bqs, bshs, bdata, bidxs
-    la, ndima = aqs.shape
-    lb, ndimb = bqs.shape
-    out_idx_a = np.delete(np.arange(0, ndima), idxa)
-    out_idx_b = np.delete(np.arange(0, ndimb), idxb)
-    ctrqas, outqas = aqs[:, idxa], aqs[:, out_idx_a]
-    ctrqbs, outqbs = bqs[:, idxb], bqs[:, out_idx_b]
-
-    map_idx_b = {}
-    for ib in range(lb):
-        ctrq = ctrqbs[ib].tobytes()
-        if ctrq not in map_idx_b:
-            map_idx_b[ctrq] = []
-        map_idx_b[ctrq].append(ib)
-
-    blocks_map = {}
-    idxs = [0]
-    qs = []
-    shapes = []
-    mats = []
-    for ia in range(la):
-        ctrq = ctrqas[ia].tobytes()
-        mata = adata[aidxs[ia]: aidxs[ia + 1]].reshape(ashs[ia])
-        if ctrq in map_idx_b:
-            for ib in map_idx_b[ctrq]:
-                outq = np.concatenate((outqas[ia], outqbs[ib]))
-                matb = bdata[bidxs[ib]: bidxs[ib + 1]].reshape(bshs[ib])
-                mat = np.tensordot(mata, matb, axes=(idxa, idxb))
-                outqk = outq.tobytes()
-                if outqk not in blocks_map:
-                    blocks_map[outqk] = len(qs)
-                    idxs.append(idxs[-1] + mat.size)
-                    qs.append(outq)
-                    shapes.append(mat.shape)
-                    mats.append(mat.flatten())
-                else:
-                    mats[blocks_map[outqk]] += mat.flatten()
-
-    return (np.array(qs, dtype=np.uint32),
-            np.array(shapes, dtype=np.uint32),
-            np.concatenate(mats) if len(mats) != 0 else np.array(
-                [], dtype=np.float64),
-            np.array(idxs, dtype=np.uint32))
-
-def flat_sparse_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs):
-    blocks_map = {q.tobytes(): iq for iq, q in enumerate(aqs)}
-    data = adata.copy()
-    dd = []
-    bmats = []
-    for ib in range(bqs.shape[0]):
-        q = bqs[ib].tobytes()
-        if q in blocks_map:
-            ia = blocks_map[q]
-            data[aidxs[ia]:aidxs[ia + 1]
-                 ] += bdata[bidxs[ib]:bidxs[ib + 1]]
-            dd.append(ib)
-        else:
-            bmats.append(bdata[bidxs[ib]:bidxs[ib + 1]])
-
-    return (np.concatenate((aqs, np.delete(bqs, dd, axis=0))),
-            np.concatenate((ashs, np.delete(bshs, dd, axis=0))),
-            np.concatenate((data, *bmats)),
-            None)
-
-
-def flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs):
-    collected_rows = {}
-    for i, q in enumerate(aqs[:, -1]):
-        if q not in collected_rows:
-            collected_rows[q] = [i]
-        else:
-            collected_rows[q].append(i)
-    nblocks_r = len(collected_rows)
-    qmats = [None] * aqs.shape[0]
-    rmats = [None] * nblocks_r
-    qqs = aqs
-    qshs = ashs.copy()
-    rqs = np.zeros((nblocks_r, 2), aqs.dtype)
-    rshs = np.zeros((nblocks_r, 2), ashs.dtype)
-    ridxs = np.zeros((nblocks_r + 1), aidxs.dtype)
-    for ir, (qq, v) in enumerate(collected_rows.items()):
-        pashs = ashs[v, :-1]
-        l_shapes = np.prod(pashs, axis=1)
-        mat = np.concatenate([adata[aidxs[ia]:aidxs[ia + 1]].reshape((sh, -1))
-                              for sh, ia in zip(l_shapes, v)], axis=0)
-        q, r = np.linalg.qr(mat, mode='reduced')
-        rqs[ir, :] = qq
-        rshs[ir] = r.shape
-        ridxs[ir + 1] = ridxs[ir] + r.size
-        rmats[ir] = r.flatten()
-        qs = np.split(q, list(accumulate(l_shapes[:-1])), axis=0)
-        assert len(qs) == len(v)
-        qshs[v, -1] = r.shape[0]
-        for q, ia in zip(qs, v):
-            qmats[ia] = q.flatten()
-    return (qqs, qshs, np.concatenate(qmats), None, rqs, rshs, np.concatenate(rmats), ridxs)
-
-
-def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
-    collected_cols = {}
-    for i, q in enumerate(aqs[:, 0]):
-        if q not in collected_cols:
-            collected_cols[q] = [i]
-        else:
-            collected_cols[q].append(i)
-    nblocks_l = len(collected_cols)
-    lmats = [None] * nblocks_l
-    qmats = [None] * aqs.shape[0]
-    lqs = np.zeros((nblocks_l, 2), aqs.dtype)
-    lshs = np.zeros((nblocks_l, 2), ashs.dtype)
-    lidxs = np.zeros((nblocks_l + 1), aidxs.dtype)
-    qqs = aqs
-    qshs = ashs.copy()
-    for il, (qq, v) in enumerate(collected_cols.items()):
-        pashs = ashs[v, 1:]
-        r_shapes = np.prod(pashs, axis=1)
-        mat = np.concatenate(
-            [adata[aidxs[ia]:aidxs[ia + 1]].reshape((-1, sh)).T for sh, ia in zip(r_shapes, v)], axis=0)
-        q, r = np.linalg.qr(mat, mode='reduced')
-        lqs[il, :] = qq
-        lshs[il] = r.shape[::-1]
-        lidxs[il + 1] = lidxs[il] + r.size
-        lmats[il] = r.T.flatten()
-        qs = np.split(q, list(accumulate(r_shapes[:-1])), axis=0)
-        assert len(qs) == len(v)
-        qshs[v, 0] = r.shape[0]
-        for q, ia in zip(qs, v):
-            qmats[ia] = q.T.flatten()
-    return (lqs, lshs, np.concatenate(lmats), lidxs, qqs, qshs, np.concatenate(qmats), None)
-
-
-def flat_sparse_transpose(aqs, ashs, adata, aidxs, axes):
-    data = np.concatenate(
-        [np.transpose(adata[i:j].reshape(sh), axes=axes).flatten()
-         for i, j, sh in zip(aidxs, aidxs[1:], ashs)])
-    return (aqs[:, axes], ashs[:, axes], data, aidxs)
-
-if ENABLE_FAST_IMPLS:
-    try:
-        import block3.flat_sparse_tensor
-        flat_sparse_tensordot = block3.flat_sparse_tensor.tensordot
-        flat_sparse_add = block3.flat_sparse_tensor.add
-        def flat_sparse_transpose_impl(aqs, ashs, adata, aidxs, axes):
-            data = np.zeros_like(adata)
-            block3.flat_sparse_tensor.transpose(ashs, adata, aidxs, axes, data)
-            return (aqs[:, axes], ashs[:, axes], data, aidxs)
-        flat_sparse_transpose = flat_sparse_transpose_impl
-    except ImportError:
-        import warnings
-        warnings.warn('Fast flat sparse implementation is not enabled.')
 
 
 class FlatSparseTensor(NDArrayOperatorsMixin):
@@ -236,10 +90,17 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def to_sparse(self):
         blocks = [None] * self.n_blocks
         for i in range(self.n_blocks):
-            qs = tuple(map(FlatSZ.to_sz, self.q_labels[i]))
+            qs = tuple(map(SZ.from_flat, self.q_labels[i]))
             blocks[i] = SubTensor(
                 self.data[self.idxs[i]:self.idxs[i + 1]].reshape(self.shapes[i]), q_labels=qs)
         return SparseTensor(blocks=blocks)
+    
+    @staticmethod
+    def get_zero():
+        zu = np.zeros((0, 0), dtype=np.uint32)
+        zd = np.zeros((0, ), dtype=float)
+        iu = np.zeros((1, ), dtype=np.uint32)
+        return FlatSparseTensor(zu, zu, zd, iu)
 
     @staticmethod
     def from_sparse(spt):
@@ -249,7 +110,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         q_labels = np.zeros((n_blocks, ndim), dtype=np.uint32)
         for i in range(n_blocks):
             shapes[i] = spt.blocks[i].shape
-            q_labels[i] = list(map(FlatSZ.from_sz, spt.blocks[i].q_labels))
+            q_labels[i] = list(map(SZ.to_flat, spt.blocks[i].q_labels))
         idxs = np.zeros((n_blocks + 1, ), dtype=np.uint32)
         idxs[1:] = np.cumsum(shapes.prod(axis=1))
         data = np.zeros((idxs[-1], ), dtype=np.float64)
@@ -268,30 +129,35 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         return FlatSparseTensor(q_labels=x.q_labels, shapes=x.shapes, data=np.zeros_like(x.data), idxs=x.idxs)
 
     @staticmethod
-    def zeros(*args, **kwargs):
+    def zeros(bond_infos, pattern=None, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with zero elements."""
-        return FlatSparseTensor.from_sparse(SparseTensor.zeros(*args, **kwargs))
+        qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
+        data = np.zeros((idxs[-1], ), dtype=dtype)
+        return FlatSparseTensor(qs, shs, data, idxs)
 
     @staticmethod
-    def ones(*args, **kwargs):
+    def ones(bond_infos, pattern=None, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with ones."""
-        return FlatSparseTensor.from_sparse(SparseTensor.ones(*args, **kwargs))
+        qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
+        data = np.ones((idxs[-1], ), dtype=dtype)
+        return FlatSparseTensor(qs, shs, data, idxs)
 
     @staticmethod
-    def random(*args, **kwargs):
+    def random(bond_infos, pattern=None, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with random elements."""
-        return FlatSparseTensor.from_sparse(SparseTensor.random(*args, **kwargs))
+        qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
+        if dtype == float:
+            data = np.random.random((idxs[-1], ))
+        elif dtype == complex:
+            data = np.random.random(
+                (idxs[-1], )) + np.random.random((idxs[-1], )) * 1j
+        else:
+            return NotImplementedError('dtype %r not supported!' % dtype)
+        return FlatSparseTensor(qs, shs, data, idxs)
 
     @property
     def infos(self):
-        bond_infos = tuple(BondInfo() for _ in range(self.ndim))
-        for j in range(self.ndim):
-            qs = self.q_labels[:, j]
-            shs = self.shapes[:, j]
-            bis = bond_infos[j]
-            for q, s in zip(qs, shs):
-                bis[FlatSZ.to_sz(q)] = s
-        return bond_infos
+        return flat_sparse_get_infos(self.q_labels, self.shapes)
 
     def cast_assign(self, other):
         """assign other to self, removing blocks not in self."""
@@ -533,7 +399,6 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         Returns:
             q, r : tuple(FlatSparseTensor)
         """
-        return tuple(FlatSparseTensor.from_sparse(x) for x in self.to_sparse().left_canonicalize())
         assert mode == 'reduced'
         r = flat_sparse_left_canonicalize(
             self.q_labels, self.shapes, self.data, self.idxs)
@@ -546,7 +411,6 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         Returns:
             l, q : tuple(FlatSparseTensor)
         """
-        return tuple(FlatSparseTensor.from_sparse(x) for x in self.to_sparse().right_canonicalize())
         assert mode == 'reduced'
         r = flat_sparse_right_canonicalize(
             self.q_labels, self.shapes, self.data, self.idxs)
@@ -647,6 +511,7 @@ _numpy_func_impls = _flat_fermion_tensor_numpy_func_impls
 
 
 class FlatFermionTensor(FermionTensor):
+    ZERO = FlatSparseTensor.get_zero()
     """
     flat block-sparse tensor with fermion factors.
 
@@ -658,8 +523,8 @@ class FlatFermionTensor(FermionTensor):
     """
 
     def __init__(self, odd=None, even=None):
-        self.odd = odd
-        self.even = even
+        self.odd = odd if odd is not None else FlatFermionTensor.ZERO
+        self.even = even if even is not None else FlatFermionTensor.ZERO
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if ufunc in _flat_fermion_tensor_numpy_func_impls:
@@ -727,16 +592,31 @@ class FlatFermionTensor(FermionTensor):
         )
 
     @staticmethod
-    def zeros(*args, **kwargs):
-        return FlatFermionTensor.from_fermion(FermionTensor.zeros(*args, **kwargs))
+    def zeros(bond_infos, pattern=None, dq=None, dtype=float):
+        spt = FlatSparseTensor.zeros(
+            bond_infos, pattern=pattern, dq=dq, dtype=dtype)
+        if dq is not None and dq.is_fermion:
+            return FlatFermionTensor(odd=spt)
+        else:
+            return FlatFermionTensor(even=spt)
 
     @staticmethod
-    def ones(*args, **kwargs):
-        return FlatFermionTensor.from_fermion(FermionTensor.ones(*args, **kwargs))
+    def ones(bond_infos, pattern=None, dq=None, dtype=float):
+        spt = FlatSparseTensor.ones(
+            bond_infos, pattern=pattern, dq=dq, dtype=dtype)
+        if dq is not None and dq.is_fermion:
+            return FlatFermionTensor(odd=spt)
+        else:
+            return FlatFermionTensor(even=spt)
 
     @staticmethod
-    def random(*args, **kwargs):
-        return FlatFermionTensor.from_fermion(FermionTensor.random(*args, **kwargs))
+    def random(bond_infos, pattern=None, dq=None, dtype=float):
+        spt = FlatSparseTensor.random(
+            bond_infos, pattern=pattern, dq=dq, dtype=dtype)
+        if dq is not None and dq.is_fermion:
+            return FlatFermionTensor(odd=spt)
+        else:
+            return FlatFermionTensor(even=spt)
 
     def deflate(self, cutoff=0):
         return FlatFermionTensor(odd=self.odd.deflate(cutoff), even=self.even.deflate(cutoff))
@@ -889,13 +769,13 @@ class FlatFermionTensor(FermionTensor):
             for x in blocks:
                 if x.n_blocks != 0:
                     for i, j, q in zip(x.idxs, x.idxs[1:], x.q_labels[:, idx]):
-                        if is_fermion(q):
+                        if SZ.is_flat_fermion(q):
                             np.negative(x.data[i:j], out=x.data[i:j])
         else:
             for x in blocks:
                 if x.n_blocks != 0:
                     for i, j, qs in zip(x.idxs, x.idxs[1:], x.q_labels[:, idx]):
-                        if np.logical_xor.reduce([is_fermion(q) for q in qs]):
+                        if np.logical_xor.reduce([SZ.is_flat_fermion(q) for q in qs]):
                             np.negative(x.data[i:j], out=x.data[i:j])
 
         return r()

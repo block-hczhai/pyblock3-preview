@@ -14,6 +14,17 @@ class SZ:
     @property
     def is_fermion(self):
         return self.n % 2 == 1
+    
+    def to_flat(self):
+        return ((self.n + 8192) * 16384 + (self.twos + 8192)) * 8 + self.pg
+    
+    @staticmethod
+    def from_flat(x):
+        return SZ((x // 131072) % 16384 - 8192, (x // 8) % 16384 - 8192, x % 8)
+    
+    @staticmethod
+    def is_flat_fermion(x):
+        return (x & 8) != 0
 
     def __add__(self, other):
         return SZ(self.n + other.n, self.twos + other.twos, self.pg ^ other.pg)

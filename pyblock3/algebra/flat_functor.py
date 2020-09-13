@@ -1,6 +1,6 @@
 
 import numpy as np
-from .flat import FlatSparseTensor, FlatSZ, ENABLE_FAST_IMPLS
+from .flat import FlatSparseTensor, ENABLE_FAST_IMPLS
 from .symmetry import SZ
 from .mps import MPS
 
@@ -16,7 +16,7 @@ def flat_sparse_matmul_init(spt, pattern, dq):
 if ENABLE_FAST_IMPLS:
     import block3.flat_sparse_tensor
     def flat_sparse_matmul_init_impl(spt, pattern, dq):
-        fdq = FlatSZ.from_sz(dq) if dq is not None else FlatSZ.from_sz(SZ(0, 0, 0))
+        fdq = dq.to_flat() if dq is not None else SZ(0, 0, 0).to_flat()
         l, r = spt.tensors
         lo, le = l.odd, l.even
         ro, re = r.odd, r.even
@@ -38,6 +38,7 @@ if ENABLE_FAST_IMPLS:
 
 class FlatSparseFunctor:
     def __init__(self, spt, pattern, dq=None):
+        assert ENABLE_FAST_IMPLS
         assert isinstance(spt, MPS)
         self.op = spt
         dl, dr, self.vmat, self.work = flat_sparse_matmul_init(self.op, pattern, dq)
@@ -48,7 +49,7 @@ class FlatSparseFunctor:
         if self.op.const != 0:
             self.dmat += self.op.const
         self.plan = self._matmul_plan(dl, dr)
-    
+
     def diag(self):
         return self.dmat
 

@@ -15,25 +15,26 @@ from pyblock3.algebra.mps import MPSInfo, MPS
 
 flat = True
 fast = True
+iprint = False
 dot = 2
 
 fd = '../data/N2.STO3G.FCIDUMP'
 bdims = 150
 
-# with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
+with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
 # with HamilTools.hubbard(n_sites=16, u=2, t=1) as hamil:
 # with HamilTools.from_fcidump(fd) as hamil:
-#     mps = hamil.get_init_mps(bond_dim=bdims)
+    mps = hamil.get_init_mps(bond_dim=bdims)
 #     # mps = hamil.get_ground_state_mps(bond_dim=100)
-#     mpo = hamil.get_mpo()
+    mpo = hamil.get_mpo()
 
-fcidump = FCIDUMP(pg='d2h').read(fd)
-hamil = QCHamiltonian(fcidump)
-mpo = QCSymbolicMPO(hamil).to_sparse()
+# fcidump = FCIDUMP(pg='d2h').read(fd)
+# hamil = QCHamiltonian(fcidump)
+# mpo = QCSymbolicMPO(hamil).to_sparse()
 
-mps_info = MPSInfo(hamil.n_sites, hamil.vacuum, hamil.target, hamil.basis)
-mps_info.set_bond_dimension(bdims)
-mps = MPS.random(mps_info)
+# mps_info = MPSInfo(hamil.n_sites, hamil.vacuum, hamil.target, hamil.basis)
+# mps_info.set_bond_dimension(bdims)
+# mps = MPS.random(mps_info)
 
 print('MPS = ', mps.show_bond_dims())
 print('MPO (NC) =         ', mpo.show_bond_dims())
@@ -46,7 +47,6 @@ if flat:
     mpo = mpo.to_flat()
 mpe = MPE(mps, mpo, mps)
 
-
 def dmrg(n_sweeps=10, tol=1E-6, dot=2):
     eners = np.zeros((n_sweeps, ))
     for iw in range(n_sweeps):
@@ -56,10 +56,10 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
             tt = time.perf_counter()
             eff = mpe[i:i + dot]
             eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
-            eners[iw], eff, ndav = eff.gs_optimize(iprint=False, fast=fast)
+            eners[iw], eff, ndav = eff.gs_optimize(iprint=iprint, fast=fast)
             if dot == 2:
-                l, s, r = eff.ket[0].tensor_svd(idx=3, pattern='+++-+-')
-                l, s, r, error = pbalg.truncate_svd(l, s, r, cutoff=1E-12, max_bond_dim=bdims)
+                lsr = eff.ket[0].tensor_svd(idx=3, pattern='+++-+-')
+                l, s, r, error = pbalg.truncate_svd(*lsr, cutoff=1E-12, max_bond_dim=bdims)
                 eff.ket[:] = [np.tensordot(l, s.diag(), axes=1), r]
             else:
                 error = 0

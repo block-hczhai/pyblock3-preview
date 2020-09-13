@@ -126,6 +126,17 @@ template <> struct less<SZLong> {
 
 } // namespace std
 
+inline SZLong to_sz(uint32_t x) {
+    return SZLong((int)((x >> 17) & 16383) - 8192,
+                  (int)((x >> 3) & 16383) - 8192, x & 7);
+}
+
+inline uint32_t from_sz(SZLong x) {
+    return ((((uint32_t)(x.n() + 8192U) << 14) + (uint32_t)(x.twos() + 8192U))
+            << 3) +
+           (uint32_t)x.pg();
+}
+
 typedef SZLong SZ;
 
 py::array_t<double> tensor_transpose(const py::array_t<double> &x,
@@ -157,75 +168,6 @@ py::array_t<double> tensor_transpose(const py::array_t<double> &x,
     }
 #endif
     return c;
-}
-
-void tensordot_internal(const double *a, const int ndima, const int *shape_a,
-                        const int *perm_a, int trans_a, const int a_free_dim,
-                        const double *b, const int ndimb, const int *shape_b,
-                        const int *perm_b, int trans_b, const int b_free_dim,
-                        const int ctr_dim, double *c, const double alpha = 1.0,
-                        const double beta = 0.0, int num_threads = 1) {
-    // permute or reshape
-    double *new_a = (double *)a, *new_b = (double *)b;
-    if (trans_a == 0) {
-        new_a = new double[(size_t)a_free_dim * ctr_dim];
-#ifdef _HAS_HPTT
-        dTensorTranspose(perm_a, ndima, 1.0, a, shape_a, nullptr, 0.0, new_a,
-                         nullptr, num_threads, 1);
-#else
-        size_t oldacc[ndima], newacc[ndima];
-        oldacc[ndima - 1] = 1;
-        for (int i = ndima - 1; i >= 1; i--)
-            oldacc[i - 1] = oldacc[i] * shape_a[perm_a[i]];
-        for (int i = 0; i < ndima; i++)
-            newacc[perm_a[i]] = oldacc[i];
-        for (size_t i = 0; i < (size_t)a_free_dim * ctr_dim; i++) {
-            size_t j = 0, ii = i;
-            for (int k = ndima - 1; k >= 0; k--)
-                j += (ii % shape_a[k]) * newacc[k], ii /= shape_a[k];
-            new_a[j] = a[i];
-        }
-#endif
-        trans_a = 1;
-    }
-
-    if (trans_b == 0) {
-        new_b = new double[(size_t)b_free_dim * ctr_dim];
-#ifdef _HAS_HPTT
-        dTensorTranspose(perm_b, ndimb, 1.0, b, shape_b, nullptr, 0.0, new_b,
-                         nullptr, num_threads, 1);
-#else
-        size_t oldacc[ndimb], newacc[ndimb];
-        oldacc[ndimb - 1] = 1;
-        for (int i = ndimb - 1; i >= 1; i--)
-            oldacc[i - 1] = oldacc[i] * shape_b[perm_b[i]];
-        for (int i = 0; i < ndimb; i++)
-            newacc[perm_b[i]] = oldacc[i];
-        for (size_t i = 0; i < (size_t)b_free_dim * ctr_dim; i++) {
-            size_t j = 0, ii = i;
-            for (int k = ndimb - 1; k >= 0; k--)
-                j += (ii % shape_b[k]) * newacc[k], ii /= shape_b[k];
-            new_b[j] = b[i];
-        }
-#endif
-        trans_b = 1;
-    }
-
-#ifdef _HAS_INTEL_MKL
-    mkl_set_num_threads(num_threads);
-    mkl_set_dynamic(0);
-#endif
-    int ldb = trans_b == 1 ? b_free_dim : ctr_dim;
-    int lda = trans_a == -1 ? ctr_dim : a_free_dim;
-    int ldc = b_free_dim;
-    dgemm(trans_b == 1 ? "n" : "t", trans_a == -1 ? "n" : "t", &b_free_dim,
-          &a_free_dim, &ctr_dim, &alpha, new_b, &ldb, new_a, &lda, &beta, c,
-          &ldc);
-
-    if (new_a != a)
-        delete[] new_a;
-    if (new_b != b)
-        delete[] new_b;
 }
 
 void tensordot(const double *a, const int ndima, const ssize_t *na,
@@ -404,223 +346,6 @@ template <typename T> void print_array(T *x, int n, string name) {
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
 flat_sparse_tensor_tensordot(
-    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
-    const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
-    const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs,
-    const py::array_t<int> &idxa, const py::array_t<int> &idxb) {
-    if (aqs.shape()[0] == 0)
-        return std::make_tuple(aqs, ashs, adata, aidxs);
-    else if (bqs.shape()[0] == 0)
-        return std::make_tuple(bqs, bshs, bdata, bidxs);
-    Timer t;
-    int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
-    int n_blocks_b = (int)bqs.shape()[0], ndimb = (int)bqs.shape()[1];
-    int nctr = (int)idxa.shape()[0];
-    int ndimc = ndima - nctr + ndimb - nctr;
-    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
-                  asj = aqs.strides()[1] / sizeof(uint32_t);
-    const ssize_t bsi = bqs.strides()[0] / sizeof(uint32_t),
-                  bsj = bqs.strides()[1] / sizeof(uint32_t);
-    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
-    assert(memcmp(bqs.strides(), bshs.strides(), 2 * sizeof(ssize_t)) == 0);
-
-    // sort contracted indices (for tensor a)
-    int pidxa[nctr], pidxb[nctr], ctr_idx[nctr];
-    const int *ppidxa = idxa.data(), *ppidxb = idxb.data();
-    for (int i = 0; i < nctr; i++)
-        ctr_idx[i] = i;
-    sort(ctr_idx, ctr_idx + nctr,
-         [ppidxa](int a, int b) { return ppidxa[a] < ppidxa[b]; });
-    for (int i = 0; i < nctr; i++)
-        pidxa[i] = ppidxa[ctr_idx[i]], pidxb[i] = ppidxb[ctr_idx[i]];
-
-    // checking whether permute is necessary
-    int trans_a = 0, trans_b = 0;
-    if (nctr == 0)
-        trans_a = 1;
-    else if (pidxa[nctr - 1] - pidxa[0] == nctr - 1) {
-        if (pidxa[0] == 0 ||
-            is_shape_one(ashs.data(), n_blocks_a, pidxa[0], asi, asj))
-            trans_a = 1;
-        else if (pidxa[nctr - 1] == ndima - 1 ||
-                 is_shape_one(ashs.data() + (pidxa[nctr - 1] + 1) * asj,
-                              n_blocks_a, ndima - (pidxa[nctr - 1] + 1), asi,
-                              asj))
-            trans_a = -1;
-    }
-
-    if (nctr == 0)
-        trans_b = 1;
-    else if (is_sorted(pidxb, pidxb + nctr) &&
-             pidxb[nctr - 1] - pidxb[0] == nctr - 1) {
-        if (pidxb[0] == 0 ||
-            is_shape_one(bshs.data(), n_blocks_b, pidxb[0], bsi, bsj))
-            trans_b = 1;
-        else if (pidxb[nctr - 1] == ndimb - 1 ||
-                 is_shape_one(bshs.data() + (pidxb[nctr - 1] + 1) * bsj,
-                              n_blocks_b, ndimb - (pidxb[nctr - 1] + 1), bsi,
-                              bsj))
-            trans_b = -1;
-    }
-
-    // free indices
-    int maska[ndima], maskb[ndimb], outa[ndima - nctr], outb[ndimb - nctr];
-    memset(maska, -1, ndima * sizeof(int));
-    memset(maskb, -1, ndimb * sizeof(int));
-    for (int i = 0; i < nctr; i++)
-        maska[pidxa[i]] = i, maskb[pidxb[i]] = i;
-    for (int i = 0, j = 0; i < ndima; i++)
-        if (maska[i] == -1)
-            outa[j++] = i;
-    for (int i = 0, j = 0; i < ndimb; i++)
-        if (maskb[i] == -1)
-            outb[j++] = i;
-
-    // permutation
-    int perma[ndima], permb[ndimb];
-    memset(perma, -1, sizeof(int) * ndima);
-    memset(permb, -1, sizeof(int) * ndimb);
-    if (trans_a == 0) {
-        for (int i = 0; i < nctr; i++)
-            perma[i] = pidxa[i];
-        for (int i = nctr; i < ndima; i++)
-            perma[i] = outa[i - nctr];
-    }
-    if (trans_b == 0) {
-        for (int i = 0; i < nctr; i++)
-            permb[i] = pidxb[i];
-        for (int i = nctr; i < ndimb; i++)
-            permb[i] = outb[i - nctr];
-    }
-
-    // free and contracted dims
-    int a_free_dim[n_blocks_a], b_free_dim[n_blocks_b], ctr_dim[n_blocks_a];
-    int a_free_dims[n_blocks_a][ndima - nctr],
-        b_free_dims[n_blocks_b][ndimb - nctr];
-    const uint32_t *psh = ashs.data();
-    for (int i = 0; i < n_blocks_a; i++) {
-        a_free_dim[i] = ctr_dim[i] = 1;
-        for (int j = 0; j < nctr; j++)
-            ctr_dim[i] *= psh[i * asi + pidxa[j] * asj];
-        for (int j = 0; j < ndima - nctr; j++)
-            a_free_dim[i] *= (a_free_dims[i][j] = psh[i * asi + outa[j] * asj]);
-    }
-    psh = bshs.data();
-    for (int i = 0; i < n_blocks_b; i++) {
-        b_free_dim[i] = 1;
-        for (int j = 0; j < ndimb - nctr; j++)
-            b_free_dim[i] *= (b_free_dims[i][j] = psh[i * bsi + outb[j] * bsj]);
-    }
-
-    // contracted q_label hashs
-    size_t ctrqas[n_blocks_a], ctrqbs[n_blocks_b], outqas[n_blocks_a],
-        outqbs[n_blocks_b];
-    psh = aqs.data();
-    for (int i = 0; i < n_blocks_a; i++) {
-        ctrqas[i] = q_labels_hash(psh + i * asi, nctr, pidxa, asj);
-        outqas[i] = q_labels_hash(psh + i * asi, ndima - nctr, outa, asj);
-    }
-    psh = bqs.data();
-    for (int i = 0; i < n_blocks_b; i++) {
-        ctrqbs[i] = q_labels_hash(psh + i * bsi, nctr, pidxb, bsj);
-        outqbs[i] = q_labels_hash(psh + i * bsi, ndimb - nctr, outb, bsj);
-    }
-
-    unordered_map<size_t, vector<int>> map_idx_b;
-    for (int i = 0; i < n_blocks_b; i++)
-        map_idx_b[ctrqbs[i]].push_back(i);
-
-    unordered_map<size_t,
-                  vector<pair<vector<uint32_t>, vector<pair<int, int>>>>>
-        map_out_q;
-    ssize_t csize = 0;
-    int n_blocks_c = 0;
-    for (int ia = 0; ia < n_blocks_a; ia++) {
-        if (map_idx_b.count(ctrqas[ia])) {
-            const auto &vb = map_idx_b.at(ctrqas[ia]);
-            vector<uint32_t> q_out(ndimc);
-            psh = aqs.data() + ia * asi;
-            for (int i = 0; i < ndima - nctr; i++)
-                q_out[i] = psh[outa[i] * asj];
-            for (int ib : vb) {
-                size_t hout = outqas[ia];
-                hout ^= outqbs[ib] + 0x9E3779B9 + (hout << 6) + (hout >> 2);
-                psh = bqs.data() + ib * bsi;
-                for (int i = 0; i < ndimb - nctr; i++)
-                    q_out[i + ndima - nctr] = psh[outb[i] * bsj];
-                int iq = 0;
-                if (map_out_q.count(hout)) {
-                    auto &vq = map_out_q.at(hout);
-                    for (; iq < (int)vq.size() && q_out != vq[iq].first; iq++)
-                        ;
-                    if (iq == (int)vq.size()) {
-                        vq.push_back(make_pair(
-                            q_out, vector<pair<int, int>>{make_pair(ia, ib)}));
-                        csize += (ssize_t)a_free_dim[ia] * b_free_dim[ib],
-                            n_blocks_c++;
-                    } else
-                        vq[iq].second.push_back(make_pair(ia, ib));
-                } else {
-                    map_out_q[hout].push_back(make_pair(
-                        q_out, vector<pair<int, int>>{make_pair(ia, ib)}));
-                    csize += (ssize_t)a_free_dim[ia] * b_free_dim[ib],
-                        n_blocks_c++;
-                }
-            }
-        }
-    }
-
-    vector<ssize_t> sh = {n_blocks_c, ndimc};
-    py::array_t<uint32_t> cqs(sh), cshs(sh),
-        cidxs(vector<ssize_t>{n_blocks_c + 1});
-    assert(cqs.strides()[1] == sizeof(uint32_t));
-    assert(cshs.strides()[1] == sizeof(uint32_t));
-    py::array_t<double> cdata(vector<ssize_t>{csize});
-    uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data(),
-             *pcidxs = cidxs.mutable_data();
-    double *pc = cdata.mutable_data();
-    const double *pa = adata.data(), *pb = bdata.data();
-    uint32_t psha[n_blocks_a * ndima], pshb[n_blocks_b * ndimb];
-    for (int i = 0; i < n_blocks_a; i++)
-        for (int j = 0; j < ndima; j++)
-            psha[i * ndima + j] = ashs.data()[i * asi + j * asj];
-    for (int i = 0; i < n_blocks_b; i++)
-        for (int j = 0; j < ndimb; j++)
-            pshb[i * ndimb + j] = bshs.data()[i * bsi + j * bsj];
-    tx += t.get_time();
-    tc++;
-
-    const uint32_t *pia = aidxs.data(), *pib = bidxs.data();
-    pcidxs[0] = 0;
-    for (auto &mq : map_out_q) {
-        for (auto &mmq : mq.second) {
-            int xia = mmq.second[0].first, xib = mmq.second[0].second;
-            memcpy(pcqs, mmq.first.data(), ndimc * sizeof(uint32_t));
-            memcpy(pcshs, a_free_dims[xia], (ndima - nctr) * sizeof(uint32_t));
-            memcpy(pcshs + (ndima - nctr), b_free_dims[xib],
-                   (ndimb - nctr) * sizeof(uint32_t));
-            pcidxs[1] = pcidxs[0] + (uint32_t)a_free_dim[xia] * b_free_dim[xib];
-            for (size_t i = 0; i < mmq.second.size(); i++) {
-                xia = mmq.second[i].first, xib = mmq.second[i].second;
-                tensordot_internal(
-                    pa + pia[xia], ndima, (const int *)(psha + xia * ndima),
-                    perma, trans_a, a_free_dim[xia], pb + pib[xib], ndimb,
-                    (const int *)(pshb + xib * ndimb), permb, trans_b,
-                    b_free_dim[xib], ctr_dim[xia], pc, 1.0, i == 0 ? 0.0 : 1.0);
-            }
-            pcqs += ndimc;
-            pcshs += ndimc;
-            pcidxs++;
-            pc += (uint32_t)a_free_dim[xia] * b_free_dim[xib];
-        }
-    }
-    return std::make_tuple(cqs, cshs, cdata, cidxs);
-}
-
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
-      py::array_t<uint32_t>>
-flat_sparse_tensor_tensordot_fast(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
     const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
@@ -1238,17 +963,6 @@ void flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
     }
 }
 
-inline SZLong to_sz(uint32_t x) {
-    return SZLong((int)((x >> 17) & 16383) - 8192,
-                  (int)((x >> 3) & 16383) - 8192, x & 7);
-}
-
-inline uint32_t from_sz(SZLong x) {
-    return ((((uint32_t)(x.n() + 8192U) << 14) + (uint32_t)(x.twos() + 8192U))
-            << 3) +
-           (uint32_t)x.pg();
-}
-
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
 flat_sparse_tensor_skeleton(
     const vector<unordered_map<uint32_t, uint32_t>> &infos,
@@ -1308,6 +1022,24 @@ flat_sparse_tensor_skeleton(
     memcpy(cshs.mutable_data(), shs.data(), shs.size() * sizeof(uint32_t));
     memcpy(cidxs.mutable_data(), idxs.data(), idxs.size() * sizeof(uint32_t));
     return std::make_tuple(cqs, cshs, cidxs);
+}
+
+vector<unordered_map<uint32_t, uint32_t>>
+flat_sparse_tensor_get_infos(const py::array_t<uint32_t> &aqs,
+                             const py::array_t<uint32_t> &ashs) {
+    vector<unordered_map<uint32_t, uint32_t>> mqs;
+    if (aqs.shape()[0] == 0)
+        return mqs;
+    int n = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
+    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
+                  asj = aqs.strides()[1] / sizeof(uint32_t);
+    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
+    mqs.resize(ndima);
+    for (int i = 0; i < ndima; i++)
+        for (int j = 0; j < n; j++)
+            mqs[i][aqs.data()[j * asi + i * asj]] =
+                ashs.data()[j * asi + i * asj];
+    return mqs;
 }
 
 tuple<int, int, vector<unordered_map<uint32_t, uint32_t>>,
@@ -1567,7 +1299,14 @@ PYBIND11_MODULE(block3, m) {
 
     m.doc() = "python extension part for pyblock3.";
 
-    py::bind_map<unordered_map<uint32_t, uint32_t>>(m, "MapUIntUInt");
+    py::bind_map<unordered_map<uint32_t, uint32_t>>(m, "MapUIntUInt")
+        .def("__or__", [](unordered_map<uint32_t, uint32_t> *self,
+                          unordered_map<uint32_t, uint32_t> *other) {
+            unordered_map<uint32_t, uint32_t> r;
+            r.insert(self->begin(), self->end());
+            r.insert(other->begin(), other->end());
+            return move(r);
+        });
     py::bind_vector<vector<unordered_map<uint32_t, uint32_t>>>(
         m, "VectorMapUIntUInt");
 
@@ -1582,12 +1321,9 @@ PYBIND11_MODULE(block3, m) {
         m.def_submodule("flat_sparse_tensor", "FlatSparseTensor");
     flat_sparse_tensor.def("skeleton", &flat_sparse_tensor_skeleton,
                            py::arg("infos"), py::arg("pattern"), py::arg("dq"));
+    flat_sparse_tensor.def("get_infos", &flat_sparse_tensor_get_infos,
+                           py::arg("aqs"), py::arg("ashs"));
     flat_sparse_tensor.def("tensordot", &flat_sparse_tensor_tensordot,
-                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
-                           py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
-                           py::arg("bdata"), py::arg("bidxs"), py::arg("idxa"),
-                           py::arg("idxb"));
-    flat_sparse_tensor.def("tensordot_fast", &flat_sparse_tensor_tensordot_fast,
                            py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                            py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
                            py::arg("bdata"), py::arg("bidxs"), py::arg("idxa"),
