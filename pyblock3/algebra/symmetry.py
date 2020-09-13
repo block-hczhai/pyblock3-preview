@@ -57,7 +57,7 @@ class BondInfo(Counter):
 
     Attributes:
         self : Counter
-            dict of quantum label and number of states
+            dict of quantum label and number of bonds
     """
 
     def __init__(self, *args, **kwargs):
@@ -65,6 +65,7 @@ class BondInfo(Counter):
 
     @property
     def n_bonds(self):
+        """Total number of bonds."""
         return sum(self.values())
 
     def item(self):
@@ -81,19 +82,28 @@ class BondInfo(Counter):
         return quanta
 
     def __and__(self, other):
+        """Intersection."""
         return BondInfo(super().__and__(other))
 
     def __or__(self, other):
+        """Union."""
         return BondInfo(super().__or__(other))
 
     def __add__(self, other):
+        """Sum of number of states."""
         return BondInfo(super().__add__(other))
 
     def __neg__(self):
+        """Negattion of keys."""
         return BondInfo({-k: v for k, v in self.items()})
 
     def __mul__(self, other):
+        """Tensor product."""
         return BondInfo.tensor_product(self, other)
+
+    def __xor__(self, other):
+        """Tensor product, including fusing information."""
+        return BondFusingInfo.tensor_product(self, other)
 
     def filter(self, other):
         return BondInfo({k: min(other[k], v)
@@ -164,7 +174,7 @@ class BondFusingInfo(BondInfo):
                 if q not in finfo:
                     finfo[q] = {}
                 finfo[q][qls] = quanta[q], shs
-                quanta[q] += np.multiply.reduce(shs)
+                quanta[q] += np.prod(shs, dtype=np.uint32)
         return BondFusingInfo(quanta, finfo=finfo, pattern=pattern)
 
     @staticmethod
@@ -198,7 +208,7 @@ class BondFusingInfo(BondInfo):
             for qs, shs in v:
                 if qs not in finfo[q]:
                     finfo[q][qs] = quanta[q], shs
-                    quanta[q] += np.multiply.reduce(shs)
+                    quanta[q] += np.prod(shs, dtype=np.uint32)
                 else:
                     assert finfo[q][qs][1] == shs
         return BondFusingInfo(quanta, finfo=finfo, pattern=pattern)

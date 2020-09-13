@@ -94,7 +94,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             blocks[i] = SubTensor(
                 self.data[self.idxs[i]:self.idxs[i + 1]].reshape(self.shapes[i]), q_labels=qs)
         return SparseTensor(blocks=blocks)
-    
+
     @staticmethod
     def get_zero():
         zu = np.zeros((0, 0), dtype=np.uint32)
@@ -240,6 +240,39 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         return np.linalg.norm(self.data)
 
     @staticmethod
+    def _fuse(a, *idxs, info=None, pattern=None):
+        return a.fuse(*idxs, info=info, pattern=pattern)
+
+    def fuse(self, *idxs, info=None, pattern=None):
+        """Fuse several legs to one leg.
+
+        Args:
+            idxs : tuple(int)
+                Leg indices to be fused. The new fused index will be idxs[0].
+            info : BondFusingInfo (optional)
+                Indicating how quantum numbers are collected.
+                If not specified, the direct sum of quantum numbers will be used.
+                This will generate minimal and (often) incomplete fused shape.
+            pattern : str (optional)
+                A str of '+'/'-'. Only required when info is not specified (if not in fast mode).
+                Indicating how quantum numbers are linearly combined.
+        """
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
+        if info is None:
+            # using minimal fused dimension
+            info = flat_sparse_kron_sum_info(
+                self.q_labels[:, idxs], self.shapes[:, idxs], pattern=pattern)
+        if pattern is None:
+            if hasattr(info, "pattern"):
+                pattern = info.pattern
+            else:
+                pattern = "+" * len(idxs)
+        return FlatSparseTensor(
+            *flat_sparse_fuse(self.q_labels, self.shapes, self.data,
+                              self.idxs, idxs, info, pattern))
+
+    @staticmethod
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
         """
@@ -364,31 +397,36 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         elif b.n_blocks == 0:
             return a
         elif a.n_blocks == 0:
-            return -b
+            return FlatSparseTensor(b.q_labels, b.shapes, -b.data, b.idxs)
         else:
-            blocks_map = {q.tobytes(): iq for iq, q in enumerate(a.q_labels)}
-            data = a.data.copy()
-            dd = []
-            bmats = []
-            for ib in range(b.n_blocks):
-                q = b.q_labels[ib].tobytes()
-                if q in blocks_map:
-                    ia = blocks_map[q]
-                    data[a.idxs[ia]:a.idxs[ia + 1]
-                         ] -= b.data[b.idxs[ib]:b.idxs[ib + 1]]
-                    dd.append(ib)
-                else:
-                    bmats.append(b.data[b.idxs[ib]:b.idxs[ib + 1]])
-            return FlatSparseTensor(
-                q_labels=np.concatenate(
-                    (a.q_labels, np.delete(b.q_labels, dd, axis=0))),
-                shapes=np.concatenate(
-                    (a.shapes, np.delete(b.shapes, dd, axis=0))),
-                data=np.concatenate((data, *bmats))
-            )
+            return FlatSparseTensor(*flat_sparse_add(a.q_labels, a.shapes, a.data,
+                                                     a.idxs, b.q_labels, b.shapes, -b.data, b.idxs))
 
     def subtract(self, b):
         return self._subtract(self, b)
+
+    @staticmethod
+    def _kron_add(a, b, infos=None):
+        """
+        Direct sum of first and last legs.
+        Middle legs are summed.
+
+        Args:
+            infos : (BondInfo, BondInfo) or None
+                BondInfo of first and last legs for the result.
+        """
+        if infos is None:
+            abi, bbi = a.infos, b.infos
+            infos = (abi[0] + bbi[0], abi[-1] + bbi[-1])
+
+        return FlatSparseTensor(
+            *flat_sparse_kron_add(a.q_labels, a.shapes, a.data,
+                                  a.idxs, b.q_labels, b.shapes, b.data, b.idxs, infos))
+
+    def kron_add(self, b, infos=None):
+        """Direct sum of first and last legs.
+        Middle legs are summed."""
+        return self._kron_add(self, b, infos=infos)
 
     def left_canonicalize(self, mode='reduced'):
         """
@@ -462,8 +500,10 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
                 q_labels=np.repeat(v.q_labels, 2, axis=1),
                 shapes=np.repeat(v.shapes, 2, axis=1),
                 data=np.concatenate([np.diag(v.data[i:j]).flatten() for i, j in zip(v.idxs, v.idxs[1:])]))
-        elif len(v.blocks) != 0:
+        elif v.n_blocks != 0:
             raise RuntimeError("ndim for np.diag must be 1 or 2.")
+        else:
+            return v
 
     def diag(self):
         return np.diag(self)
@@ -665,15 +705,17 @@ class FlatFermionTensor(FermionTensor):
                 A str of '+'/'-'. Only required when info is not specified.
                 Indicating how quantum numbers are linearly combined.
         """
-        idxs = [i if i >= 0 else self.ndim + i for i in idxs]
+        idxs = np.array([i if i >= 0 else self.ndim + i for i in idxs])
         if info is None:
-            items = []
-            for block in self.odd.blocks + self.even.blocks:
-                qs = tuple(block.q_labels[i] for i in idxs)
-                shs = tuple(block.shape[i] for i in idxs)
-                items.append((qs, shs))
+            if self.odd.n_blocks == 0:
+                qs, shs = self.even.q_labels[:, idxs], self.even.shapes[:, idxs]
+            elif self.even.n_blocks == 0:
+                qs, shs = self.odd.q_labels[:, idxs], self.odd.shapes[:, idxs]
+            else:
+                qs = np.concatenate((self.odd.q_labels[:, idxs], self.even.q_labels[:, idxs]))
+                shs = np.concatenate((self.odd.shapes[:, idxs], self.even.shapes[:, idxs]))
             # using minimal fused dimension
-            info = BondFusingInfo.kron_sum(items, pattern=pattern)
+            info = flat_sparse_kron_sum_info(qs, shs, pattern=pattern)
         odd = self.odd.fuse(*idxs, info=info, pattern=pattern)
         even = self.even.fuse(*idxs, info=info, pattern=pattern)
         return FlatFermionTensor(odd=odd, even=even)
@@ -900,16 +942,16 @@ class FlatFermionTensor(FermionTensor):
                 d = a.ndim // 2 - 1
                 aidx = list(range(d + 1, d + d + 1))
                 bidx = list(range(1, d + 1))
-                tr = tuple([0, d + 2] + list(range(1, d + 1))
-                           + list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
+                tr = tuple([0, d + 2] + list(range(1, d + 1)) +
+                           list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
             # MPO x MPS
             elif a.ndim > b.ndim:
                 assert isinstance(a, FlatFermionTensor)
                 dau, db = a.ndim - b.ndim, b.ndim - 2
                 aidx = list(range(dau + 1, dau + db + 1))
                 bidx = list(range(1, db + 1))
-                tr = tuple([0, dau + 2] + list(range(1, dau + 1))
-                           + [dau + 1, dau + 3])
+                tr = tuple([0, dau + 2] + list(range(1, dau + 1)) +
+                           [dau + 1, dau + 3])
             # MPS x MPO
             elif a.ndim < b.ndim:
                 assert isinstance(b, FlatFermionTensor)
@@ -950,7 +992,7 @@ class FlatFermionTensor(FermionTensor):
         """
         if infos is None:
             abi, bbi = a.infos, b.infos
-            infos = (abi[0] + bbi[0], abi[-1], bbi[-1])
+            infos = (abi[0] + bbi[0], abi[-1] + bbi[-1])
 
         odd = a.odd.kron_add(b.odd, infos=infos)
         even = a.even.kron_add(b.even, infos=infos)

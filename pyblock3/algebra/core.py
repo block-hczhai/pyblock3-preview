@@ -572,6 +572,14 @@ class SparseTensor(NDArrayOperatorsMixin):
         return np.copy(self)
 
     @staticmethod
+    @implements(np.linalg.norm)
+    def _norm(x):
+        return np.linalg.norm([np.linalg.norm(block) for block in x.blocks])
+
+    def norm(self):
+        return np.linalg.norm(self)
+
+    @staticmethod
     def _unfuse(a, i, info):
         return a.unfuse(i, info)
 
@@ -642,14 +650,14 @@ class SparseTensor(NDArrayOperatorsMixin):
             # fused q
             q = np.add.reduce([iq if ip == "+" else -iq for iq,
                                ip in zip(sqs, pattern)])
+            if q not in info:
+                continue
             # fused shape for fused leg
             x = info[q]
             # starting index in fused dim for this block
             k = info.finfo[q][sqs][0]
             # shape in fused dim for this block
             nk = np.multiply.reduce([ns[ix] for ix in idxs])
-            if q not in info:
-                continue
             new_qs = tuple(iq if iiq != idxs[0] else q for iiq, iq in enumerate(
                 qs) if iiq not in idxs[1:])
             new_ns = [ix if iiq != idxs[0] else x for iiq,
@@ -662,14 +670,6 @@ class SparseTensor(NDArrayOperatorsMixin):
                 k, k + nk) for ix in range(len(ns)) if ix not in idxs[1:])
             blocks_map[new_qs][sl] = np.asarray(block).reshape(tuple(new_ns))
         return SparseTensor(blocks=list(blocks_map.values()))
-
-    @staticmethod
-    @implements(np.linalg.norm)
-    def _norm(x):
-        return np.linalg.norm([np.linalg.norm(block) for block in x.blocks])
-
-    def norm(self):
-        return np.linalg.norm(self)
 
     @staticmethod
     @implements(np.tensordot)
@@ -831,7 +831,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         """
         if infos is None:
             abi, bbi = a.infos, b.infos
-            infos = (abi[0] + bbi[0], abi[-1], bbi[-1])
+            infos = (abi[0] + bbi[0], abi[-1] + bbi[-1])
 
         lb, rb = infos[0], infos[-1]
 
@@ -887,7 +887,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             r_blocks.append(
                 SubTensor(reduced=r, q_labels=(q_label_r, q_label_r)))
             qs = np.split(q, list(accumulate(l_shapes[:-1])), axis=0)
-            assert(len(qs) == len(blocks))
+            assert len(qs) == len(blocks)
             for q, b in zip(qs, blocks):
                 mat = q.reshape(b.shape[:-1] + (r.shape[0], ))
                 q_blocks.append(SubTensor(reduced=mat, q_labels=b.q_labels))
@@ -915,7 +915,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             l_blocks.append(
                 SubTensor(reduced=r.T, q_labels=(q_label_l, q_label_l)))
             qs = np.split(q, list(accumulate(r_shapes[:-1])), axis=0)
-            assert(len(qs) == len(blocks))
+            assert len(qs) == len(blocks)
             for q, b in zip(qs, blocks):
                 mat = q.T.reshape((r.shape[0], ) + b.shape[1:])
                 q_blocks.append(SubTensor(reduced=mat, q_labels=b.q_labels))
@@ -941,7 +941,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                                   for sh, b in zip(l_shapes, blocks)], axis=0)
             u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
             qs = np.split(u, list(accumulate(l_shapes[:-1])), axis=0)
-            assert(len(qs) == len(blocks))
+            assert len(qs) == len(blocks)
             for q, b in zip(qs, blocks):
                 mat = q.reshape(b.shape[:-1] + (s.shape[0], ))
                 l_blocks.append(SubTensor(reduced=mat, q_labels=b.q_labels))
@@ -970,7 +970,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                                   for sh, b in zip(r_shapes, blocks)], axis=1)
             u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
             qs = np.split(vh, list(accumulate(r_shapes[:-1])), axis=1)
-            assert(len(qs) == len(blocks))
+            assert len(qs) == len(blocks)
             for q, b in zip(qs, blocks):
                 mat = q.reshape((vh.shape[0], ) + b.shape[1:])
                 r_blocks.append(SubTensor(reduced=mat, q_labels=b.q_labels))
@@ -1700,7 +1700,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         """
         if infos is None:
             abi, bbi = a.infos, b.infos
-            infos = (abi[0] + bbi[0], abi[-1], bbi[-1])
+            infos = (abi[0] + bbi[0], abi[-1] + bbi[-1])
 
         odd = a.odd.kron_add(b.odd, infos=infos)
         even = a.even.kron_add(b.even, infos=infos)

@@ -351,7 +351,8 @@ class MPS(NDArrayOperatorsMixin):
         return np.sqrt(x.dot(x))
 
     def norm(self):
-        return np.sqrt(self.dot(self))
+        d = self.dot(self)
+        return np.sqrt(abs(d) if abs(d) < 1E-14 else d)
 
     @staticmethod
     @implements(np.matmul)
@@ -389,13 +390,10 @@ class MPS(NDArrayOperatorsMixin):
             # merge virtual dims
             prod_bonds = []
             infos = [t.infos for t in tensors]
-            x, y = infos[0][:2]
-            prod_bonds.append(BondFusingInfo.tensor_product(x, y))
+            prod_bonds.append(infos[0][0] ^ infos[0][1])
             for tl, tr in zip(infos[1:], infos[:-1]):
-                x, y = tl[0] | tr[-2], tl[1] | tr[-1]
-                prod_bonds.append(BondFusingInfo.tensor_product(x, y))
-            x, y = infos[-1][-2:]
-            prod_bonds.append(BondFusingInfo.tensor_product(x, y))
+                prod_bonds.append((tl[0] | tr[-2]) ^ (tl[1] | tr[-1]))
+            prod_bonds.append(infos[-1][-2] ^ infos[-1][-1])
 
             for i in range(n_sites):
                 tensors[i] = tensors[i].fuse(-2, -1, info=prod_bonds[i + 1]

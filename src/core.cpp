@@ -25,6 +25,14 @@
 namespace py = pybind11;
 using namespace std;
 
+PYBIND11_MAKE_OPAQUE(vector<uint32_t>);
+PYBIND11_MAKE_OPAQUE(
+    unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>);
+PYBIND11_MAKE_OPAQUE(
+    unordered_map<
+        uint32_t,
+        pair<uint32_t, unordered_map<vector<uint32_t>,
+                                     pair<uint32_t, vector<uint32_t>>>>>);
 PYBIND11_MAKE_OPAQUE(vector<unordered_map<uint32_t, uint32_t>>);
 PYBIND11_MAKE_OPAQUE(unordered_map<uint32_t, uint32_t>);
 
@@ -112,10 +120,32 @@ struct SZLong {
     }
 };
 
+inline size_t q_labels_hash(const uint32_t *qs, int nctr, const int *idxs,
+                            const int inc) noexcept {
+    size_t h = 0;
+    for (int i = 0; i < nctr; i++)
+        h ^= (size_t)qs[idxs[i] * inc] + 0x9E3779B9 + (h << 6) + (h >> 2);
+    return h;
+}
+
+inline size_t q_labels_hash(const uint32_t *qs, int nctr,
+                            const int inc) noexcept {
+    size_t h = 0;
+    for (int i = 0; i < nctr; i++)
+        h ^= (size_t)qs[i * inc] + 0x9E3779B9 + (h << 6) + (h >> 2);
+    return h;
+}
+
 namespace std {
 
 template <> struct hash<SZLong> {
     size_t operator()(const SZLong &s) const noexcept { return s.hash(); }
+};
+
+template <> struct hash<vector<uint32_t>> {
+    size_t operator()(const vector<uint32_t> &s) const noexcept {
+        return q_labels_hash(s.data(), s.size(), 1);
+    }
 };
 
 template <> struct less<SZLong> {
@@ -137,7 +167,84 @@ inline uint32_t from_sz(SZLong x) {
            (uint32_t)x.pg();
 }
 
+inline bool less_sz(SZLong x, SZLong y) noexcept {
+    return x.n() != y.n()
+               ? x.n() < y.n()
+               : (x.twos() != y.twos() ? x.twos() < y.twos() : x.pg() < y.pg());
+}
+
+inline bool less_psz(const pair<SZLong, uint32_t> &x,
+                     const pair<SZLong, uint32_t> &y) noexcept {
+    return less_sz(x.first, y.first);
+}
+
+inline bool is_shape_one(const uint32_t *shs, int n, int nfree, const int inci,
+                         const int incj) noexcept {
+    for (int j = 0; j < nfree * incj; j += incj)
+        for (int i = 0; i < n * inci; i += inci)
+            if (shs[i + j] != 1)
+                return false;
+    return true;
+}
+
 typedef SZLong SZ;
+
+void bond_info_trans_to_sz(
+    const vector<unordered_map<uint32_t, uint32_t>> &infos,
+    const string &pattern, vector<vector<pair<SZLong, uint32_t>>> &infox,
+    bool sorted = false) {
+    int ndim = (int)infos.size();
+    infox.resize(ndim);
+    for (int i = 0; i < ndim; i++) {
+        infox[i].resize(infos[i].size());
+        int j = 0;
+        for (auto &mr : infos[i]) {
+            infox[i][j].first = to_sz(mr.first);
+            infox[i][j].second = mr.second;
+            j++;
+        }
+        if (sorted)
+            sort(infox[i].begin(), infox[i].end(), less_psz);
+        if (pattern[i] == '-')
+            for (j = 0; j < (int)infox[i].size(); j++)
+                infox[i][j].first = -infox[i][j].first;
+    }
+}
+
+unordered_map<uint32_t,
+              pair<uint32_t, unordered_map<vector<uint32_t>,
+                                           pair<uint32_t, vector<uint32_t>>>>>
+bond_info_fusing_product(const vector<unordered_map<uint32_t, uint32_t>> &infos,
+                         const string &pattern) {
+    int ndim = (int)infos.size();
+    size_t nx = 1;
+    for (int i = 0; i < ndim; i++)
+        nx *= infos[i].size();
+    vector<vector<pair<SZLong, uint32_t>>> infox;
+    bond_info_trans_to_sz(infos, pattern, infox, true);
+    unordered_map<
+        uint32_t,
+        pair<uint32_t,
+             unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>>
+        r;
+    vector<uint32_t> qk(ndim), shk(ndim);
+    for (size_t x = 0; x < nx; x++) {
+        uint32_t sz = 1;
+        size_t xp = x;
+        SZLong xq = SZLong(0);
+        for (int i = 0; i < ndim; xp /= infox[i].size(), i++) {
+            auto &r = infox[i][xp % infox[i].size()];
+            xq = xq + r.first;
+            qk[i] = pattern[i] == '+' ? from_sz(r.first) : from_sz(-r.first);
+            shk[i] = r.second;
+            sz *= r.second;
+        }
+        auto &rr = r[from_sz(xq)];
+        rr.second[qk] = make_pair(rr.first, shk);
+        rr.first += sz;
+    }
+    return r;
+}
 
 py::array_t<double> tensor_transpose(const py::array_t<double> &x,
                                      const py::array_t<int> &perm,
@@ -309,38 +416,6 @@ py::array_t<double> tensor_tensordot(const py::array_t<double> &a,
     tensordot(a.data(), ndima, a.shape(), b.data(), ndimb, b.shape(), nctr,
               idxa.data(), idxb.data(), c.mutable_data(), alpha, beta, 1);
     return c;
-}
-
-inline size_t q_labels_hash(const uint32_t *qs, int nctr, const int *idxs,
-                            const int inc) noexcept {
-    size_t h = 0;
-    for (int i = 0; i < nctr; i++)
-        h ^= (size_t)qs[idxs[i] * inc] + 0x9E3779B9 + (h << 6) + (h >> 2);
-    return h;
-}
-
-inline size_t q_labels_hash(const uint32_t *qs, int nctr,
-                            const int inc) noexcept {
-    size_t h = 0;
-    for (int i = 0; i < nctr; i++)
-        h ^= (size_t)qs[i * inc] + 0x9E3779B9 + (h << 6) + (h >> 2);
-    return h;
-}
-
-inline bool is_shape_one(const uint32_t *shs, int n, int nfree, const int inci,
-                         const int incj) noexcept {
-    for (int j = 0; j < nfree * incj; j += incj)
-        for (int i = 0; i < n * inci; i += inci)
-            if (shs[i + j] != 1)
-                return false;
-    return true;
-}
-
-template <typename T> void print_array(T *x, int n, string name) {
-    cout << name << " : ";
-    for (int i = 0; i < n; i++)
-        cout << x[i] << " ";
-    cout << endl;
 }
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
@@ -973,25 +1048,8 @@ flat_sparse_tensor_skeleton(
         nx *= infos[i].size();
     vector<uint32_t> qs, shs;
     vector<uint32_t> idxs(1, 0);
-    vector<vector<pair<SZLong, uint32_t>>> infox(infos.size());
-    for (int i = 0; i < ndim; i++) {
-        infox[i].resize(infos[i].size());
-        if (pattern[i] == '+') {
-            int j = 0;
-            for (auto &mr : infos[i]) {
-                infox[i][j].first = to_sz(mr.first);
-                infox[i][j].second = mr.second;
-                j++;
-            }
-        } else {
-            int j = 0;
-            for (auto &mr : infos[i]) {
-                infox[i][j].first = -to_sz(mr.first);
-                infox[i][j].second = mr.second;
-                j++;
-            }
-        }
-    }
+    vector<vector<pair<SZLong, uint32_t>>> infox;
+    bond_info_trans_to_sz(infos, pattern, infox);
     SZLong dq = to_sz(fdq);
     vector<uint32_t> qk(ndim), shk(ndim);
     for (size_t x = 0; x < nx; x++) {
@@ -1300,15 +1358,40 @@ PYBIND11_MODULE(block3, m) {
     m.doc() = "python extension part for pyblock3.";
 
     py::bind_map<unordered_map<uint32_t, uint32_t>>(m, "MapUIntUInt")
-        .def("__or__", [](unordered_map<uint32_t, uint32_t> *self,
-                          unordered_map<uint32_t, uint32_t> *other) {
-            unordered_map<uint32_t, uint32_t> r;
-            r.insert(self->begin(), self->end());
-            r.insert(other->begin(), other->end());
-            return move(r);
+        .def("__add__",
+             [](unordered_map<uint32_t, uint32_t> *self,
+                unordered_map<uint32_t, uint32_t> *other) {
+                 unordered_map<uint32_t, uint32_t> r;
+                 r.insert(self->begin(), self->end());
+                 for (auto &kv : *other)
+                     r[kv.first] += kv.second;
+                 return move(r);
+             })
+        .def("__or__",
+             [](unordered_map<uint32_t, uint32_t> *self,
+                unordered_map<uint32_t, uint32_t> *other) {
+                 unordered_map<uint32_t, uint32_t> r;
+                 r.insert(self->begin(), self->end());
+                 r.insert(other->begin(), other->end());
+                 return move(r);
+             })
+        .def("__xor__", [](unordered_map<uint32_t, uint32_t> *self,
+                           unordered_map<uint32_t, uint32_t> *other) {
+            return move(bond_info_fusing_product(
+                vector<unordered_map<uint32_t, uint32_t>>{*self, *other},
+                "++"));
         });
     py::bind_vector<vector<unordered_map<uint32_t, uint32_t>>>(
         m, "VectorMapUIntUInt");
+    py::bind_vector<vector<uint32_t>>(m, "VectorUInt");
+    py::bind_map<
+        unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>(
+        m, "MapVUIntPUV");
+    py::bind_map<unordered_map<
+        uint32_t,
+        pair<uint32_t, unordered_map<vector<uint32_t>,
+                                     pair<uint32_t, vector<uint32_t>>>>>>(
+        m, "MapFusing");
 
     py::module tensor = m.def_submodule("tensor", "Tensor");
     tensor.def("transpose", &tensor_transpose, py::arg("x"), py::arg("perm"),

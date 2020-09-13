@@ -7,6 +7,8 @@ import numpy as np
 import time
 from functools import reduce
 
+flat = True
+
 # hubbard
 
 with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
@@ -16,6 +18,10 @@ with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
 print('MPO (NC) =         ', mpo.show_bond_dims())
 mpo, _ = mpo.compress(left=True, cutoff=1E-12)
 print('MPO (compressed) = ', mpo.show_bond_dims())
+
+if flat:
+    mps = mps.to_flat()
+    mpo = mpo.to_flat()
 
 print('MPS energy = ', mps @ mpo.T @ mps)
 

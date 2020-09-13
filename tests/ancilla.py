@@ -8,6 +8,8 @@ import numpy as np
 import time
 from functools import reduce
 
+flat = True
+
 # ancilla
 
 with HamilTools.from_fcidump('../data/H8.STO6G.R1.8.FCIDUMP') as hamil:
@@ -19,6 +21,10 @@ print('MPS = ', mps.show_bond_dims())
 print('MPO = ', mpo.show_bond_dims())
 mpo, error = mpo.compress(cutoff=1E-8)
 print('MPO = ', mpo.show_bond_dims(), error)
+
+if flat:
+    mps = mps.to_flat()
+    mpo = mpo.to_flat()
 
 init_e = np.dot(mps, mpo @ mps) / np.dot(mps, mps)
 print('Initial Energy = ', init_e)
