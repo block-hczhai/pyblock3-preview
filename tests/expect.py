@@ -16,7 +16,7 @@ from block2 import Random, FCIDUMP, QCTypes, SeqTypes, NoiseTypes
 from block2.sz import HamiltonianQC, MPS, MPSInfo, VectorStateInfo, StateInfo
 from block2.sz import PDM1MPOQC, SimplifiedMPO, Rule, RuleQC, MPOQC, IdentityMPO
 from block2.sz import Expect, MovingEnvironment, NoTransposeRule
-from pyblock3.moving_environment import MovingEnvironment as PYME
+from pyblock3.algebra.mpe import MPE as PYME
 from pyblock3.aux.hamil import MPSTools, MPOTools, HamilTools
 from pyblock3.aux.io import SymbolicMPOTools
 import pyblock3.algebra.funcs as pbalg
@@ -103,7 +103,7 @@ if "PY" in mode:
         # if dot == 2:
         #     eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
         #     eff.bra[:] = [reduce(pbalg.hdot, eff.bra[:])]
-        # # ener, eff, ndav = eff.eigh(iprint=True)
+        # # ener, eff, ndav = eff.gs_optimize(iprint=True)
         # if dot == 2:
         #     l, s, r = eff.ket[0].tensor_svd(
         #         idx=3, pattern='+++-++', full_matrices=False)

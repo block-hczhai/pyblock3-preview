@@ -1,9 +1,8 @@
 
 import sys
-sys.path[:0] = ['..', "../../block2/build"]
+sys.path[:0] = ['..', "../../block2-old/build"]
 
 from pyblock3.aux.hamil import HamilTools
-from pyblock3.moving_environment import MovingEnvironment
 import numpy as np
 import time
 from functools import reduce

@@ -213,7 +213,7 @@ class HamilTools:
         vacuum = hamil.vacuum
         target = SZ(hamil.n_sites * 2, hamil.fcidump.twos, 0)
 
-        mps_info = AncillaMPSInfo(hamil.n_sites, vacuum, target, hamil.basis, hamil.orb_sym)
+        mps_info = AncillaMPSInfo(hamil.n_sites, vacuum, target, hamil.basis)
         mps_info.set_thermal_limit()
         mps = MPS(hamil.n_sites * 2, 0, dot)
         mps.initialize(mps_info)

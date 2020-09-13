@@ -6,7 +6,7 @@ from functools import reduce
 import time
 import numpy as np
 import pyblock3.algebra.funcs as pbalg
-from pyblock3.moving_environment import MovingEnvironment
+from pyblock3.algebra.mpe import MPE
 from pyblock3.aux.hamil import HamilTools
 from pyblock3.hamiltonian import QCHamiltonian
 from pyblock3.fcidump import FCIDUMP
@@ -17,8 +17,8 @@ flat = True
 fast = True
 dot = 2
 
-fd = '../data/H8.STO6G.R1.8.FCIDUMP'
-bdims = 200
+fd = '../data/N2.STO3G.FCIDUMP'
+bdims = 150
 
 # with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
 # with HamilTools.hubbard(n_sites=16, u=2, t=1) as hamil:
@@ -44,28 +44,26 @@ mps.opts = dict(cutoff=1E-12, norm_cutoff=1E-12, max_bond_dim=bdims)
 if flat:
     mps = mps.to_flat()
     mpo = mpo.to_flat()
-me = MovingEnvironment(mps, mpo, mps)
+mpe = MPE(mps, mpo, mps)
 
 
 def dmrg(n_sweeps=10, tol=1E-6, dot=2):
     eners = np.zeros((n_sweeps, ))
     for iw in range(n_sweeps):
         print("Sweep = %4d | Direction = %8s | Bond dimension = %4d" % (
-            iw, "backward" if iw % 2 else "forward", me.ket.opts["max_bond_dim"]))
-        for i in range(0, me.n_sites - dot + 1)[::(-1) ** iw]:
+            iw, "backward" if iw % 2 else "forward", bdims))
+        for i in range(0, mpe.n_sites - dot + 1)[::(-1) ** iw]:
             tt = time.perf_counter()
-            eff = me[i:i + dot]
+            eff = mpe[i:i + dot]
             eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
-            eners[iw], eff, ndav = eff.eigh(iprint=False, fast=fast)
+            eners[iw], eff, ndav = eff.gs_optimize(iprint=False, fast=fast)
             if dot == 2:
-                wfn = eff.ket[0]
-                l, s, r = wfn.tensor_svd(idx=3, pattern='+++-+-')
+                l, s, r = eff.ket[0].tensor_svd(idx=3, pattern='+++-+-')
+                l, s, r, error = pbalg.truncate_svd(l, s, r, cutoff=1E-12, max_bond_dim=bdims)
                 eff.ket[:] = [np.tensordot(l, s.diag(), axes=1), r]
-                cket, error = eff.ket.compress(left=True, cutoff=1E-12, max_bond_dim=bdims)
-                eff.ket[:] = cket[:]
             else:
                 error = 0
-            me[i:i + dot] = eff
+            mpe[i:i + dot] = eff
             print(" %3s Site = %4d-%4d .. Ndav = %4d E = %20.12f Error = %10.5g T = %8.3f" % (
                 "<--" if iw % 2 else "-->", i, i + dot - 1, ndav, eners[iw], error, time.perf_counter() - tt))
         if abs(reduce(np.subtract, eners[:iw + 1][-2:])) < tol:

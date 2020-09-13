@@ -3,7 +3,7 @@ import sys
 sys.path[:0] = ['..', "../../block2/build"]
 
 from pyblock3.aux.hamil import HamilTools
-from pyblock3.moving_environment import MovingEnvironment
+from pyblock3.algebra.mpe import MPE
 from pyblock3.algebra.symmetry import BondFusingInfo
 import pyblock3.algebra.funcs as pbalg
 import numpy as np
@@ -36,7 +36,7 @@ mpo[-1] = mpo[-1].fuse(4, 5, 6, info=info).fuse(1, 2, 3, info=info)
 
 print('MPS energy = ', mps @ (mpo @ mps))
 
-me = MovingEnvironment(mps, mpo, mps)
+me = MPE(mps, mpo, mps)
 mex = me[0:2]
 # print(mex.ket[-2])
 # print(mex.ket[-1])

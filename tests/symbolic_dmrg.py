@@ -12,7 +12,7 @@ from pyblock3.algebra.symmetry import BondFusingInfo
 from pyblock3.symbolic.symbolic_mpo import QCSymbolicMPO
 from pyblock3.hamiltonian import QCHamiltonian
 from pyblock3.fcidump import FCIDUMP
-from pyblock3.moving_environment import MovingEnvironment
+from pyblock3.algebra.mpe import MPE
 from pyblock3.aux.io import SymbolicMPOTools
 from pyblock3.aux.hamil import HamilTools
 
@@ -40,7 +40,7 @@ with HamilTools.from_fcidump(fd) as hamil:
 # print('MPO (compressed) = ', mpo.show_bond_dims())
 
 mps.opts = dict(cutoff=1E-12, norm_cutoff=1E-12, max_bond_dim=200)
-me = MovingEnvironment(mps, mpo, mps)
+me = MPE(mps, mpo, mps)
 
 
 def dmrg(n_sweeps=10, tol=1E-6, dot=2):
@@ -52,7 +52,7 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
             tt = time.perf_counter()
             eff = me[i:i + dot]
             eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
-            eners[iw], eff, ndav = eff.eigh(iprint=True)
+            eners[iw], eff, ndav = eff.gs_optimize(iprint=True)
             if dot == 2:
                 l, s, r = eff.ket[0].tensor_svd(
                     idx=3, pattern='+++-++', full_matrices=False)

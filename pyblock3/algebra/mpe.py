@@ -2,7 +2,7 @@
 import numpy as np
 import time
 from functools import reduce
-from .algebra.linalg import davidson
+from .linalg import davidson
 
 
 def implements(np_func):
@@ -16,8 +16,9 @@ _me_numpy_func_impls = {}
 _numpy_func_impls = _me_numpy_func_impls
 
 
-class MovingEnvironment:
-    """Original and partially contracted tensor network <bra|mpo|ket>."""
+class MPE:
+    """Matrix Product Expectation (MPE).
+    Original and partially contracted tensor network <bra|mpo|ket>."""
 
     def __init__(self, bra, mpo, ket, opts=None, do_canon=True, idents=None):
         self.bra = bra
@@ -177,7 +178,7 @@ class MovingEnvironment:
         eff_bra = eff_ket if self.bra is self.ket else self._effective_bra(
             l=l, r=r)
         eff_mpo = self._effective_mpo(l=l, r=r)
-        return MovingEnvironment(bra=eff_bra, mpo=eff_mpo, ket=eff_ket, do_canon=self.do_canon, idents=self.idents)
+        return MPE(bra=eff_bra, mpo=eff_mpo, ket=eff_ket, do_canon=self.do_canon, idents=self.idents)
 
     def _embedded(self, me, l=0, r=2):
         """Modify sub-system with sites [l, r)"""
@@ -225,10 +226,10 @@ class MovingEnvironment:
         return np.dot(self.bra, self.mpo @ self.ket)
 
     @staticmethod
-    def _eigh(x, iprint=False, fast=False):
-        """Return ground-state energy and ground-state system."""
+    def _gs_optimize(x, iprint=False, fast=False):
+        """Return ground-state energy and ground-state effective MPE."""
         if fast and x.ket.n_sites == 1 and x.mpo.n_sites == 2:
-            from .algebra.flat_functor import FlatSparseFunctor
+            from .flat_functor import FlatSparseFunctor
             pattern = '++' + '+' * (x.ket[0].ndim - 4) + '-+'
             fst = FlatSparseFunctor(x.mpo, pattern=pattern)
             w, v, ndav = davidson(
@@ -237,11 +238,11 @@ class MovingEnvironment:
                 tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
         else:
             w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint)
-        return w[0], MovingEnvironment(bra=v[0], mpo=x.mpo, ket=v[0], do_canon=x.do_canon, idents=x.idents), ndav
+        return w[0], MPE(bra=v[0], mpo=x.mpo, ket=v[0], do_canon=x.do_canon, idents=x.idents), ndav
 
-    def eigh(self, iprint=False, fast=False):
-        """Return ground-state energy and ground-state system."""
-        return self._eigh(self, iprint=iprint, fast=fast)
+    def gs_optimize(self, iprint=False, fast=False):
+        """Return ground-state energy and ground-state effective MPE."""
+        return self._gs_optimize(self, iprint=iprint, fast=fast)
 
     @property
     def n_sites(self):

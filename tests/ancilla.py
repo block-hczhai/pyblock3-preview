@@ -1,9 +1,8 @@
 
 import sys
-sys.path[:0] = ['..', "../../block2/build"]
+sys.path[:0] = ['..', "../../block2-old/build"]
 
 from pyblock3.aux.hamil import HamilTools
-from pyblock3.moving_environment import MovingEnvironment
 from pyblock3.algebra.integrate import rk4_apply
 import numpy as np
 import time
@@ -21,7 +20,7 @@ print('MPO = ', mpo.show_bond_dims())
 mpo, error = mpo.compress(cutoff=1E-8)
 print('MPO = ', mpo.show_bond_dims(), error)
 
-init_e = (mps @ (mpo @ mps)) / (mps @ mps)
+init_e = np.dot(mps, mpo @ mps) / np.dot(mps, mps)
 print('Initial Energy = ', init_e)
 print('Error          = ', init_e - 0.3124038410492045)
 
@@ -29,7 +28,7 @@ mps.opts = dict(max_bond_dim=200, cutoff=1E-8)
 beta = 0.01
 tt = time.perf_counter()
 fmps = rk4_apply((-beta / 2) * mpo, mps)
-ener = (fmps @ (mpo @ fmps)) / (fmps @ fmps)
+ener = np.dot(fmps, mpo @ fmps) / np.dot(fmps, fmps)
 print('time = ', time.perf_counter() - tt)
 print('Energy = ', ener)
 print('Error  = ', ener - 0.2408363230374028)

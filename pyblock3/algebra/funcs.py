@@ -1,5 +1,6 @@
 
 from .core import method_alias
+from .linalg import *
 
 """
 Functions at module level.
