@@ -246,6 +246,28 @@ bond_info_fusing_product(const vector<unordered_map<uint32_t, uint32_t>> &infos,
     return r;
 }
 
+void tensor_transpose_impl(int ndim, const int *perm, const int *shape,
+                           const double *a, double *c, const double alpha,
+                           const double beta, int num_threads = 1) {
+#ifdef _HAS_HPTT
+    dTensorTranspose(perm, ndim, alpha, a, shape, nullptr, beta, c, nullptr,
+                     num_threads, 1);
+#else
+    size_t oldacc[ndim], newacc[ndim];
+    oldacc[ndim - 1] = 1;
+    for (int i = ndim - 1; i >= 1; i--)
+        oldacc[i - 1] = oldacc[i] * shape[perm[i]];
+    for (int i = 0; i < ndim; i++)
+        newacc[perm[i]] = oldacc[i];
+    for (size_t i = 0; i < x.size(); i++) {
+        size_t j = 0, ii = i;
+        for (int k = ndim - 1; k >= 0; k--)
+            j += (ii % shape[k]) * newacc[k], ii /= shape[k];
+        c[j] = alpha * a[i] + beta * c[j];
+    }
+#endif
+}
+
 py::array_t<double> tensor_transpose(const py::array_t<double> &x,
                                      const py::array_t<int> &perm,
                                      const double alpha, const double beta) {
@@ -257,23 +279,8 @@ py::array_t<double> tensor_transpose(const py::array_t<double> &x,
     for (int i = 0; i < ndim; i++)
         shape_y[i] = x.shape()[perm.data()[i]];
     py::array_t<double> c(shape_y);
-#ifdef _HAS_HPTT
-    dTensorTranspose(perm.data(), ndim, alpha, x.data(), shape.data(), nullptr,
-                     beta, c.mutable_data(), nullptr, 1, 1);
-#else
-    size_t oldacc[ndim], newacc[ndim];
-    oldacc[ndim - 1] = 1;
-    for (int i = ndim - 1; i >= 1; i--)
-        oldacc[i - 1] = oldacc[i] * shape_y[i];
-    for (int i = 0; i < ndim; i++)
-        newacc[perm.data()[i]] = oldacc[i];
-    for (size_t i = 0; i < x.size(); i++) {
-        size_t j = 0, ii = i;
-        for (int k = ndim - 1; k >= 0; k--)
-            j += (ii % x.shape()[k]) * newacc[k], ii /= x.shape()[k];
-        c.mutable_data()[j] = alpha * x.data()[i] + beta * c.mutable_data()[j];
-    }
-#endif
+    tensor_transpose_impl(ndim, perm.data(), shape.data(), x.data(),
+                          c.mutable_data(), alpha, beta, 1);
     return c;
 }
 
@@ -325,23 +332,8 @@ void tensordot(const double *a, const int ndima, const ssize_t *na,
         for (int i = nctr; i < ndima; i++)
             perm_a[i] = outa[i - nctr];
         new_a = new double[size_a];
-#ifdef _HAS_HPTT
-        dTensorTranspose(perm_a.data(), ndima, 1.0, a, shape_a.data(), nullptr,
-                         0.0, new_a, nullptr, num_threads, 1);
-#else
-        size_t oldacc[ndima], newacc[ndima];
-        oldacc[ndima - 1] = 1;
-        for (int i = ndima - 1; i >= 1; i--)
-            oldacc[i - 1] = oldacc[i] * shape_a[perm_a[i]];
-        for (int i = 0; i < ndima; i++)
-            newacc[perm_a[i]] = oldacc[i];
-        for (size_t i = 0; i < size_a; i++) {
-            size_t j = 0, ii = i;
-            for (int k = ndima - 1; k >= 0; k--)
-                j += (ii % shape_a[k]) * newacc[k], ii /= shape_a[k];
-            new_a[j] = a[i];
-        }
-#endif
+        tensor_transpose_impl(ndima, perm_a.data(), shape_a.data(), a, new_a,
+                              1.0, 0.0, num_threads);
         trans_a = 1;
     }
 
@@ -355,23 +347,8 @@ void tensordot(const double *a, const int ndima, const ssize_t *na,
         for (int i = nctr; i < ndimb; i++)
             perm_b[i] = outb[i - nctr];
         new_b = new double[size_b];
-#ifdef _HAS_HPTT
-        dTensorTranspose(perm_b.data(), ndimb, 1.0, b, shape_b.data(), nullptr,
-                         0.0, new_b, nullptr, num_threads, 1);
-#else
-        size_t oldacc[ndimb], newacc[ndimb];
-        oldacc[ndimb - 1] = 1;
-        for (int i = ndimb - 1; i >= 1; i--)
-            oldacc[i - 1] = oldacc[i] * shape_b[perm_b[i]];
-        for (int i = 0; i < ndimb; i++)
-            newacc[perm_b[i]] = oldacc[i];
-        for (size_t i = 0; i < size_b; i++) {
-            size_t j = 0, ii = i;
-            for (int k = ndimb - 1; k >= 0; k--)
-                j += (ii % shape_b[k]) * newacc[k], ii /= shape_b[k];
-            new_b[j] = b[i];
-        }
-#endif
+        tensor_transpose_impl(ndimb, perm_b.data(), shape_b.data(), b, new_b,
+                              1.0, 0.0, num_threads);
         trans_b = 1;
     }
 
@@ -639,23 +616,8 @@ flat_sparse_tensor_tensordot(
                 double *a = pa + pia[ia], *new_a = new_pa + new_pia[ia];
                 const int *shape_a = (const int *)(psha + ia * ndima);
                 uint32_t size_a = pia[ia + 1] - pia[ia];
-#ifdef _HAS_HPTT
-                dTensorTranspose(perma, ndima, 1.0, a, shape_a, nullptr, 0.0,
-                                 new_a, nullptr, 1, 1);
-#else
-                size_t oldacc[ndima], newacc[ndima];
-                oldacc[ndima - 1] = 1;
-                for (int i = ndima - 1; i >= 1; i--)
-                    oldacc[i - 1] = oldacc[i] * shape_a[perma[i]];
-                for (int i = 0; i < ndima; i++)
-                    newacc[perma[i]] = oldacc[i];
-                for (size_t i = 0; i < (size_t)size_a; i++) {
-                    size_t j = 0, ii = i;
-                    for (int k = ndima - 1; k >= 0; k--)
-                        j += (ii % shape_a[k]) * newacc[k], ii /= shape_a[k];
-                    new_a[j] = a[i];
-                }
-#endif
+                tensor_transpose_impl(ndima, perma, shape_a, a, new_a, 1.0, 0.0,
+                                      1);
             }
         trans_a = 1;
         pa = new_pa;
@@ -674,23 +636,8 @@ flat_sparse_tensor_tensordot(
                 double *b = pb + pib[ib], *new_b = new_pb + new_pib[ib];
                 const int *shape_b = (const int *)(pshb + ib * ndimb);
                 uint32_t size_b = pib[ib + 1] - pib[ib];
-#ifdef _HAS_HPTT
-                dTensorTranspose(permb, ndimb, 1.0, b, shape_b, nullptr, 0.0,
-                                 new_b, nullptr, 1, 1);
-#else
-                size_t oldacc[ndimb], newacc[ndimb];
-                oldacc[ndimb - 1] = 1;
-                for (int i = ndimb - 1; i >= 1; i--)
-                    oldacc[i - 1] = oldacc[i] * shape_b[permb[i]];
-                for (int i = 0; i < ndimb; i++)
-                    newacc[permb[i]] = oldacc[i];
-                for (size_t i = 0; i < (size_t)size_b; i++) {
-                    size_t j = 0, ii = i;
-                    for (int k = ndimb - 1; k >= 0; k--)
-                        j += (ii % shape_b[k]) * newacc[k], ii /= shape_b[k];
-                    new_b[j] = b[i];
-                }
-#endif
+                tensor_transpose_impl(ndimb, permb, shape_b, b, new_b, 1.0, 0.0,
+                                      1);
             }
         trans_b = 1;
         pb = new_pb;
@@ -992,23 +939,7 @@ void flat_sparse_tensor_transpose(const py::array_t<uint32_t> &ashs,
         for (int i = 0; i < ndima; i++)
             shape_a[i] = psha[ia * asi + i * asj];
         uint32_t size_a = pia[ia + 1] - pia[ia];
-#ifdef _HAS_HPTT
-        dTensorTranspose(perma, ndima, 1.0, a, shape_a, nullptr, 0.0, c,
-                         nullptr, 1, 1);
-#else
-        size_t oldacc[ndima], newacc[ndima];
-        oldacc[ndima - 1] = 1;
-        for (int i = ndima - 1; i >= 1; i--)
-            oldacc[i - 1] = oldacc[i] * shape_a[perma[i]];
-        for (int i = 0; i < ndima; i++)
-            newacc[perma[i]] = oldacc[i];
-        for (size_t i = 0; i < (size_t)size_a; i++) {
-            size_t j = 0, ii = i;
-            for (int k = ndima - 1; k >= 0; k--)
-                j += (ii % shape_a[k]) * newacc[k], ii /= shape_a[k];
-            new_a[j] = a[i];
-        }
-#endif
+        tensor_transpose_impl(ndima, perma, shape_a, a, c, 1.0, 0.0, 1);
     }
 }
 
