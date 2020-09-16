@@ -136,6 +136,20 @@ inline bool less_psz(const pair<SZLong, uint32_t> &x,
     return less_sz(x.first, y.first);
 }
 
+inline bool less_vsz(const vector<SZLong> &x,
+                     const vector<SZLong> &y) noexcept {
+    for (size_t i = 0; i < x.size(); i++)
+        if (x[i] != y[i])
+            return less_sz(x[i], y[i]);
+    return false;
+}
+
+template<typename T>
+inline bool less_pvsz(const pair<vector<SZLong>, T> &x,
+                     const pair<vector<SZLong>, T> &y) noexcept {
+    return less_vsz(x.first, y.first);
+}
+
 inline bool is_shape_one(const uint32_t *shs, int n, int nfree, const int inci,
                          const int incj) noexcept {
     for (int j = 0; j < nfree * incj; j += incj)

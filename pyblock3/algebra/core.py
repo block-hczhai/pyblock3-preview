@@ -579,6 +579,21 @@ class SparseTensor(NDArrayOperatorsMixin):
     def norm(self):
         return np.linalg.norm(self)
 
+    def kron_sum_info(self, *idxs, pattern=None):
+        idxs = [i if i >= 0 else self.ndim + i for i in idxs]
+        items = []
+        for block in self.blocks:
+            qs = tuple(block.q_labels[i] for i in idxs)
+            shs = tuple(block.shape[i] for i in idxs)
+            items.append((qs, shs))
+        # using minimal fused dimension
+        return BondFusingInfo.kron_sum(items, pattern=pattern)
+
+    def kron_product_info(self, *idxs, pattern=None):
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
+        return BondFusingInfo.tensor_product(*np.array(self.infos)[idxs], pattern=pattern)
+
     @staticmethod
     def _unfuse(a, i, info):
         return a.unfuse(i, info)
@@ -633,13 +648,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         blocks_map = {}
         idxs = [i if i >= 0 else self.ndim + i for i in idxs]
         if info is None:
-            items = []
-            for block in self.blocks:
-                qs = tuple(block.q_labels[i] for i in idxs)
-                shs = tuple(block.shape[i] for i in idxs)
-                items.append((qs, shs))
-            # using minimal fused dimension
-            info = BondFusingInfo.kron_sum(items, pattern=pattern)
+            info = self.kron_sum_info(*idxs, pattern=pattern)
         if pattern is None:
             pattern = info.pattern
         for block in self.blocks:
@@ -1391,6 +1400,21 @@ class FermionTensor(NDArrayOperatorsMixin):
     def copy(self):
         return np.copy(self)
 
+    def kron_sum_info(self, *idxs, pattern=None):
+        idxs = [i if i >= 0 else self.ndim + i for i in idxs]
+        items = []
+        for block in self.odd.blocks + self.even.blocks:
+            qs = tuple(block.q_labels[i] for i in idxs)
+            shs = tuple(block.shape[i] for i in idxs)
+            items.append((qs, shs))
+        # using minimal fused dimension
+        return BondFusingInfo.kron_sum(items, pattern=pattern)
+
+    def kron_product_info(self, *idxs, pattern=None):
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
+        return BondFusingInfo.tensor_product(*np.array(self.infos)[idxs], pattern=pattern)
+
     @staticmethod
     def _unfuse(a, i, info):
         return a.unfuse(i, info)
@@ -1429,13 +1453,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         """
         idxs = [i if i >= 0 else self.ndim + i for i in idxs]
         if info is None:
-            items = []
-            for block in self.odd.blocks + self.even.blocks:
-                qs = tuple(block.q_labels[i] for i in idxs)
-                shs = tuple(block.shape[i] for i in idxs)
-                items.append((qs, shs))
-            # using minimal fused dimension
-            info = BondFusingInfo.kron_sum(items, pattern=pattern)
+            info = self.kron_sum_info(*idxs, pattern=pattern)
         odd = self.odd.fuse(*idxs, info=info, pattern=pattern)
         even = self.even.fuse(*idxs, info=info, pattern=pattern)
         return FermionTensor(odd=odd, even=even)

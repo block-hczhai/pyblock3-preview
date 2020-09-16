@@ -429,7 +429,7 @@ class MPS(NDArrayOperatorsMixin):
     def show_bond_dims(self):
         bonds = []
         infos = [t.infos for t in self.tensors]
-        infos = [i if i != () else (BondInfo(), ) for i in infos]
+        infos = [i if len(i) != 0 else (BondInfo(), ) for i in infos]
         bonds.append(infos[0][0])
         for i in range(self.n_sites - 1):
             bonds.append(infos[i + 1][0] | infos[i][-1])

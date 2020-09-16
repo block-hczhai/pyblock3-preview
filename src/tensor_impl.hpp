@@ -82,6 +82,10 @@ extern void dgesvd(const char *jobu, const char *jobvt, const int *m,
                    const int *n, double *a, const int *lda, double *s,
                    double *u, const int *ldu, double *vt, const int *ldvt,
                    double *work, const int *lwork, int *info);
+// matrix copy
+// mat [b] = mat [a]
+extern void dlacpy(const char *uplo, const int *m, const int *n,
+                   const double *a, const int *lda, double *b, const int *ldb);
 }
 
 #endif

@@ -44,7 +44,7 @@ bond_info_fusing_product(const vector<unordered_map<uint32_t, uint32_t>> &infos,
         uint32_t sz = 1;
         size_t xp = x;
         SZLong xq = SZLong(0);
-        for (int i = 0; i < ndim; xp /= infox[i].size(), i++) {
+        for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--) {
             auto &r = infox[i][xp % infox[i].size()];
             xq = xq + r.first;
             qk[i] = pattern[i] == '+' ? from_sz(r.first) : from_sz(-r.first);

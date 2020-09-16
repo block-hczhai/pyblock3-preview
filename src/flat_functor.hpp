@@ -3,8 +3,6 @@
 
 #include <tuple>
 #include <pybind11/numpy.h>
-#include <cstring>
-#include <algorithm>
 #include "tensor_impl.hpp"
 #include "bond_info.hpp"
 

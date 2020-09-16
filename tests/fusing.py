@@ -1,6 +1,6 @@
 
 import sys
-sys.path[:0] = ['..', "../../block2/build"]
+sys.path[:0] = ['..', "../../block2-old/build"]
 
 from pyblock3.aux.hamil import HamilTools
 from pyblock3.algebra.mpe import MPE
@@ -9,6 +9,8 @@ import pyblock3.algebra.funcs as pbalg
 import numpy as np
 import time
 from functools import reduce
+
+flat = True
 
 # hubbard
 
@@ -20,7 +22,11 @@ print('MPO (NC) =         ', mpo.show_bond_dims())
 mpo, _ = mpo.compress(left=True, cutoff=1E-12)
 print('MPO (compressed) = ', mpo.show_bond_dims())
 
-print('MPS energy = ', mps @ (mpo @ mps))
+if flat:
+    mps = mps.to_flat()
+    mpo = mpo.to_flat()
+
+print('MPS energy = ', np.dot(mps, mpo @ mps))
 
 mps[-3:] = [reduce(pbalg.hdot, mps[-3:])]
 mpo[-3:] = [reduce(pbalg.hdot, mpo[-3:])]
@@ -30,7 +36,7 @@ print('MPS (hdot) = ', mps.show_bond_dims())
 
 print('MPS energy = ', mps @ (mpo @ mps))
 
-info = BondFusingInfo.tensor_product(*mps[-1].infos[1:4])
+info = mps[-1].kron_product_info(1, 2, 3)
 mps[-1] = mps[-1].fuse(1, 2, 3, info=info)
 mpo[-1] = mpo[-1].fuse(4, 5, 6, info=info).fuse(1, 2, 3, info=info)
 

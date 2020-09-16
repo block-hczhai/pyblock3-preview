@@ -1,5 +1,7 @@
 
 #include "flat_functor.hpp"
+#include <algorithm>
+#include <cstring>
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>

@@ -30,6 +30,13 @@ PYBIND11_MODULE(block3, m) {
     });
 
     py::bind_map<unordered_map<uint32_t, uint32_t>>(m, "MapUIntUInt")
+        .def_property_readonly("n_bonds",
+                               [](unordered_map<uint32_t, uint32_t> *self) {
+                                   uint32_t r = 0;
+                                   for (auto &kv : *self)
+                                       r += kv.second;
+                                   return r;
+                               })
         .def("__add__",
              [](unordered_map<uint32_t, uint32_t> *self,
                 unordered_map<uint32_t, uint32_t> *other) {
@@ -78,6 +85,13 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("infos"), py::arg("pattern"), py::arg("dq"));
     flat_sparse_tensor.def("get_infos", &flat_sparse_tensor_get_infos,
                            py::arg("aqs"), py::arg("ashs"));
+    flat_sparse_tensor.def("kron_sum_info", &flat_sparse_tensor_kron_sum_info,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("pattern"));
+    flat_sparse_tensor.def("kron_product_info", &bond_info_fusing_product,
+                           py::arg("infos"), py::arg("pattern"));
+    flat_sparse_tensor.def("transpose", &flat_sparse_tensor_transpose,
+                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+                           py::arg("perm"), py::arg("cdata"));
     flat_sparse_tensor.def("tensordot", &flat_sparse_tensor_tensordot,
                            py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                            py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
@@ -87,12 +101,18 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
                            py::arg("bqs"), py::arg("bshs"), py::arg("bdata"),
                            py::arg("bidxs"));
+    flat_sparse_tensor.def("kron_add", &flat_sparse_tensor_kron_add,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                           py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
+                           py::arg("bdata"), py::arg("bidxs"), py::arg("infol"),
+                           py::arg("infor"));
+    flat_sparse_tensor.def("fuse", &flat_sparse_tensor_fuse, py::arg("aqs"),
+                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+                           py::arg("idxs"), py::arg("info"),
+                           py::arg("pattern"));
     flat_sparse_tensor.def("diag", &flat_sparse_tensor_diag, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
                            py::arg("idxa"), py::arg("idxb"));
-    flat_sparse_tensor.def("transpose", &flat_sparse_tensor_transpose,
-                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
-                           py::arg("perm"), py::arg("cdata"));
     flat_sparse_tensor.def("matmul", &flat_sparse_tensor_matmul,
                            py::arg("plan"), py::arg("adata"), py::arg("bdata"),
                            py::arg("cdata"));

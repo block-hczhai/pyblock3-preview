@@ -197,6 +197,8 @@ def flat_sparse_kron_sum_info(aqs, ashs, pattern):
     items = zip(tuple(SZ.from_flat(q) for q in aqs), ashs)
     return BondFusingInfo.kron_sum(items, pattern=pattern)
 
+def flat_sparse_kron_product_info(infos, pattern):
+    return BondFusingInfo.tensor_product(*infos, pattern=pattern)
 
 def flat_sparse_fuse(aqs, ashs, adata, aidxs, idxs, info, pattern):
     if len(aqs) == 0:
@@ -237,13 +239,13 @@ def flat_sparse_fuse(aqs, ashs, adata, aidxs, idxs, info, pattern):
     return np.array(rqs, dtype=np.uint32), np.array(rshs, dtype=np.uint32), np.concatenate([d.flatten() for d in rdata]), None
 
 
-def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infos):
+def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor):
     if len(aqs) == 0:
         return bqs, bshs, bdata, bidxs
     elif len(bqs) == 0:
         return aqs, ashs, adata, aidxs
-    lb = {k.to_flat(): v for k, v in infos[0].items()}
-    rb = {k.to_flat(): v for k, v in infos[-1].items()}
+    lb = {k.to_flat(): v for k, v in infol.items()}
+    rb = {k.to_flat(): v for k, v in infor.items()}
     na, nb = aqs.shape[0], bqs.shape[0]
     ndim = aqs.shape[1]
     assert ndim == bqs.shape[1]

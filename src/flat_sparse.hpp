@@ -1,15 +1,22 @@
 
 #pragma once
 
-#include <tuple>
-#include <pybind11/numpy.h>
-#include <cstring>
-#include <algorithm>
-#include "tensor_impl.hpp"
 #include "bond_info.hpp"
+#include "tensor_impl.hpp"
+#ifdef I
+#undef I
+#endif
+#include <pybind11/numpy.h>
+#include <tuple>
 
 namespace py = pybind11;
 using namespace std;
+
+void flat_sparse_tensor_transpose(const py::array_t<uint32_t> &ashs,
+                                  const py::array_t<double> &adata,
+                                  const py::array_t<uint32_t> &aidxs,
+                                  const py::array_t<int32_t> &perm,
+                                  py::array_t<double> &cdata);
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
@@ -28,11 +35,35 @@ flat_sparse_tensor_add(
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
     const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs);
 
-void flat_sparse_tensor_transpose(const py::array_t<uint32_t> &ashs,
-                                  const py::array_t<double> &adata,
-                                  const py::array_t<uint32_t> &aidxs,
-                                  const py::array_t<int32_t> &perm,
-                                  py::array_t<double> &cdata);
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>>
+flat_sparse_tensor_kron_add(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
+    const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs,
+    const unordered_map<uint32_t, uint32_t> &infol,
+    const unordered_map<uint32_t, uint32_t> &infor);
+
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>>
+flat_sparse_tensor_fuse(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<int32_t> &idxs,
+    const unordered_map<
+        uint32_t,
+        pair<uint32_t,
+             unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>>
+        &info,
+    const string &pattern);
+
+unordered_map<uint32_t,
+              pair<uint32_t, unordered_map<vector<uint32_t>,
+                                           pair<uint32_t, vector<uint32_t>>>>>
+flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
+                                 const py::array_t<uint32_t> &ashs,
+                                 const string &pattern);
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
 flat_sparse_tensor_skeleton(

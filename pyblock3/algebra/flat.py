@@ -16,6 +16,8 @@ if ENABLE_FAST_IMPLS:
         import block3.flat_sparse_tensor
         flat_sparse_tensordot = block3.flat_sparse_tensor.tensordot
         flat_sparse_add = block3.flat_sparse_tensor.add
+        flat_sparse_kron_add = block3.flat_sparse_tensor.kron_add
+        flat_sparse_fuse = block3.flat_sparse_tensor.fuse
         flat_sparse_get_infos = block3.flat_sparse_tensor.get_infos
 
         def flat_sparse_transpose_impl(aqs, ashs, adata, aidxs, axes):
@@ -30,6 +32,19 @@ if ENABLE_FAST_IMPLS:
                 pattern = "+" * (len(bond_infos) - 1) + "-"
             return block3.flat_sparse_tensor.skeleton(block3.VectorMapUIntUInt(bond_infos), pattern, fdq)
         flat_sparse_skeleton = flat_sparse_skeleton_impl
+
+        def flat_sparse_kron_sum_info_impl(aqs, ashs, pattern=None):
+            if pattern is None:
+                pattern = "+" * (aqs.shape[1] if aqs.size != 0 else 0)
+            return block3.flat_sparse_tensor.kron_sum_info(aqs, ashs, pattern)
+        flat_sparse_kron_sum_info = flat_sparse_kron_sum_info_impl
+
+        def flat_sparse_kron_product_info_impl(infos, pattern=None):
+            if pattern is None:
+                pattern = "+" * len(infos)
+            return block3.flat_sparse_tensor.kron_product_info(block3.VectorMapUIntUInt(infos), pattern)
+        flat_sparse_kron_product_info = flat_sparse_kron_product_info_impl
+
     except ImportError:
         import warnings
         warnings.warn('Fast flat sparse implementation is not enabled.')
@@ -239,6 +254,18 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def norm(self):
         return np.linalg.norm(self.data)
 
+    def kron_sum_info(self, *idxs, pattern=None):
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
+        # using minimal fused dimension
+        return flat_sparse_kron_sum_info(
+            self.q_labels[:, idxs], self.shapes[:, idxs], pattern=pattern)
+
+    def kron_product_info(self, *idxs, pattern=None):
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
+        return flat_sparse_kron_product_info(np.array(self.infos)[idxs], pattern=pattern)
+
     @staticmethod
     def _fuse(a, *idxs, info=None, pattern=None):
         return a.fuse(*idxs, info=info, pattern=pattern)
@@ -260,17 +287,16 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         idxs = np.array([i if i >= 0 else self.ndim +
                          i for i in idxs], dtype=np.int32)
         if info is None:
-            # using minimal fused dimension
-            info = flat_sparse_kron_sum_info(
-                self.q_labels[:, idxs], self.shapes[:, idxs], pattern=pattern)
+            info = self.kron_sum_info(*idxs, pattern=pattern)
         if pattern is None:
             if hasattr(info, "pattern"):
                 pattern = info.pattern
             else:
                 pattern = "+" * len(idxs)
-        return FlatSparseTensor(
-            *flat_sparse_fuse(self.q_labels, self.shapes, self.data,
-                              self.idxs, idxs, info, pattern))
+        r = flat_sparse_fuse(self.q_labels, self.shapes, self.data,
+                             self.idxs, idxs, info, pattern)
+        x = FlatSparseTensor(*r)
+        return x
 
     @staticmethod
     @implements(np.tensordot)
@@ -421,7 +447,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
 
         return FlatSparseTensor(
             *flat_sparse_kron_add(a.q_labels, a.shapes, a.data,
-                                  a.idxs, b.q_labels, b.shapes, b.data, b.idxs, infos))
+                                  a.idxs, b.q_labels, b.shapes,
+                                  b.data, b.idxs, infos[0], infos[1]))
 
     def kron_add(self, b, infos=None):
         """Direct sum of first and last legs.
@@ -687,6 +714,26 @@ class FlatFermionTensor(FermionTensor):
         even = self.even.unfuse(i, info=info)
         return FlatFermionTensor(odd=odd, even=even)
 
+    def kron_sum_info(self, *idxs, pattern=None):
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
+        if self.odd.n_blocks == 0:
+            qs, shs = self.even.q_labels[:, idxs], self.even.shapes[:, idxs]
+        elif self.even.n_blocks == 0:
+            qs, shs = self.odd.q_labels[:, idxs], self.odd.shapes[:, idxs]
+        else:
+            qs = np.concatenate(
+                (self.odd.q_labels[:, idxs], self.even.q_labels[:, idxs]))
+            shs = np.concatenate(
+                (self.odd.shapes[:, idxs], self.even.shapes[:, idxs]))
+        # using minimal fused dimension
+        return flat_sparse_kron_sum_info(qs, shs, pattern=pattern)
+
+    def kron_product_info(self, *idxs, pattern=None):
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
+        return flat_sparse_kron_product_info(np.array(self.infos)[idxs], pattern=pattern)
+
     @staticmethod
     def _fuse(a, *idxs, info=None, pattern=None):
         return a.fuse(*idxs, info=info, pattern=pattern)
@@ -705,17 +752,10 @@ class FlatFermionTensor(FermionTensor):
                 A str of '+'/'-'. Only required when info is not specified.
                 Indicating how quantum numbers are linearly combined.
         """
-        idxs = np.array([i if i >= 0 else self.ndim + i for i in idxs])
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
         if info is None:
-            if self.odd.n_blocks == 0:
-                qs, shs = self.even.q_labels[:, idxs], self.even.shapes[:, idxs]
-            elif self.even.n_blocks == 0:
-                qs, shs = self.odd.q_labels[:, idxs], self.odd.shapes[:, idxs]
-            else:
-                qs = np.concatenate((self.odd.q_labels[:, idxs], self.even.q_labels[:, idxs]))
-                shs = np.concatenate((self.odd.shapes[:, idxs], self.even.shapes[:, idxs]))
-            # using minimal fused dimension
-            info = flat_sparse_kron_sum_info(qs, shs, pattern=pattern)
+            info = self.kron_sum_info(*idxs, pattern=pattern)
         odd = self.odd.fuse(*idxs, info=info, pattern=pattern)
         even = self.even.fuse(*idxs, info=info, pattern=pattern)
         return FlatFermionTensor(odd=odd, even=even)
