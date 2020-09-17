@@ -19,6 +19,8 @@ if ENABLE_FAST_IMPLS:
         flat_sparse_kron_add = block3.flat_sparse_tensor.kron_add
         flat_sparse_fuse = block3.flat_sparse_tensor.fuse
         flat_sparse_get_infos = block3.flat_sparse_tensor.get_infos
+        flat_sparse_left_canonicalize = block3.flat_sparse_tensor.left_canonicalize
+        flat_sparse_right_canonicalize = block3.flat_sparse_tensor.right_canonicalize
 
         def flat_sparse_transpose_impl(aqs, ashs, adata, aidxs, axes):
             data = np.zeros_like(adata)

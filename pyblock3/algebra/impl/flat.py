@@ -105,7 +105,7 @@ def flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs):
         qshs[v, -1] = r.shape[0]
         for q, ia in zip(qs, v):
             qmats[ia] = q.flatten()
-    return (qqs, qshs, np.concatenate(qmats), None, rqs, rshs, np.concatenate(rmats), ridxs)
+    return qqs, qshs, np.concatenate(qmats), None, rqs, rshs, np.concatenate(rmats), ridxs
 
 
 def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
@@ -138,7 +138,7 @@ def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
         qshs[v, 0] = r.shape[0]
         for q, ia in zip(qs, v):
             qmats[ia] = q.T.flatten()
-    return (lqs, lshs, np.concatenate(lmats), lidxs, qqs, qshs, np.concatenate(qmats), None)
+    return lqs, lshs, np.concatenate(lmats), lidxs, qqs, qshs, np.concatenate(qmats), None
 
 
 def flat_sparse_transpose(aqs, ashs, adata, aidxs, axes):
@@ -197,8 +197,10 @@ def flat_sparse_kron_sum_info(aqs, ashs, pattern):
     items = zip(tuple(SZ.from_flat(q) for q in aqs), ashs)
     return BondFusingInfo.kron_sum(items, pattern=pattern)
 
+
 def flat_sparse_kron_product_info(infos, pattern):
     return BondFusingInfo.tensor_product(*infos, pattern=pattern)
+
 
 def flat_sparse_fuse(aqs, ashs, adata, aidxs, idxs, info, pattern):
     if len(aqs) == 0:

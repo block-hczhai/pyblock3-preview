@@ -83,6 +83,12 @@ PYBIND11_MODULE(block3, m) {
         m.def_submodule("flat_sparse_tensor", "FlatSparseTensor");
     flat_sparse_tensor.def("skeleton", &flat_sparse_tensor_skeleton,
                            py::arg("infos"), py::arg("pattern"), py::arg("dq"));
+    flat_sparse_tensor.def("left_canonicalize", &flat_sparse_canonicalize<LEFT>,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                           py::arg("aidxs"));
+    flat_sparse_tensor.def("right_canonicalize", &flat_sparse_canonicalize<RIGHT>,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                           py::arg("aidxs"));
     flat_sparse_tensor.def("get_infos", &flat_sparse_tensor_get_infos,
                            py::arg("aqs"), py::arg("ashs"));
     flat_sparse_tensor.def("kron_sum_info", &flat_sparse_tensor_kron_sum_info,

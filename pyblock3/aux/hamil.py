@@ -37,16 +37,18 @@ from block2.sz import HamiltonianQC, MPS, MPSInfo, AncillaMPSInfo
 from block2.sz import PDM1MPOQC, AncillaMPO, SimplifiedMPO, Rule, RuleQC, MPOQC
 from block2.sz import DMRG, MovingEnvironment, NoTransposeRule
 
+
 class HamilTools:
     """
     Initialization of different type of systems.
     """
+
     def __init__(self, hamil):
         self.hamil = hamil
 
     @staticmethod
     @contextlib.contextmanager
-    def _init(scratch='./my_tmp', rand_seed=1234, memory=int(1E9), n_threads=1):
+    def _init(scratch='./my_tmp', rand_seed=1234, memory=int(1E10), n_threads=1):
         Random.rand_seed(rand_seed)
         init_memory(isize=int(memory * 0.1),
                     dsize=int(memory * 0.9), save_dir=scratch)
@@ -74,7 +76,7 @@ class HamilTools:
 
         hamil.deallocate()
         fcidump.deallocate()
-    
+
     @staticmethod
     @contextlib.contextmanager
     def from_fcidump(filename, pg='d2h', **kwargs):
@@ -86,7 +88,7 @@ class HamilTools:
             fcidump.read(filename)
             with HamilTools._from_fcidump(fcidump, pg=pg) as hamil:
                 yield hamil
-    
+
     @staticmethod
     @contextlib.contextmanager
     def hchain(n_sites, r=1.8, pg_reorder=True, **kwargs):
@@ -104,20 +106,21 @@ class HamilTools:
         BOHR = 0.52917721092  # Angstroms
         r = r * BOHR
         mol = gto.M(atom=[['H', (i * r, 0, 0)] for i in range(n_sites)],
-            basis='sto6g', verbose=0, symmetry='d2h')
+                    basis='sto6g', verbose=0, symmetry='d2h')
         pg = mol.symmetry.lower()
 
         # Reorder
         if pg == 'd2h':
-            fcidump_sym = ["Ag", "B3u", "B2u", "B1g", "B1u", "B2g", "B3g", "Au"]
+            fcidump_sym = ["Ag", "B3u", "B2u",
+                           "B1g", "B1u", "B2g", "B3g", "Au"]
             optimal_reorder = ["Ag", "B1u", "B3u",
-                            "B2g", "B2u", "B3g", "B1g", "Au"]
+                               "B2g", "B2u", "B3g", "B1g", "Au"]
         elif pg == 'c1':
             fcidump_sym = ["A"]
             optimal_reorder = ["A"]
         else:
             assert False
-        
+
         # SCF
         m = scf.RHF(mol)
         m.kernel()
@@ -171,7 +174,8 @@ class HamilTools:
         with HamilTools._init(**kwargs) as ():
             fcidump = FCIDUMP()
             h1e = np.zeros((n_sites * (n_sites + 1) // 2), dtype=float)
-            g2e = np.zeros((n_sites * (n_sites + 1) // 2 * (n_sites * (n_sites + 1) // 2 + 1) // 2), dtype=float)
+            g2e = np.zeros((n_sites * (n_sites + 1) // 2 *
+                            (n_sites * (n_sites + 1) // 2 + 1) // 2), dtype=float)
             ij, kl, ijkl = 0, 0, 0
             for i in range(0, n_sites):
                 for j in range(0, i + 1):
@@ -206,7 +210,7 @@ class HamilTools:
         with self.get_mpo_block2(mode=mode, mu=mu, ancilla=ancilla) as mpo:
             xmpo = MPOTools.from_block2(mpo)
         return xmpo
-    
+
     @contextlib.contextmanager
     def get_thermal_limit_mps_block2(self, dot=2):
         hamil = self.hamil
@@ -227,7 +231,7 @@ class HamilTools:
 
         yield mps
         mps_info.deallocate()
-    
+
     @contextlib.contextmanager
     def get_init_mps_block2(self, bond_dim=250, dot=2):
 
@@ -253,7 +257,7 @@ class HamilTools:
         with self.get_init_mps_block2(bond_dim=bond_dim, dot=1) as mps:
             xmps = MPSTools.from_block2(mps)
         return xmps
-    
+
     def get_thermal_limit_mps(self):
         with self.get_thermal_limit_mps_block2(dot=1) as mps:
             xmps = MPSTools.from_block2(mps)
@@ -292,7 +296,7 @@ class HamilTools:
         return PYMPS(tensors=tensors)
 
     @contextlib.contextmanager
-    def get_ground_state_mps_block2(self, bond_dim=250, n_sweeps=20):
+    def get_ground_state_mps_block2(self, bond_dim=250, noise=1E-16, n_sweeps=20):
         hamil = self.hamil
         with self.get_init_mps_block2(bond_dim=bond_dim, dot=2) as mps:
             mpo = MPOQC(hamil, QCTypes.Conventional)
@@ -300,15 +304,15 @@ class HamilTools:
 
             me = MovingEnvironment(mpo, mps, mps, "DMRG")
             me.init_environments(True)
-            dmrg = DMRG(me, VectorUInt16([bond_dim]), VectorDouble([1E-6, 0]))
+            dmrg = DMRG(me, VectorUInt16([bond_dim]), VectorDouble([noise, 0]))
             energy = dmrg.solve(n_sweeps, mps.center == 0)
 
             print("Ground State Energy = ", energy)
             yield mps
             mpo.deallocate()
 
-    def get_ground_state_mps(self, bond_dim=250, n_sweeps=20):
-        with self.get_ground_state_mps_block2(bond_dim=bond_dim, n_sweeps=n_sweeps) as mps:
+    def get_ground_state_mps(self, bond_dim=250, noise=1E-16, n_sweeps=20):
+        with self.get_ground_state_mps_block2(bond_dim=bond_dim, noise=noise, n_sweeps=n_sweeps) as mps:
             if mps.center == 0:
                 mps.dot = 1
             elif mps.center == mps.n_sites - 2:

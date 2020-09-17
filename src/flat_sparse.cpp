@@ -221,10 +221,9 @@ flat_sparse_tensor_tensordot(
         for (auto &mmq : mq.second) {
             int xia = mmq.second[0].first, xib = mmq.second[0].second;
             memcpy(pcqs, mmq.first.data(), ndimc * sizeof(uint32_t));
-            memcpy(pcshs, a_free_dims[xia],
-                        (ndima - nctr) * sizeof(uint32_t));
+            memcpy(pcshs, a_free_dims[xia], (ndima - nctr) * sizeof(uint32_t));
             memcpy(pcshs + (ndima - nctr), b_free_dims[xib],
-                        (ndimb - nctr) * sizeof(uint32_t));
+                   (ndimb - nctr) * sizeof(uint32_t));
             pcidxs[1] = pcidxs[0] + (uint32_t)a_free_dim[xia] * b_free_dim[xib];
             pcqs += ndimc;
             pcshs += ndimc;
@@ -760,8 +759,7 @@ flat_sparse_tensor_skeleton(
     assert(cshs.strides()[1] == sizeof(uint32_t));
     memcpy(cqs.mutable_data(), qs.data(), qs.size() * sizeof(uint32_t));
     memcpy(cshs.mutable_data(), shs.data(), shs.size() * sizeof(uint32_t));
-    memcpy(cidxs.mutable_data(), idxs.data(),
-                idxs.size() * sizeof(uint32_t));
+    memcpy(cidxs.mutable_data(), idxs.data(), idxs.size() * sizeof(uint32_t));
     return std::make_tuple(cqs, cshs, cidxs);
 }
 
@@ -782,3 +780,174 @@ flat_sparse_tensor_get_infos(const py::array_t<uint32_t> &aqs,
                 ashs.data()[j * asi + i * asj];
     return mqs;
 }
+
+template <DIRECTION L>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
+                         const py::array_t<uint32_t> &ashs,
+                         const py::array_t<double> &adata,
+                         const py::array_t<uint32_t> &aidxs) {
+    if (aqs.shape()[0] == 0)
+        return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata,
+                               aidxs);
+    int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
+    const int cidx = L == LEFT ? ndima - 1 : 0;
+    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
+                  asj = aqs.strides()[1] / sizeof(uint32_t);
+    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
+
+    unordered_map<uint32_t, vector<int>> collected;
+    const uint32_t *pashs = ashs.data(), *paqs = aqs.data(),
+                   *pia = aidxs.data();
+    const double *pa = adata.data();
+    for (int i = 0; i < n_blocks_a; i++)
+        collected[paqs[i * asi + cidx * asj]].push_back(i);
+
+    int n_blocks_lr = collected.size();
+
+    py::array_t<uint32_t> qqs(vector<ssize_t>{n_blocks_a, ndima}),
+        qshs(vector<ssize_t>{n_blocks_a, ndima});
+    py::array_t<uint32_t> qidxs(vector<ssize_t>{n_blocks_a + 1});
+    py::array_t<uint32_t> lrqs(vector<ssize_t>{n_blocks_lr, 2}),
+        lrshs(vector<ssize_t>{n_blocks_lr, 2});
+    py::array_t<uint32_t> lridxs(vector<ssize_t>{n_blocks_lr + 1});
+
+    uint32_t *pqqs = qqs.mutable_data(), *pqshs = qshs.mutable_data();
+    uint32_t *plrqs = lrqs.mutable_data(), *plrshs = lrshs.mutable_data();
+    uint32_t *pqidxs = qidxs.mutable_data(), *plridxs = lridxs.mutable_data();
+    int ilr = 0, iq = 0;
+    pqidxs[0] = 0;
+    plridxs[0] = 0;
+    uint32_t qblock_size[n_blocks_a];
+    int max_mshape = 0, max_lshape = 0, max_rshape = 0;
+    size_t max_tmp_size = 0;
+
+    for (auto &cr : collected) {
+        int nq = (int)cr.second.size();
+        uint32_t lshape = 0, rshape = 0;
+        int iqx = iq;
+        for (int i : cr.second) {
+            for (int j = 0; j < ndima; j++) {
+                pqqs[iqx * ndima + j] = paqs[i * asi + j * asj];
+                pqshs[iqx * ndima + j] = pashs[i * asi + j * asj];
+            }
+            if (L == LEFT) {
+                qblock_size[iqx] = accumulate(pqshs + iqx * ndima,
+                                              pqshs + iqx * ndima + (ndima - 1),
+                                              1, multiplies<uint32_t>());
+                lshape += qblock_size[iqx];
+                rshape = pqshs[iqx * ndima + ndima - 1];
+            } else {
+                qblock_size[iqx] = accumulate(pqshs + iqx * ndima + 1,
+                                              pqshs + iqx * ndima + ndima, 1,
+                                              multiplies<uint32_t>());
+                lshape = pqshs[iqx * ndima + 0];
+                rshape += qblock_size[iqx];
+            }
+            iqx++;
+        }
+        uint32_t mshape = min(lshape, rshape);
+        max_mshape = max((int)mshape, max_mshape);
+        max_lshape = max((int)lshape, max_lshape);
+        max_rshape = max((int)rshape, max_rshape);
+        max_tmp_size = max((size_t)lshape * rshape, max_tmp_size);
+        plrqs[ilr * 2 + 0] = plrqs[ilr * 2 + 1] = cr.first;
+        plrshs[ilr * 2 + 0] = L == LEFT ? mshape : lshape;
+        plrshs[ilr * 2 + 1] = L == LEFT ? rshape : mshape;
+        for (int i = 0; i < nq; i++) {
+            qblock_size[iq + i] *= mshape;
+            pqshs[(iq + i) * ndima + cidx] = mshape;
+            pqidxs[iq + i + 1] = pqidxs[iq + i] + qblock_size[iq + i];
+        }
+        plridxs[ilr + 1] =
+            plridxs[ilr] + plrshs[ilr * 2 + 0] * plrshs[ilr * 2 + 1];
+        ilr++, iq += nq;
+    }
+    py::array_t<double> qdata(vector<ssize_t>{pqidxs[n_blocks_a]});
+    py::array_t<double> lrdata(vector<ssize_t>{plridxs[n_blocks_lr]});
+    double *pq = qdata.mutable_data(), *plr = lrdata.mutable_data();
+    memset(plr, 0, sizeof(double) * plridxs[n_blocks_lr]);
+    iq = 0, ilr = 0;
+    int lwork = (L == LEFT ? max_rshape : max_lshape) * 34, info = 0;
+    vector<double> tau(max_mshape), work(lwork), tmp(max_tmp_size);
+
+    for (auto &cr : collected) {
+        int nq = (int)cr.second.size(), lshape, rshape;
+        if (L == LEFT) {
+            lshape = (pqidxs[iq + nq] - pqidxs[iq]) / plrshs[ilr * 2 + 0];
+            rshape = pashs[cr.second[0] * asi + cidx * asj];
+        } else {
+            lshape = pashs[cr.second[0] * asi + cidx * asj];
+            rshape = (pqidxs[iq + nq] - pqidxs[iq]) / plrshs[ilr * 2 + 1];
+        }
+        int mshape = min(lshape, rshape);
+        double *ptmp = tmp.data();
+        if (L == LEFT) {
+            for (int i = 0; i < nq; i++) {
+                uint32_t ia = cr.second[i], sz = pia[ia + 1] - pia[ia];
+                memcpy(ptmp, pa + pia[ia], sizeof(double) * sz);
+                ptmp += sz;
+            }
+            dgelqf(&rshape, &lshape, tmp.data(), &rshape, tau.data(),
+                   work.data(), &lwork, &info);
+            assert(info == 0);
+            for (int j = 0; j < mshape; j++)
+                memcpy(plr + plridxs[ilr] + j * rshape + j,
+                       tmp.data() + j * rshape + j,
+                       sizeof(double) * (rshape - j));
+            dorglq(&mshape, &lshape, &mshape, tmp.data(), &rshape, tau.data(),
+                   work.data(), &lwork, &info);
+            assert(info == 0);
+            for (int j = 0; j < lshape; j++)
+                memcpy(pq + pqidxs[iq] + j * mshape, tmp.data() + j * rshape,
+                       sizeof(double) * mshape);
+        } else {
+            for (int i = 0; i < nq; i++) {
+                int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
+                dlacpy("n", &ra, &lshape, pa + pia[ia], &ra, ptmp, &rshape);
+                ptmp += ra;
+            }
+            dgeqrf(&rshape, &lshape, tmp.data(), &rshape, tau.data(),
+                   work.data(), &lwork, &info);
+            assert(info == 0);
+            for (int j = 0; j < lshape; j++)
+                memcpy(plr + plridxs[ilr] + j * mshape, tmp.data() + j * rshape,
+                       sizeof(double) * min(mshape, j + 1));
+            dorgqr(&rshape, &mshape, &mshape, tmp.data(), &rshape, tau.data(),
+                   work.data(), &lwork, &info);
+            assert(info == 0);
+            ptmp = tmp.data();
+            for (int i = 0; i < nq; i++) {
+                int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
+                dlacpy("n", &ra, &mshape, ptmp, &rshape, pq + pqidxs[iq + i], &ra);
+                ptmp += ra;
+            }
+        }
+        ilr++, iq += nq;
+    }
+
+    return L == LEFT ? std::make_tuple(qqs, qshs, qdata, qidxs, lrqs, lrshs,
+                                       lrdata, lridxs)
+                     : std::make_tuple(lrqs, lrshs, lrdata, lridxs, qqs, qshs,
+                                       qdata, qidxs);
+}
+
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<double>, py::array_t<uint32_t>,
+               py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_canonicalize<LEFT>(const py::array_t<uint32_t> &aqs,
+                               const py::array_t<uint32_t> &ashs,
+                               const py::array_t<double> &adata,
+                               const py::array_t<uint32_t> &aidxs);
+
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<double>, py::array_t<uint32_t>,
+               py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_canonicalize<RIGHT>(const py::array_t<uint32_t> &aqs,
+                                const py::array_t<uint32_t> &ashs,
+                                const py::array_t<double> &adata,
+                                const py::array_t<uint32_t> &aidxs);

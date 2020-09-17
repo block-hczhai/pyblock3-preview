@@ -73,3 +73,32 @@ flat_sparse_tensor_skeleton(
 vector<unordered_map<uint32_t, uint32_t>>
 flat_sparse_tensor_get_infos(const py::array_t<uint32_t> &aqs,
                              const py::array_t<uint32_t> &ashs);
+
+enum DIRECTION { LEFT = 1, RIGHT = 0 };
+
+template <DIRECTION L>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
+                         const py::array_t<uint32_t> &ashs,
+                         const py::array_t<double> &adata,
+                         const py::array_t<uint32_t> &aidxs);
+
+extern template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                      py::array_t<double>, py::array_t<uint32_t>,
+                      py::array_t<uint32_t>, py::array_t<uint32_t>,
+                      py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_canonicalize<LEFT>(const py::array_t<uint32_t> &aqs,
+                               const py::array_t<uint32_t> &ashs,
+                               const py::array_t<double> &adata,
+                               const py::array_t<uint32_t> &aidxs);
+
+extern template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                      py::array_t<double>, py::array_t<uint32_t>,
+                      py::array_t<uint32_t>, py::array_t<uint32_t>,
+                      py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_canonicalize<RIGHT>(const py::array_t<uint32_t> &aqs,
+                                const py::array_t<uint32_t> &ashs,
+                                const py::array_t<double> &adata,
+                                const py::array_t<uint32_t> &aidxs);

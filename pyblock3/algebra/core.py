@@ -115,12 +115,6 @@ class SubTensor(np.ndarray):
         obj.q_labels = q_labels
         return obj
 
-    @classmethod
-    def identity(cls, n, q_labels=None, dtype=None):
-        obj = np.asarray(np.identity(n=n, dtype=dtype)).view(cls)
-        obj.q_labels = q_labels
-        return obj
-
     @staticmethod
     @implements(np.copy)
     def _copy(x):
