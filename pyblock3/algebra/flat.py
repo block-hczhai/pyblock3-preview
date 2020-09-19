@@ -21,6 +21,8 @@ if ENABLE_FAST_IMPLS:
         flat_sparse_get_infos = block3.flat_sparse_tensor.get_infos
         flat_sparse_left_canonicalize = block3.flat_sparse_tensor.left_canonicalize
         flat_sparse_right_canonicalize = block3.flat_sparse_tensor.right_canonicalize
+        flat_sparse_left_svd = block3.flat_sparse_tensor.left_svd
+        flat_sparse_right_svd = block3.flat_sparse_tensor.right_svd
 
         def flat_sparse_transpose_impl(aqs, ashs, adata, aidxs, axes):
             data = np.zeros_like(adata)
@@ -483,13 +485,17 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             self.q_labels, self.shapes, self.data, self.idxs)
         return FlatSparseTensor(*r[:4]), FlatSparseTensor(*r[4:])
 
-    def left_svd(self, *args, **kwargs):
-        lsr = self.to_sparse().left_svd(*args, **kwargs)
-        return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
+    def left_svd(self, full_matrices=False):
+        assert not full_matrices
+        lsr = flat_sparse_left_svd(
+            self.q_labels, self.shapes, self.data, self.idxs)
+        return FlatSparseTensor(*lsr[:4]), FlatSparseTensor(*lsr[4:8]), FlatSparseTensor(*lsr[8:])
 
-    def right_svd(self, *args, **kwargs):
-        lsr = self.to_sparse().right_svd(*args, **kwargs)
-        return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
+    def right_svd(self, full_matrices=False):
+        assert not full_matrices
+        lsr = flat_sparse_right_svd(
+            self.q_labels, self.shapes, self.data, self.idxs)
+        return FlatSparseTensor(*lsr[:4]), FlatSparseTensor(*lsr[4:8]), FlatSparseTensor(*lsr[8:])
 
     def tensor_svd(self, *args, **kwargs):
         """

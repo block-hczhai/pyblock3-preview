@@ -782,47 +782,21 @@ flat_sparse_tensor_get_infos(const py::array_t<uint32_t> &aqs,
 }
 
 template <DIRECTION L>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
-      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<double>, py::array_t<uint32_t>>
-flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
-                         const py::array_t<uint32_t> &ashs,
-                         const py::array_t<double> &adata,
-                         const py::array_t<uint32_t> &aidxs) {
-    if (aqs.shape()[0] == 0)
-        return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata,
-                               aidxs);
-    int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
-    const int cidx = L == LEFT ? ndima - 1 : 0;
-    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
-                  asj = aqs.strides()[1] / sizeof(uint32_t);
-    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
+inline void
+collect_blocks(const unordered_map<uint32_t, vector<int>> &collected, int asi,
+               int asj, int n_blocks_a, int ndima, int cidx,
+               const uint32_t *paqs, const uint32_t *pashs, int &max_mshape,
+               int &max_lshape, int &max_rshape, size_t &max_tmp_size,
+               uint32_t *pqqs, uint32_t *pqshs, uint32_t *pqidxs,
+               uint32_t *plrqs, uint32_t *plrshs, uint32_t *plridxs,
+               uint32_t *psqs, uint32_t *psshs, uint32_t *psidxs) {
 
-    unordered_map<uint32_t, vector<int>> collected;
-    const uint32_t *pashs = ashs.data(), *paqs = aqs.data(),
-                   *pia = aidxs.data();
-    const double *pa = adata.data();
-    for (int i = 0; i < n_blocks_a; i++)
-        collected[paqs[i * asi + cidx * asj]].push_back(i);
-
-    int n_blocks_lr = collected.size();
-
-    py::array_t<uint32_t> qqs(vector<ssize_t>{n_blocks_a, ndima}),
-        qshs(vector<ssize_t>{n_blocks_a, ndima});
-    py::array_t<uint32_t> qidxs(vector<ssize_t>{n_blocks_a + 1});
-    py::array_t<uint32_t> lrqs(vector<ssize_t>{n_blocks_lr, 2}),
-        lrshs(vector<ssize_t>{n_blocks_lr, 2});
-    py::array_t<uint32_t> lridxs(vector<ssize_t>{n_blocks_lr + 1});
-
-    uint32_t *pqqs = qqs.mutable_data(), *pqshs = qshs.mutable_data();
-    uint32_t *plrqs = lrqs.mutable_data(), *plrshs = lrshs.mutable_data();
-    uint32_t *pqidxs = qidxs.mutable_data(), *plridxs = lridxs.mutable_data();
     int ilr = 0, iq = 0;
     pqidxs[0] = 0;
     plridxs[0] = 0;
+    if (psqs != nullptr)
+        psidxs[0] = 0;
     uint32_t qblock_size[n_blocks_a];
-    int max_mshape = 0, max_lshape = 0, max_rshape = 0;
-    size_t max_tmp_size = 0;
 
     for (auto &cr : collected) {
         int nq = (int)cr.second.size();
@@ -856,6 +830,9 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
         plrqs[ilr * 2 + 0] = plrqs[ilr * 2 + 1] = cr.first;
         plrshs[ilr * 2 + 0] = L == LEFT ? mshape : lshape;
         plrshs[ilr * 2 + 1] = L == LEFT ? rshape : mshape;
+        if (psqs != nullptr)
+            psqs[ilr] = cr.first, psshs[ilr] = mshape,
+            psidxs[ilr + 1] = psidxs[ilr] + mshape;
         for (int i = 0; i < nq; i++) {
             qblock_size[iq + i] *= mshape;
             pqshs[(iq + i) * ndima + cidx] = mshape;
@@ -865,11 +842,55 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
             plridxs[ilr] + plrshs[ilr * 2 + 0] * plrshs[ilr * 2 + 1];
         ilr++, iq += nq;
     }
+}
+
+template <DIRECTION L>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
+                         const py::array_t<uint32_t> &ashs,
+                         const py::array_t<double> &adata,
+                         const py::array_t<uint32_t> &aidxs) {
+    if (aqs.shape()[0] == 0)
+        return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata,
+                               aidxs);
+    int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
+    const int cidx = L == LEFT ? ndima - 1 : 0;
+    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
+                  asj = aqs.strides()[1] / sizeof(uint32_t);
+    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
+
+    unordered_map<uint32_t, vector<int>> collected;
+    const uint32_t *pashs = ashs.data(), *paqs = aqs.data(),
+                   *pia = aidxs.data();
+    const double *pa = adata.data();
+    for (int i = 0; i < n_blocks_a; i++)
+        collected[paqs[i * asi + cidx * asj]].push_back(i);
+
+    int n_blocks_lr = collected.size();
+    py::array_t<uint32_t> qqs(vector<ssize_t>{n_blocks_a, ndima}),
+        qshs(vector<ssize_t>{n_blocks_a, ndima});
+    py::array_t<uint32_t> qidxs(vector<ssize_t>{n_blocks_a + 1});
+    py::array_t<uint32_t> lrqs(vector<ssize_t>{n_blocks_lr, 2}),
+        lrshs(vector<ssize_t>{n_blocks_lr, 2});
+    py::array_t<uint32_t> lridxs(vector<ssize_t>{n_blocks_lr + 1});
+
+    uint32_t *pqqs = qqs.mutable_data(), *pqshs = qshs.mutable_data();
+    uint32_t *plrqs = lrqs.mutable_data(), *plrshs = lrshs.mutable_data();
+    uint32_t *pqidxs = qidxs.mutable_data(), *plridxs = lridxs.mutable_data();
+    int max_mshape = 0, max_lshape = 0, max_rshape = 0;
+    size_t max_tmp_size = 0;
+    collect_blocks<L>(collected, asi, asj, n_blocks_a, ndima, cidx, paqs, pashs,
+                      max_mshape, max_lshape, max_rshape, max_tmp_size, pqqs,
+                      pqshs, pqidxs, plrqs, plrshs, plridxs, nullptr, nullptr,
+                      nullptr);
+
     py::array_t<double> qdata(vector<ssize_t>{pqidxs[n_blocks_a]});
     py::array_t<double> lrdata(vector<ssize_t>{plridxs[n_blocks_lr]});
     double *pq = qdata.mutable_data(), *plr = lrdata.mutable_data();
     memset(plr, 0, sizeof(double) * plridxs[n_blocks_lr]);
-    iq = 0, ilr = 0;
+    int iq = 0, ilr = 0;
     int lwork = (L == LEFT ? max_rshape : max_lshape) * 34, info = 0;
     vector<double> tau(max_mshape), work(lwork), tmp(max_tmp_size);
 
@@ -921,7 +942,8 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
             ptmp = tmp.data();
             for (int i = 0; i < nq; i++) {
                 int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
-                dlacpy("n", &ra, &mshape, ptmp, &rshape, pq + pqidxs[iq + i], &ra);
+                dlacpy("n", &ra, &mshape, ptmp, &rshape, pq + pqidxs[iq + i],
+                       &ra);
                 ptmp += ra;
             }
         }
@@ -932,6 +954,115 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
                                        lrdata, lridxs)
                      : std::make_tuple(lrqs, lrshs, lrdata, lridxs, qqs, qshs,
                                        qdata, qidxs);
+}
+
+template <DIRECTION L>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_svd(const py::array_t<uint32_t> &aqs,
+                const py::array_t<uint32_t> &ashs,
+                const py::array_t<double> &adata,
+                const py::array_t<uint32_t> &aidxs) {
+    if (aqs.shape()[0] == 0)
+        return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata, aidxs,
+                               aqs, ashs, adata, aidxs);
+    int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
+    const int cidx = L == LEFT ? ndima - 1 : 0;
+    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
+                  asj = aqs.strides()[1] / sizeof(uint32_t);
+    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
+
+    unordered_map<uint32_t, vector<int>> collected;
+    const uint32_t *pashs = ashs.data(), *paqs = aqs.data(),
+                   *pia = aidxs.data();
+    const double *pa = adata.data();
+    for (int i = 0; i < n_blocks_a; i++)
+        collected[paqs[i * asi + cidx * asj]].push_back(i);
+
+    int n_blocks_lr = collected.size();
+    py::array_t<uint32_t> qqs(vector<ssize_t>{n_blocks_a, ndima}),
+        qshs(vector<ssize_t>{n_blocks_a, ndima});
+    py::array_t<uint32_t> qidxs(vector<ssize_t>{n_blocks_a + 1});
+    py::array_t<uint32_t> lrqs(vector<ssize_t>{n_blocks_lr, 2}),
+        lrshs(vector<ssize_t>{n_blocks_lr, 2});
+    py::array_t<uint32_t> lridxs(vector<ssize_t>{n_blocks_lr + 1});
+    py::array_t<uint32_t> sqs(vector<ssize_t>{n_blocks_lr, 1}),
+        sshs(vector<ssize_t>{n_blocks_lr, 1});
+    py::array_t<uint32_t> sidxs(vector<ssize_t>{n_blocks_lr + 1});
+
+    uint32_t *pqqs = qqs.mutable_data(), *pqshs = qshs.mutable_data(),
+             *pqidxs = qidxs.mutable_data();
+    uint32_t *plrqs = lrqs.mutable_data(), *plrshs = lrshs.mutable_data(),
+             *plridxs = lridxs.mutable_data();
+    uint32_t *psqs = sqs.mutable_data(), *psshs = sshs.mutable_data(),
+             *psidxs = sidxs.mutable_data();
+    int max_mshape = 0, max_lshape = 0, max_rshape = 0;
+    size_t max_tmp_size = 0;
+    collect_blocks<L>(collected, asi, asj, n_blocks_a, ndima, cidx, paqs, pashs,
+                      max_mshape, max_lshape, max_rshape, max_tmp_size, pqqs,
+                      pqshs, pqidxs, plrqs, plrshs, plridxs, psqs, psshs,
+                      psidxs);
+
+    py::array_t<double> qdata(vector<ssize_t>{pqidxs[n_blocks_a]});
+    py::array_t<double> lrdata(vector<ssize_t>{plridxs[n_blocks_lr]});
+    py::array_t<double> sdata(vector<ssize_t>{psidxs[n_blocks_lr]});
+    double *pq = qdata.mutable_data(), *plr = lrdata.mutable_data(),
+           *ps = sdata.mutable_data();
+    memset(plr, 0, sizeof(double) * plridxs[n_blocks_lr]);
+    int iq = 0, ilr = 0;
+    int lwork = max(max_lshape, max_rshape) * 34, info = 0;
+    vector<double> work(lwork), tmp(max_tmp_size),
+        tmp2(L == LEFT ? 0 : max_tmp_size);
+
+    for (auto &cr : collected) {
+        int nq = (int)cr.second.size(), lshape, rshape;
+        if (L == LEFT) {
+            lshape = (pqidxs[iq + nq] - pqidxs[iq]) / plrshs[ilr * 2 + 0];
+            rshape = pashs[cr.second[0] * asi + cidx * asj];
+        } else {
+            lshape = pashs[cr.second[0] * asi + cidx * asj];
+            rshape = (pqidxs[iq + nq] - pqidxs[iq]) / plrshs[ilr * 2 + 1];
+        }
+        int mshape = min(lshape, rshape);
+        double *ptmp = tmp.data();
+        if (L == LEFT) {
+            for (int i = 0; i < nq; i++) {
+                uint32_t ia = cr.second[i], sz = pia[ia + 1] - pia[ia];
+                memcpy(ptmp, pa + pia[ia], sizeof(double) * sz);
+                ptmp += sz;
+            }
+            dgesvd("S", "S", &rshape, &lshape, tmp.data(), &rshape,
+                   ps + psidxs[ilr], plr + plridxs[ilr], &rshape,
+                   pq + pqidxs[iq], &mshape, work.data(), &lwork, &info);
+            assert(info == 0);
+        } else {
+            for (int i = 0; i < nq; i++) {
+                int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
+                dlacpy("n", &ra, &lshape, pa + pia[ia], &ra, ptmp, &rshape);
+                ptmp += ra;
+            }
+            dgesvd("S", "S", &rshape, &lshape, tmp.data(), &rshape,
+                   ps + psidxs[ilr], tmp2.data(), &rshape, plr + plridxs[ilr],
+                   &mshape, work.data(), &lwork, &info);
+            assert(info == 0);
+            ptmp = tmp2.data();
+            for (int i = 0; i < nq; i++) {
+                int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
+                dlacpy("n", &ra, &mshape, ptmp, &rshape, pq + pqidxs[iq + i],
+                       &ra);
+                ptmp += ra;
+            }
+        }
+        ilr++, iq += nq;
+    }
+
+    return L == LEFT
+               ? std::make_tuple(qqs, qshs, qdata, qidxs, sqs, sshs, sdata,
+                                 sidxs, lrqs, lrshs, lrdata, lridxs)
+               : std::make_tuple(lrqs, lrshs, lrdata, lridxs, sqs, sshs, sdata,
+                                 sidxs, qqs, qshs, qdata, qidxs);
 }
 
 template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
@@ -951,3 +1082,23 @@ flat_sparse_canonicalize<RIGHT>(const py::array_t<uint32_t> &aqs,
                                 const py::array_t<uint32_t> &ashs,
                                 const py::array_t<double> &adata,
                                 const py::array_t<uint32_t> &aidxs);
+
+template tuple<
+    py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+    py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+    py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+    py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_svd<LEFT>(const py::array_t<uint32_t> &aqs,
+                      const py::array_t<uint32_t> &ashs,
+                      const py::array_t<double> &adata,
+                      const py::array_t<uint32_t> &aidxs);
+
+template tuple<
+    py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+    py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+    py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+    py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_svd<RIGHT>(const py::array_t<uint32_t> &aqs,
+                       const py::array_t<uint32_t> &ashs,
+                       const py::array_t<double> &adata,
+                       const py::array_t<uint32_t> &aidxs);

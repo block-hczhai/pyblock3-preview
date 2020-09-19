@@ -15,32 +15,33 @@ from pyblock3.algebra.mps import MPSInfo, MPS
 from pyinstrument import Profiler
 profiler = Profiler()
 
-flat = True
-fast = True
-iprint = False
+flat = False
+fast = False
+iprint = True
 contract = True
-profile = True
+profile = False
 dot = 2
 
-fd = '../data/N2.STO3G.FCIDUMP'
+fd = '../data/HUBBARD-L8.FCIDUMP'
+# fd = '../data/N2.STO3G.FCIDUMP'
 # fd = '../my_test/n2/N2.FCIDUMP'
-bdims = 400
+bdims = 200
 
 # with HamilTools.hubbard(n_sites=8, u=2, t=1) as hamil:
 # with HamilTools.hubbard(n_sites=16, u=2, t=1) as hamil:
-with HamilTools.from_fcidump(fd) as hamil:
-    mps = hamil.get_init_mps(bond_dim=bdims)
-    # mps = hamil.get_ground_state_mps(bond_dim=bdims, noise=0)
-    # exit(0)
-    mpo = hamil.get_mpo()
+# with HamilTools.from_fcidump(fd) as hamil:
+#     mps = hamil.get_init_mps(bond_dim=bdims)
+#     # mps = hamil.get_ground_state_mps(bond_dim=bdims, noise=0)
+#     # exit(0)
+#     mpo = hamil.get_mpo()
 
-# fcidump = FCIDUMP(pg='d2h').read(fd)
-# hamil = QCHamiltonian(fcidump)
-# mpo = QCSymbolicMPO(hamil).to_sparse()
+fcidump = FCIDUMP(pg='d2h').read(fd)
+hamil = QCHamiltonian(fcidump)
+mpo = QCSymbolicMPO(hamil).to_sparse()
 
-# mps_info = MPSInfo(hamil.n_sites, hamil.vacuum, hamil.target, hamil.basis)
-# mps_info.set_bond_dimension(bdims)
-# mps = MPS.random(mps_info)
+mps_info = MPSInfo(hamil.n_sites, hamil.vacuum, hamil.target, hamil.basis)
+mps_info.set_bond_dimension(bdims)
+mps = MPS.random(mps_info)
 
 print('MPS = ', mps.show_bond_dims())
 print('MPO (NC) =         ', mpo.show_bond_dims())
