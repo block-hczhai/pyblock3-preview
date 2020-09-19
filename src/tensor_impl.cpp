@@ -16,12 +16,20 @@ void tensor_transpose_impl(int ndim, size_t size, const int *perm,
         oldacc[i - 1] = oldacc[i] * shape[perm[i]];
     for (int i = 0; i < ndim; i++)
         newacc[perm[i]] = oldacc[i];
-    for (size_t i = 0; i < size; i++) {
-        size_t j = 0, ii = i;
-        for (int k = ndim - 1; k >= 0; k--)
-            j += (ii % shape[k]) * newacc[k], ii /= shape[k];
-        c[j] = alpha * a[i] + beta * c[j];
-    }
+    if (beta == 0)
+        for (size_t i = 0; i < size; i++) {
+            size_t j = 0, ii = i;
+            for (int k = ndim - 1; k >= 0; k--)
+                j += (ii % shape[k]) * newacc[k], ii /= shape[k];
+            c[j] = alpha * a[i];
+        }
+    else
+        for (size_t i = 0; i < size; i++) {
+            size_t j = 0, ii = i;
+            for (int k = ndim - 1; k >= 0; k--)
+                j += (ii % shape[k]) * newacc[k], ii /= shape[k];
+            c[j] = alpha * a[i] + beta * c[j];
+        }
 #endif
 }
 
