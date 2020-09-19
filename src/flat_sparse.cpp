@@ -279,6 +279,7 @@ flat_sparse_tensor_tensordot(
     const double alpha = 1.0, beta = 0.0;
 
     double *pc = cdata.mutable_data();
+    memset(pc, 0, sizeof(double) * cdata.size());
     for (auto &mq : map_out_q) {
         for (auto &mmq : mq.second) {
             int xia = 0, xib = 0;

@@ -75,14 +75,26 @@ class FlatSparseFunctor:
         vqs, vshs = v.q_labels[:, 1:-1], v.shapes[:, 1:-1]
         lo, le = l.odd, l.even
         ro, re = r.odd, r.even
-        plan_ro = flat_sparse_matmul_plan(
-            ro.q_labels[:, :-1], ro.shapes[:, :-1], ro.idxs, vqs, vshs, v.idxs, axru, axrd, w.q_labels, w.idxs, True)
-        plan_re = flat_sparse_matmul_plan(
-            re.q_labels[:, :-1], re.shapes[:, :-1], re.idxs, vqs, vshs, v.idxs, axru, axrd, w.q_labels, w.idxs, False)
-        plan_lo = flat_sparse_matmul_plan(
-            lo.q_labels[:, 1:], lo.shapes[:, 1:], lo.idxs, w2.q_labels, w2.shapes, w2.idxs, axlu, axld, vqs, v.idxs, True)
-        plan_le = flat_sparse_matmul_plan(
-            le.q_labels[:, 1:], le.shapes[:, 1:], le.idxs, w2.q_labels, w2.shapes, w2.idxs, axlu, axld, vqs, v.idxs, False)
+        if ro.n_blocks != 0:
+            plan_ro = flat_sparse_matmul_plan(
+                ro.q_labels[:, :-1], ro.shapes[:, :-1], ro.idxs, vqs, vshs, v.idxs, axru, axrd, w.q_labels, w.idxs, True)
+        else:
+            plan_ro = np.zeros((0, 9), dtype=np.int32)
+        if re.n_blocks != 0:
+            plan_re = flat_sparse_matmul_plan(
+                re.q_labels[:, :-1], re.shapes[:, :-1], re.idxs, vqs, vshs, v.idxs, axru, axrd, w.q_labels, w.idxs, False)
+        else:
+            plan_re = np.zeros((0, 9), dtype=np.int32)
+        if lo.n_blocks != 0:
+            plan_lo = flat_sparse_matmul_plan(
+                lo.q_labels[:, 1:], lo.shapes[:, 1:], lo.idxs, w2.q_labels, w2.shapes, w2.idxs, axlu, axld, vqs, v.idxs, True)
+        else:
+            plan_lo = np.zeros((0, 9), dtype=np.int32)
+        if le.n_blocks != 0:
+            plan_le = flat_sparse_matmul_plan(
+                le.q_labels[:, 1:], le.shapes[:, 1:], le.idxs, w2.q_labels, w2.shapes, w2.idxs, axlu, axld, vqs, v.idxs, False)
+        else:
+            plan_le = np.zeros((0, 9), dtype=np.int32)
         return plan_ro, plan_re, plan_lo, plan_le
 
     def __matmul__(self, other):
