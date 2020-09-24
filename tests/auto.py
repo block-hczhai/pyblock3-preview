@@ -1,45 +1,69 @@
 
+
 import sys
-sys.path[:0] = ['..', "../../block2-old/build"]
+sys.path[:0] = ['..']
 
 from functools import reduce
 import time
 import numpy as np
 import pyblock3.algebra.funcs as pbalg
 from pyblock3.algebra.mpe import MPE
-from pyblock3.aux.hamil import HamilTools
 from pyblock3.hamiltonian import QCHamiltonian
 from pyblock3.fcidump import FCIDUMP
-from pyblock3.symbolic.symbolic_mpo import QCSymbolicMPO
-from pyblock3.algebra.mps import MPSInfo, MPS
-from pyinstrument import Profiler
-profiler = Profiler()
 
+from pyblock3.algebra.mps import MPSInfo, MPS
+
+bdims = 100
 flat = True
+contract = True
 fast = True
 iprint = False
-contract = True
-profile = False
 dot = 2
 
-# fd = '../data/HUBBARD-L8.FCIDUMP'
+def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
+    fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n, twos=0, ipg=0, orb_sym=[0] * n)
+    hamil = QCHamiltonian(fcidump)
+
+    def generate_terms(n_sites, c, d):
+        for i in range(0, n_sites):
+            for s in [0, 1]:
+                if i - 1 >= 0:
+                    yield t * c[i, s] * d[i - 1, s]
+                if i + 1 < n_sites:
+                    yield t * c[i, s] * d[i + 1, s]
+                yield (0.5 * u) * (c[i, s] * c[i, 1 - s] * d[i, 1 - s] * d[i, s])
+
+    return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff).to_sparse()
+
+def build_qc(filename, pg='d2h', cutoff=1E-9):
+    fcidump = FCIDUMP(pg=pg).read(fd)
+    hamil = QCHamiltonian(fcidump)
+
+    def generate_terms(n_sites, c, d):
+        for i in range(0, n_sites):
+            for j in range(0, n_sites):
+                for s in [0, 1]:
+                    t = fcidump.t(s, i, j)
+                    if abs(t) > cutoff:
+                        yield t * c[i, s] * d[j, s]
+        for i in range(0, n_sites):
+            for j in range(0, n_sites):
+                for k in range(0, n_sites):
+                    for l in range(0, n_sites):
+                        for sij in [0, 1]:
+                            for skl in [0, 1]:
+                                v = fcidump.v(sij, skl, i, j, k, l)
+                                if abs(v) > cutoff:
+                                    yield (0.5 * v) * (c[i, sij] * c[k, skl] * d[l, skl] * d[j, sij])
+
+    return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff).to_sparse()
+
+tx = time.perf_counter()
 # fd = '../data/N2.STO3G.FCIDUMP'
 # fd = '../data/H8.STO6G.R1.8.FCIDUMP'
 fd = '../my_test/n2/N2.FCIDUMP'
-bdims = 200
-
-# with HamilTools.hubbard(n_sites=4, u=2, t=1) as hamil:
-# # with HamilTools.hubbard(n_sites=16, u=2, t=1) as hamil:
-# # with HamilTools.from_fcidump(fd) as hamil:
-#     mps = hamil.get_init_mps(bond_dim=bdims)
-#     # mps = hamil.get_ground_state_mps(bond_dim=bdims, noise=0)
-#     # exit(0)
-#     mpo = hamil.get_mpo()
-
-tx = time.perf_counter()
-fcidump = FCIDUMP(pg='d2h').read(fd)
-hamil = QCHamiltonian(fcidump)
-mpo = QCSymbolicMPO(hamil).to_sparse()
+# hamil, mpo = build_hubbard(n=32)
+hamil, mpo = build_qc(fd)
 print('build mpo time = ', time.perf_counter() - tx)
 
 mps_info = MPSInfo(hamil.n_sites, hamil.vacuum, hamil.target, hamil.basis)
@@ -47,7 +71,7 @@ mps_info.set_bond_dimension(bdims)
 mps = MPS.random(mps_info)
 
 print('MPS = ', mps.show_bond_dims())
-print('MPO (NC) =         ', mpo.show_bond_dims())
+print('MPO (build) =      ', mpo.show_bond_dims())
 mpo, _ = mpo.compress(left=True, cutoff=1E-9, norm_cutoff=1E-9)
 print('MPO (compressed) = ', mpo.show_bond_dims())
 
@@ -60,6 +84,7 @@ mpe = MPE(mps, mpo, mps)
 def dmrg(n_sweeps=10, tol=1E-6, dot=2):
     eners = np.zeros((n_sweeps, ))
     for iw in range(n_sweeps):
+        eners[iw] = 1E10
         print("Sweep = %4d | Direction = %8s | Bond dimension = %4d" % (
             iw, "backward" if iw % 2 else "forward", bdims))
         for i in range(0, mpe.n_sites - dot + 1)[::(-1) ** iw]:
@@ -88,12 +113,5 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
 
 
 tx = time.perf_counter()
-if profile:
-    profiler.start()
 print("GS Energy = %20.12f" % dmrg(dot=dot))
-if profile:
-    profiler.stop()
 print('time = ', time.perf_counter() - tx)
-
-if profile:
-    print(profiler.output_text(unicode=True, color=True))

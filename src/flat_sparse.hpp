@@ -131,3 +131,16 @@ flat_sparse_svd<RIGHT>(const py::array_t<uint32_t> &aqs,
                        const py::array_t<uint32_t> &ashs,
                        const py::array_t<double> &adata,
                        const py::array_t<uint32_t> &aidxs);
+
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>, double>
+flat_sparse_truncate_svd(
+    const py::array_t<uint32_t> &lqs, const py::array_t<uint32_t> &lshs,
+    const py::array_t<double> &ldata, const py::array_t<uint32_t> &lidxs,
+    const py::array_t<uint32_t> &sqs, const py::array_t<uint32_t> &sshs,
+    const py::array_t<double> &sdata, const py::array_t<uint32_t> &sidxs,
+    const py::array_t<uint32_t> &rqs, const py::array_t<uint32_t> &rshs,
+    const py::array_t<double> &rdata, const py::array_t<uint32_t> &ridxs,
+    int max_bond_dim, double cutoff, double max_dw, double norm_cutoff);

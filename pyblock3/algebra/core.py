@@ -1086,7 +1086,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         ss_trunc = ss
         if max_dw != 0:
             p, dw = 0, 0.0
-            for x in ss_trunc:
+            for x in ss_trunc[::-1]:
                 dw += x[2] * x[2]
                 if dw <= max_dw:
                     p += 1

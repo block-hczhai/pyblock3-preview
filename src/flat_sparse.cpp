@@ -1102,3 +1102,193 @@ flat_sparse_svd<RIGHT>(const py::array_t<uint32_t> &aqs,
                        const py::array_t<uint32_t> &ashs,
                        const py::array_t<double> &adata,
                        const py::array_t<uint32_t> &aidxs);
+
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>, double>
+flat_sparse_truncate_svd(
+    const py::array_t<uint32_t> &lqs, const py::array_t<uint32_t> &lshs,
+    const py::array_t<double> &ldata, const py::array_t<uint32_t> &lidxs,
+    const py::array_t<uint32_t> &sqs, const py::array_t<uint32_t> &sshs,
+    const py::array_t<double> &sdata, const py::array_t<uint32_t> &sidxs,
+    const py::array_t<uint32_t> &rqs, const py::array_t<uint32_t> &rshs,
+    const py::array_t<double> &rdata, const py::array_t<uint32_t> &ridxs,
+    int max_bond_dim, double cutoff, double max_dw, double norm_cutoff) {
+    if (sqs.shape()[0] == 0)
+        return std::make_tuple(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
+                               sqs, sshs, sdata, sidxs, 0.0);
+    int n_blocks_l = (int)lqs.shape()[0], ndiml = (int)lqs.shape()[1];
+    int n_blocks_s = (int)sqs.shape()[0], ndims = (int)sqs.shape()[1];
+    int n_blocks_r = (int)rqs.shape()[0], ndimr = (int)rqs.shape()[1];
+    assert(ndims == 1);
+    int size_s = sidxs.data()[n_blocks_s];
+    vector<tuple<int, int, double>> ss(size_s);
+    const uint32_t *plqs = lqs.data(), *psqs = sqs.data(), *prqs = rqs.data();
+    const uint32_t *plshs = lshs.data(), *psshs = sshs.data(),
+                   *prshs = rshs.data();
+    const double *pl = ldata.data(), *ps = sdata.data(), *pr = rdata.data();
+    const uint32_t *pil = lidxs.data(), *pis = sidxs.data(),
+                   *pir = ridxs.data();
+    const ssize_t lsi = lqs.strides()[0] / sizeof(uint32_t),
+                  lsj = lqs.strides()[1] / sizeof(uint32_t);
+    const ssize_t ssi = sqs.strides()[0] / sizeof(uint32_t),
+                  ssj = sqs.strides()[1] / sizeof(uint32_t);
+    const ssize_t rsi = rqs.strides()[0] / sizeof(uint32_t),
+                  rsj = rqs.strides()[1] / sizeof(uint32_t);
+    assert(memcmp(lqs.strides(), lshs.strides(), 2 * sizeof(ssize_t)) == 0);
+    assert(memcmp(sqs.strides(), sshs.strides(), 2 * sizeof(ssize_t)) == 0);
+    assert(memcmp(rqs.strides(), rshs.strides(), 2 * sizeof(ssize_t)) == 0);
+    for (int i = 0; i < n_blocks_s; i++)
+        for (int j = pis[i]; j < pis[i + 1]; j++)
+            ss.push_back(std::make_tuple(i, j, ps[j]));
+    sort(
+        ss.begin(), ss.end(),
+        [](const tuple<int, int, double> &a, const tuple<int, int, double> &b) {
+            return get<2>(a) > get<2>(b);
+        });
+    vector<tuple<int, int, double>> ss_trunc = ss;
+    if (max_dw != 0) {
+        int p = 0;
+        for (int i = (int)ss_trunc.size(); i > 0; i--) {
+            double dw = get<2>(ss_trunc[i]) * get<2>(ss_trunc[i]);
+            if (dw <= max_dw)
+                p++;
+            else
+                break;
+        }
+        ss_trunc.resize(ss_trunc.size() - p);
+    }
+    if (cutoff != 0) {
+        for (int i = 1; i < (int)ss_trunc.size(); i++)
+            if (get<2>(ss_trunc[i]) < cutoff) {
+                ss_trunc.resize(i);
+                break;
+            }
+    }
+    if (max_bond_dim != -1 && (int)ss_trunc.size() > max_bond_dim)
+        ss_trunc.resize(max_bond_dim);
+    sort(
+        ss_trunc.begin(), ss_trunc.end(),
+        [](const tuple<int, int, double> &a, const tuple<int, int, double> &b) {
+            return get<1>(a) < get<1>(b);
+        });
+    unordered_map<int, vector<int>> selected;
+    for (auto &r : ss_trunc)
+        selected[get<0>(r)].push_back(get<1>(r));
+    int n_blocks_l_new = 0, n_blocks_r_new = 0,
+        n_blocks_s_new = (int)selected.size();
+    int nbl[n_blocks_s_new], nbr[n_blocks_s_new];
+    int skbl[n_blocks_s_new], skbr[n_blocks_s_new];
+    int ikl = 0, ikr = 0, iks = 0;
+    int size_l_new = 0, size_r_new = 0, size_s_new = 0;
+    int mask[pis[n_blocks_s]];
+    memset(mask, 0, sizeof(int) * pis[n_blocks_s]);
+    memset(skbl, 0, sizeof(int) * n_blocks_s_new);
+    memset(skbr, 0, sizeof(int) * n_blocks_s_new);
+    memset(nbl, 0, sizeof(int) * n_blocks_s_new);
+    memset(nbr, 0, sizeof(int) * n_blocks_s_new);
+    for (auto &m : selected) {
+        int iis = m.first, ist = pis[iis], ied = pis[iis + 1];
+        uint32_t sql = psqs[iis * ssi + 0 * ssj];
+        uint32_t sqr = psqs[iis * ssi + (ndims - 1) * ssj];
+        uint32_t ssz = (int)m.second.size();
+        for (auto &mm : m.second)
+            mask[mm] = 1;
+        for (; ikl < n_blocks_l && plqs[ikl * lsi + (ndiml - 1) * lsj] != sql;
+             ikl++)
+            skbl[iks]++;
+        for (; ikl < n_blocks_l && plqs[ikl * lsi + (ndiml - 1) * lsj] == sql;
+             ikl++)
+            nbl[iks]++, size_l_new += pil[ikl + 1] - pil[ikl];
+        uint32_t lsz =
+            (pil[ikl] - pil[ikl - nbl[iks]]) / psshs[iis * ssi + 0 * ssj] * ssz;
+        n_blocks_l_new += nbl[iks];
+        for (; ikr < n_blocks_r && prqs[ikr * rsi + 0 * rsj] != sqr; ikr++)
+            skbr[iks]++;
+        for (; ikr < n_blocks_r && prqs[ikr * rsi + 0 * rsj] == sqr; ikr++)
+            nbr[iks]++, size_r_new += pil[ikl + 1] - pil[ikl];
+        uint32_t rsz = (pir[ikr] - pir[ikr - nbr[iks]]) /
+                       psshs[iis * ssi + (ndims - 1) * ssj] * ssz;
+        n_blocks_r_new += nbr[iks];
+        size_l_new += lsz;
+        size_r_new += rsz;
+        size_s_new += ssz;
+        iks++;
+    }
+    assert(iks == n_blocks_s_new);
+    double error = 0;
+    for (int j = 0; j < (int)pis[n_blocks_s]; j++)
+        if (!mask[j])
+            error += ps[j] * ps[j];
+
+    py::array_t<uint32_t> nlqs(vector<ssize_t>{n_blocks_l_new, ndiml}),
+        nlshs(vector<ssize_t>{n_blocks_l_new, ndiml});
+    py::array_t<uint32_t> nlidxs(vector<ssize_t>{n_blocks_l_new + 1});
+    py::array_t<uint32_t> nrqs(vector<ssize_t>{n_blocks_r_new, ndimr}),
+        nrshs(vector<ssize_t>{n_blocks_r_new, ndimr});
+    py::array_t<uint32_t> nridxs(vector<ssize_t>{n_blocks_r_new + 1});
+    py::array_t<uint32_t> nsqs(vector<ssize_t>{n_blocks_s_new, ndims}),
+        nsshs(vector<ssize_t>{n_blocks_s_new, ndims});
+    py::array_t<uint32_t> nsidxs(vector<ssize_t>{n_blocks_s_new + 1});
+    py::array_t<double> nldata(vector<ssize_t>{size_l_new});
+    py::array_t<double> nrdata(vector<ssize_t>{size_r_new});
+    py::array_t<double> nsdata(vector<ssize_t>{size_s_new});
+
+    uint32_t *pnlqs = nlqs.mutable_data(), *pnlshs = nlshs.mutable_data(),
+             *pnlidxs = nlidxs.mutable_data();
+    uint32_t *pnrqs = nrqs.mutable_data(), *pnrshs = nrshs.mutable_data(),
+             *pnridxs = nridxs.mutable_data();
+    uint32_t *pnsqs = nsqs.mutable_data(), *pnsshs = nsshs.mutable_data(),
+             *pnsidxs = nsidxs.mutable_data();
+    double *pnl = nldata.mutable_data(), *pnr = nrdata.mutable_data(),
+           *pns = nsdata.mutable_data();
+    pnlidxs[0] = pnridxs[0] = pnsidxs[0] = 0;
+    ikl = 0, ikr = 0, iks = 0;
+    int iknl = 0, iknr = 0;
+    for (auto &m : selected) {
+        int iis = m.first, ist = pis[iis], ied = pis[iis + 1];
+        ikl += skbl[iks], ikr += skbr[iks];
+        int ssz = (int)m.second.size(), fsz = psshs[iis * ssi + 0 * ssj];
+        pnsqs[iks] = psqs[iis];
+        pnsshs[iks] = ssz;
+        pnsidxs[iks + 1] = pnsidxs[iks] + ssz;
+        for (uint32_t i = 0; i < ssz; i++)
+            pns[pnsidxs[iks] + i] = ps[m.second[i]];
+        for (int i = 0; i < nbl[iks]; i++) {
+            for (int j = 0; j < ndiml; j++) {
+                pnlqs[(iknl + i) * ndiml + j] = plqs[(ikl + i) * lsi + j * lsj];
+                pnlshs[(iknl + i) * ndiml + j] =
+                    plshs[(ikl + i) * lsi + j * lsj];
+            }
+            pnlshs[(iknl + i) * ndiml + ndiml - 1] = ssz;
+            int lszl = (pil[ikl + i + 1] - pil[ikl + i]) / fsz;
+            uint32_t lsz = lszl * ssz;
+            pnlidxs[iknl + i + 1] = pnlidxs[iknl + i] + lsz;
+            for (uint32_t i = 0; i < ssz; i++)
+                dcopy(&lszl, pl + pil[ikl + i] + m.second[i] - pis[iis], &fsz,
+                      pnl + pnlidxs[iknl + i] + i, &ssz);
+        }
+        for (int i = 0; i < nbr[iks]; i++) {
+            for (int j = 0; j < ndimr; j++) {
+                pnrqs[(iknr + i) * ndimr + j] = prqs[(ikr + i) * rsi + j * rsj];
+                pnrshs[(iknr + i) * ndimr + j] =
+                    prshs[(ikr + i) * rsi + j * rsj];
+            }
+            pnrshs[(iknr + i) * ndimr + 0] = ssz;
+            int rszr = (pir[ikr + i + 1] - pir[ikr + i]) / fsz, inc = 1;
+            uint32_t rsz = rszr * ssz;
+            pnridxs[iknr + i + 1] = pnridxs[iknr + i] + rsz;
+            for (uint32_t i = 0; i < ssz; i++)
+                dcopy(&rszr,
+                      pr + pir[ikr + i] + (m.second[i] - pis[iis]) * rszr, &inc,
+                      pnr + pnridxs[iknr + i] + i * rszr, &inc);
+        }
+        ikl += nbl[iks], ikr += nbr[iks];
+        iknl += nbl[iks], iknr += nbr[iks];
+        iks++;
+    }
+
+    return std::make_tuple(nlqs, nlshs, nldata, nlidxs, nsqs, nsshs, nsdata,
+                           nsidxs, nrqs, nrshs, nrdata, nridxs, sqrt(error));
+}

@@ -339,6 +339,133 @@ class SymbolicSparseTensor:
         else:
             return tuple(r[i] for i in self.idx_perm)
 
+    # Right svd needs to collect all right indices for each specific left index.
+    # works when self.ops values are exprs
+    # used to build mpo from hamiltonian expression
+    def right_svd(self, idx, cutoff=1E-12):
+        i_op = self.rop[0]
+        ident = (i_op, )
+        q_map = {}
+        lr_map = []
+        mats = []
+        npm = len(self.mat.data)
+        for ip, op in enumerate(self.mat.data):
+            qll = self.lop[ip].q_label
+            if op == 0:
+                continue
+            expr = self.ops[abs(op)]
+            if isinstance(expr, OpSum):
+                terms = (op.factor * expr).strings
+            elif isinstance(expr, OpString):
+                terms = [op.factor * expr]
+            elif isinstance(expr, OpElement):
+                terms = [op.factor * OpString([expr])]
+            else:
+                assert False
+            for term in terms:
+                k = 0
+                for op in term.ops:
+                    if op == i_op or op.site_index[0] <= idx:
+                        k += 1
+                    else:
+                        break
+                l = ident if k == 0 else tuple(term.ops[:k])
+                r = ident if k == len(term.ops) else tuple(term.ops[k:])
+                ql = -qll + np.add.reduce([x.q_label for x in l])
+                qr = np.add.reduce([x.q_label for x in r])
+                assert ql + qr == i_op.q_label
+                if (ql, qr) not in q_map:
+                    iq = len(q_map)
+                    q_map[(ql, qr)] = iq
+                    lr_map.append(({}, {}))
+                    mats.append([])
+                else:
+                    iq = q_map[(ql, qr)]
+                mpl, mpr = lr_map[iq]
+                if (ip, l) not in mpl:
+                    il = len(mpl)
+                    mpl[(ip, l)] = il
+                else:
+                    il = mpl[(ip, l)]
+                if r not in mpr:
+                    ir = len(mpr)
+                    mpr[r] = ir
+                else:
+                    ir = mpr[r]
+                mats[iq].append((il, ir, term.factor))
+        mqlr = [None] * len(mats)
+        m, mq = 0, len(q_map)
+        for (ql, qr), iq in q_map.items():
+            matvs = mats[iq]
+            mpl, mpr = lr_map[iq]
+            mat = np.zeros((len(mpl), len(mpr)), dtype=float)
+            for il, ir, v in matvs:
+                mat[il, ir] += v
+            l, s, r = np.linalg.svd(mat, full_matrices=False)
+            mask = s > cutoff
+            ll, rr = l[:, mask], s[mask, None] * r[mask, :]
+            mqlr[iq] = ll, rr, ql, qr
+            m += ll.shape[1]
+        lrop = SymbolicRowVector(m)
+        rlop = SymbolicColumnVector(m)
+        lmat = np.zeros((npm, m), dtype=object)
+        rmat = np.zeros((m, ), dtype=object)
+        im = 0
+        for iq in range(mq):
+            mpl, mpr = lr_map[iq]
+            ll, rr, ql, qr = mqlr[iq]
+            nm = ll.shape[1]
+            for imm in range(im, im + nm):
+                lrop[imm] = OpElement(OpNames.XR, (imm, ), q_label=ql)
+                rlop[imm] = OpElement(OpNames.XL, (imm, ), q_label=qr)
+            lxmat = np.zeros((npm, len(mpl)), dtype=object)
+            rxmat = np.zeros((len(mpr), ), dtype=object)
+            for (ip, l), il in mpl.items():
+                lxmat[ip, il] = OpString(l)
+            for r, ir in mpr.items():
+                rxmat[ir] = OpString(r)
+            lmat[:, im:im + nm] = lxmat @ ll
+            rmat[im:im + nm] = rr @ rxmat
+            im += nm
+        splmat = SymbolicMatrix(npm, m)
+        sprmat = SymbolicColumnVector(m)
+        lops, rops = {}, {}
+        ilop, irop = 0, 0
+        im = 0
+        for iq in range(mq):
+            ll, _, ql, qr = mqlr[iq]
+            nm = ll.shape[1]
+            for ip in range(splmat.n_rows):
+                q = ql + self.lop[ip].q_label
+                for imm in range(im, im + nm):
+                    if lmat[ip, imm] != 0:
+                        if isinstance(lmat[ip, imm], OpString) and len(lmat[ip, imm].ops) == 1:
+                            xop = lmat[ip, imm].op
+                            op = abs(xop)
+                            lops[op] = op
+                            splmat[ip, imm] = xop
+                        else:
+                            op = OpElement(OpNames.X, (ilop, ), q_label=q)
+                            lops[op] = lmat[ip, imm]
+                            splmat[ip, imm] = op
+                            ilop += 1
+            for imm in range(im, im + nm):
+                if rmat[imm] != 0:
+                    if isinstance(rmat[imm], OpString) and len(rmat[imm].ops) == 1:
+                        xop = rmat[imm].op
+                        op = abs(xop)
+                        rops[op] = op
+                        sprmat[imm] = xop
+                    else:
+                        op = OpElement(OpNames.X, (irop, ), q_label=qr)
+                        rops[op] = rmat[imm]
+                        sprmat[imm] = op
+                        irop += 1
+            im += nm
+        tl = SymbolicSparseTensor(splmat, lops, self.lop, lrop)
+        tr = SymbolicSparseTensor(sprmat, rops, rlop, self.rop)
+        return tl, tr
+
     def to_sparse(self, infos=None):
 
         mat = self.mat

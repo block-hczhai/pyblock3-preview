@@ -93,6 +93,13 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
     flat_sparse_tensor.def("right_svd", &flat_sparse_svd<RIGHT>, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def(
+        "truncate_svd", &flat_sparse_truncate_svd, py::arg("lqs"),
+        py::arg("lshs"), py::arg("ldata"), py::arg("lidxs"), py::arg("sqs"),
+        py::arg("sshs"), py::arg("sdata"), py::arg("sidxs"), py::arg("rqs"),
+        py::arg("rshs"), py::arg("rdata"), py::arg("ridxs"),
+        py::arg("max_bond_dim") = -1, py::arg("cutoff") = 0.0,
+        py::arg("max_dw") = 0.0, py::arg("norm_cutoff") = 0.0);
     flat_sparse_tensor.def("get_infos", &flat_sparse_tensor_get_infos,
                            py::arg("aqs"), py::arg("ashs"));
     flat_sparse_tensor.def("kron_sum_info", &flat_sparse_tensor_kron_sum_info,

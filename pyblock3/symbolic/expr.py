@@ -2,6 +2,8 @@
 
 import numpy as np
 from enum import Enum, auto
+from collections import Counter
+import numbers
 
 
 class OpNames(Enum):
@@ -21,6 +23,9 @@ class OpNames(Enum):
     PD = auto()
     B = auto()
     Q = auto()
+    X = auto()
+    XL = auto()
+    XR = auto()
 
     def __repr__(self):
         return self.name
@@ -84,7 +89,7 @@ class OpElement(OpExpr):
             return OpSum([OpString([self] + st.ops, st.factor) for st in other.strings])
         elif isinstance(other, OpElement):
             return OpString([self, other])
-        elif isinstance(other, float):
+        elif isinstance(other, numbers.Number):
             return OpElement(self.name, self.site_index, self.factor * other, self.q_label)
         else:
             return NotImplemented
@@ -92,7 +97,7 @@ class OpElement(OpExpr):
     def __rmul__(self, other):
         if other == 0:
             return 0
-        elif isinstance(other, float):
+        elif isinstance(other, numbers.Number):
             return OpElement(self.name, self.site_index, self.factor * other, self.q_label)
         elif isinstance(other, OpSum):
             return OpSum([OpString(st.ops + [self], st.factor) for st in other.strings])
@@ -187,6 +192,14 @@ class OpString(OpExpr):
         assert len(self.ops) == 1
         return self.factor * self.ops[0]
 
+    def sort(self, fermion=True):
+        if fermion:
+            for i, ix in enumerate(self.ops):
+                for jx in self.ops[i + 1:]:
+                    if ix.site_index > jx.site_index:
+                        self.factor = -self.factor
+        self.ops.sort(key=lambda x: x.site_index)
+
     def __repr__(self):
         if self.factor != 1:
             return '(%10.5f %r)' % (self.factor, abs(self))
@@ -202,13 +215,16 @@ class OpString(OpExpr):
     def __abs__(self):
         return OpString(self.ops, 1)
 
+    def __hash__(self):
+        return hash((self.factor, *self.ops))
+
     def __mul__(self, other):
         if isinstance(other, OpElement):
             return OpString(self.ops + [other], self.factor)
         elif other == 0:
             return 0
         elif isinstance(other, float) or isinstance(other, int):
-            return OpString(self.ops, self.factor * other)
+            return OpString(self.ops, self.factor * other) if abs(self.factor * other) > 1E-12 else 0
         elif isinstance(other, OpString):
             return OpString(self.ops + other.ops, self.factor * other.factor)
         else:
@@ -220,7 +236,7 @@ class OpString(OpExpr):
         elif other == 0:
             return 0
         elif isinstance(other, float) or isinstance(other, int):
-            return OpString(self.ops, self.factor * other)
+            return OpString(self.ops, self.factor * other) if abs(self.factor * other) > 1E-12 else 0
         else:
             return NotImplemented
 
@@ -262,6 +278,18 @@ class OpSum(OpExpr):
         assert isinstance(strings, list)
         self.strings = strings
 
+    def simplify(self):
+        mp = Counter()
+        for string in self.strings:
+            mp[tuple(string.ops)] += string.factor
+        self.strings = [OpString(list(k), v)
+                        for k, v in mp.items() if abs(v) > 1E-12]
+
+    def sort(self, fermion=True):
+        self.strings = [x for x in self.strings if x != 0]
+        for string in self.strings:
+            string.sort(fermion=fermion)
+
     def __repr__(self):
         return " + ".join([repr(x) for x in self.strings])
 
@@ -290,16 +318,26 @@ class OpSum(OpExpr):
     def __mul__(self, other):
         if other == 0:
             return 0
-        elif isinstance(other, float):
+        elif isinstance(other, numbers.Number) or isinstance(other, OpString):
             return OpSum([x * other for x in self.strings])
+        elif isinstance(other, OpSum):
+            strings = []
+            for x in self.strings:
+                strings.extend((x * other).strings)
+            return OpSum(strings)
         else:
             return NotImplemented
 
     def __rmul__(self, other):
         if other == 0:
             return 0
-        elif isinstance(other, float):
-            return OpSum([x * other for x in self.strings])
+        elif isinstance(other, numbers.Number) or isinstance(other, OpString):
+            return OpSum([other * x for x in self.strings])
+        elif isinstance(other, OpSum):
+            strings = []
+            for x in self.strings:
+                strings.extend((other * x).strings)
+            return OpSum(strings)
         else:
             return NotImplemented
 
