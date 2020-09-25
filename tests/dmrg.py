@@ -16,11 +16,11 @@ from pyinstrument import Profiler
 profiler = Profiler()
 
 flat = True
-fast = True
-iprint = False
-contract = True
+fast = False
+iprint = True
+contract = False
 profile = False
-dot = 2
+dot = 3
 
 # fd = '../data/HUBBARD-L8.FCIDUMP'
 # fd = '../data/N2.STO3G.FCIDUMP'
