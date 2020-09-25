@@ -75,6 +75,103 @@ def flat_sparse_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs):
             None)
 
 
+def flat_sparse_left_svd(aqs, ashs, adata, aidxs):
+    collected_rows = {}
+    for i, q in enumerate(aqs[:, -1]):
+        if q not in collected_rows:
+            collected_rows[q] = [i]
+        else:
+            collected_rows[q].append(i)
+    nblocks_l = aqs.shape[0]
+    nblocks_r = len(collected_rows)
+    lmats = [None] * nblocks_l
+    rmats = [None] * nblocks_r
+    smats = [None] * nblocks_r
+    lqs = aqs
+    lshs = ashs.copy()
+    sqs = np.zeros((nblocks_r, 1), aqs.dtype)
+    sshs = np.zeros((nblocks_r, 1), ashs.dtype)
+    sidxs = np.zeros((nblocks_r + 1), aidxs.dtype)
+    rqs = np.zeros((nblocks_r, 2), aqs.dtype)
+    rshs = np.zeros((nblocks_r, 2), ashs.dtype)
+    ridxs = np.zeros((nblocks_r + 1), aidxs.dtype)
+    lidx = np.zeros((nblocks_l, ), dtype=int)
+    ill = 0
+    for ir, (qq, v) in enumerate(collected_rows.items()):
+        pashs = ashs[v, :-1]
+        l_shapes = np.prod(pashs, axis=1)
+        mat = np.concatenate([adata[aidxs[ia]:aidxs[ia + 1]].reshape((sh, -1))
+                              for sh, ia in zip(l_shapes, v)], axis=0)
+        l, s, r = np.linalg.svd(mat, full_matrices=False)
+        rqs[ir, :] = qq
+        rshs[ir] = r.shape
+        ridxs[ir + 1] = ridxs[ir] + r.size
+        rmats[ir] = r.flatten()
+        sqs[ir, 0] = qq
+        sshs[ir, 0] = s.shape[0]
+        sidxs[ir + 1] = sidxs[ir] + s.shape[0]
+        smats[ir] = s
+        ls = np.split(l, list(accumulate(l_shapes[:-1])), axis=0)
+        assert len(ls) == len(v)
+        lshs[v, -1] = l.shape[-1]
+        for q, ia in zip(ls, v):
+            lmats[ia] = q.flatten()
+            lidx[ill] = ia
+            ill += 1
+    return lqs[lidx], lshs[lidx], np.concatenate([lmats[x] for x in lidx]), None, \
+        sqs, sshs, np.concatenate(smats), sidxs, \
+        rqs, rshs, np.concatenate(rmats), ridxs
+
+
+def flat_sparse_right_svd(aqs, ashs, adata, aidxs):
+    collected_cols = {}
+    for i, q in enumerate(aqs[:, 0]):
+        if q not in collected_cols:
+            collected_cols[q] = [i]
+        else:
+            collected_cols[q].append(i)
+    nblocks_l = len(collected_cols)
+    nblocks_r = aqs.shape[0]
+    lmats = [None] * nblocks_l
+    rmats = [None] * nblocks_r
+    smats = [None] * nblocks_l
+    lqs = np.zeros((nblocks_l, 2), aqs.dtype)
+    lshs = np.zeros((nblocks_l, 2), ashs.dtype)
+    lidxs = np.zeros((nblocks_l + 1), aidxs.dtype)
+    sqs = np.zeros((nblocks_l, 1), aqs.dtype)
+    sshs = np.zeros((nblocks_l, 1), ashs.dtype)
+    sidxs = np.zeros((nblocks_l + 1), aidxs.dtype)
+    rqs = aqs.copy()
+    rshs = ashs.copy()
+    ridx = np.zeros((nblocks_r, ), dtype=int)
+    irr = 0
+    for il, (qq, v) in enumerate(collected_cols.items()):
+        pashs = ashs[v, 1:]
+        r_shapes = np.prod(pashs, axis=1)
+        mat = np.concatenate(
+            [adata[aidxs[ia]:aidxs[ia + 1]].reshape((-1, sh)) for sh, ia in zip(r_shapes, v)], axis=1)
+        l, s, r = np.linalg.svd(mat, full_matrices=False)
+        lqs[il, :] = qq
+        lshs[il] = l.shape
+        lidxs[il + 1] = lidxs[il] + l.size
+        lmats[il] = l.flatten()
+        sqs[il, 0] = qq
+        sshs[il, 0] = s.shape[0]
+        sidxs[il + 1] = sidxs[il] + s.shape[0]
+        smats[il] = s
+        rs = np.split(r, list(accumulate(r_shapes[:-1])), axis=1)
+        assert len(rs) == len(v)
+        rshs[v, 0] = r.shape[0]
+        for q, ia in zip(rs, v):
+            rmats[ia] = q.flatten()
+            ridx[irr] = ia
+            irr += 1
+    assert irr == nblocks_r
+    return lqs, lshs, np.concatenate(lmats), lidxs, \
+        sqs, sshs, np.concatenate(smats), sidxs, \
+        rqs[ridx], rshs[ridx], np.concatenate([rmats[x] for x in ridx]), None
+
+
 def flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs):
     collected_rows = {}
     for i, q in enumerate(aqs[:, -1]):
@@ -240,6 +337,7 @@ def flat_sparse_fuse(aqs, ashs, adata, aidxs, idxs, info, pattern):
     rqs, rshs, rdata = zip(*blocks_map.values())
     return np.array(rqs, dtype=np.uint32), np.array(rshs, dtype=np.uint32), np.concatenate([d.flatten() for d in rdata]), None
 
+
 def flat_sparse_trans_fusing_info(info):
     from block3 import MapFusing, MapVUIntPUV, VectorUInt
     minfo = MapFusing()
@@ -250,6 +348,7 @@ def flat_sparse_trans_fusing_info(info):
             mp[vk] = (vv, VectorUInt(tvv))
         minfo[k.to_flat()] = (v, mp)
     return minfo
+
 
 def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor):
     if len(aqs) == 0:

@@ -176,7 +176,7 @@ class MPS(NDArrayOperatorsMixin):
                     tensors = MPS._add(a, b).tensors
                     if len(a.opts) != 0:
                         tensors = MPS.compress(
-                            MPS(tensors=tensors), left=True, **a.opts)[0].tensors
+                            MPS(tensors=tensors), **a.opts)[0].tensors
             elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
@@ -237,7 +237,7 @@ class MPS(NDArrayOperatorsMixin):
             tensors[i - 1] = np.tensordot(tensors[i - 1], l, axes=1)
         return MPS(tensors=tensors, opts=self.opts, const=self.const)
 
-    def compress(self, left=True, **opts):
+    def compress(self, **opts):
         """
         MPS bond dimension compression.
         Args:
@@ -251,6 +251,7 @@ class MPS(NDArrayOperatorsMixin):
         """
         merror = 0.0
         tensors = [ts for ts in self.tensors]
+        left = opts.pop("left", True)
         if left:
             for i in range(0, self.n_sites - 1):
                 q, r = tensors[i].left_canonicalize()
@@ -420,7 +421,7 @@ class MPS(NDArrayOperatorsMixin):
         # compression
         if len(opts) != 0:
             if r.n_sites > 1:
-                r, _ = MPS.compress(r, left=True, **opts)
+                r, _ = MPS.compress(r, **opts)
             r.opts = opts
 
         if out is not None:

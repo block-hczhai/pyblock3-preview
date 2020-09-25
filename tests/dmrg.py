@@ -20,7 +20,10 @@ fast = False
 iprint = True
 contract = False
 profile = False
-dot = 3
+left = False
+dot = 2
+
+np.random.seed(1000)
 
 # fd = '../data/HUBBARD-L8.FCIDUMP'
 # fd = '../data/N2.STO3G.FCIDUMP'
@@ -48,10 +51,10 @@ mps = MPS.random(mps_info)
 
 print('MPS = ', mps.show_bond_dims())
 print('MPO (NC) =         ', mpo.show_bond_dims())
-mpo, _ = mpo.compress(left=True, cutoff=1E-9, norm_cutoff=1E-9)
+mpo, _ = mpo.compress(left=left, cutoff=1E-9, norm_cutoff=1E-9)
 print('MPO (compressed) = ', mpo.show_bond_dims())
 
-mps.opts = dict(cutoff=1E-12, norm_cutoff=1E-12, max_bond_dim=bdims)
+mps.opts = dict(left=left, cutoff=1E-12, norm_cutoff=1E-12, max_bond_dim=bdims)
 if flat:
     mps = mps.to_flat()
     mpo = mpo.to_flat()
@@ -76,7 +79,7 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
                     error = 0
             else:
                 ener, eff, ndav = eff.gs_optimize(iprint=iprint, fast=fast)
-                cket, error = eff.ket.compress(cutoff=1E-12, max_bond_dim=bdims)
+                cket, error = eff.ket.compress(left=left, cutoff=1E-12, max_bond_dim=bdims)
                 eff.ket[:] = cket[:]
             mpe[i:i + dot] = eff
             eners[iw] = min(eners[iw], ener)
