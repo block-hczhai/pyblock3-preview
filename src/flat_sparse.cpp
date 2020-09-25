@@ -649,7 +649,7 @@ flat_sparse_tensor_fuse(
             for (auto &ia : mmq.second) {
                 auto &mm = m.second.at(ufqs[ia]);
                 uint32_t x = m.first, k = mm.first;
-                int nk = (pia[ia + 1] - pia[ia]) * x / sz;
+                int nk = (size_t)(pia[ia + 1] - pia[ia]) * x / sz;
                 const int lc = diml, la = diml;
                 const int rc = x * dimr, ra = nk * dimr;
                 dlacpy("n", &ra, &la, pa + pia[ia], &ra,
@@ -1121,9 +1121,10 @@ flat_sparse_truncate_svd(
     int n_blocks_l = (int)lqs.shape()[0], ndiml = (int)lqs.shape()[1];
     int n_blocks_s = (int)sqs.shape()[0], ndims = (int)sqs.shape()[1];
     int n_blocks_r = (int)rqs.shape()[0], ndimr = (int)rqs.shape()[1];
+
     assert(ndims == 1);
-    int size_s = sidxs.data()[n_blocks_s];
-    vector<tuple<int, int, double>> ss(size_s);
+    vector<tuple<int, int, double>> ss;
+    ss.reserve(sidxs.data()[n_blocks_s]);
     const uint32_t *plqs = lqs.data(), *psqs = sqs.data(), *prqs = rqs.data();
     const uint32_t *plshs = lshs.data(), *psshs = sshs.data(),
                    *prshs = rshs.data();
@@ -1173,9 +1174,15 @@ flat_sparse_truncate_svd(
         [](const tuple<int, int, double> &a, const tuple<int, int, double> &b) {
             return get<1>(a) < get<1>(b);
         });
-    unordered_map<int, vector<int>> selected;
-    for (auto &r : ss_trunc)
-        selected[get<0>(r)].push_back(get<1>(r));
+
+    vector<pair<int, vector<int>>> selected;
+    selected.reserve(n_blocks_s);
+    for (auto &x : ss_trunc)
+        if (selected.size() != 0 && selected.back().first == get<0>(x))
+            selected.back().second.push_back(get<1>(x));
+        else
+            selected.push_back(make_pair(get<0>(x), vector<int>{get<1>(x)}));
+
     int n_blocks_l_new = 0, n_blocks_r_new = 0,
         n_blocks_s_new = (int)selected.size();
     int nbl[n_blocks_s_new], nbr[n_blocks_s_new];
@@ -1207,7 +1214,7 @@ flat_sparse_truncate_svd(
         for (; ikr < n_blocks_r && prqs[ikr * rsi + 0 * rsj] != sqr; ikr++)
             skbr[iks]++;
         for (; ikr < n_blocks_r && prqs[ikr * rsi + 0 * rsj] == sqr; ikr++)
-            nbr[iks]++, size_r_new += pil[ikl + 1] - pil[ikl];
+            nbr[iks]++, size_r_new += pir[ikr + 1] - pir[ikr];
         uint32_t rsz = (pir[ikr] - pir[ikr - nbr[iks]]) /
                        psshs[iis * ssi + (ndims - 1) * ssj] * ssz;
         n_blocks_r_new += nbr[iks];
@@ -1265,9 +1272,9 @@ flat_sparse_truncate_svd(
             int lszl = (pil[ikl + i + 1] - pil[ikl + i]) / fsz;
             uint32_t lsz = lszl * ssz;
             pnlidxs[iknl + i + 1] = pnlidxs[iknl + i] + lsz;
-            for (uint32_t i = 0; i < ssz; i++)
-                dcopy(&lszl, pl + pil[ikl + i] + m.second[i] - pis[iis], &fsz,
-                      pnl + pnlidxs[iknl + i] + i, &ssz);
+            for (uint32_t j = 0; j < ssz; j++)
+                dcopy(&lszl, pl + pil[ikl + i] + m.second[j] - ist, &fsz,
+                      pnl + pnlidxs[iknl + i] + j, &ssz);
         }
         for (int i = 0; i < nbr[iks]; i++) {
             for (int j = 0; j < ndimr; j++) {
@@ -1279,10 +1286,10 @@ flat_sparse_truncate_svd(
             int rszr = (pir[ikr + i + 1] - pir[ikr + i]) / fsz, inc = 1;
             uint32_t rsz = rszr * ssz;
             pnridxs[iknr + i + 1] = pnridxs[iknr + i] + rsz;
-            for (uint32_t i = 0; i < ssz; i++)
+            for (uint32_t j = 0; j < ssz; j++)
                 dcopy(&rszr,
-                      pr + pir[ikr + i] + (m.second[i] - pis[iis]) * rszr, &inc,
-                      pnr + pnridxs[iknr + i] + i * rszr, &inc);
+                      pr + pir[ikr + i] + (m.second[j] - ist) * rszr, &inc,
+                      pnr + pnridxs[iknr + i] + j * rszr, &inc);
         }
         ikl += nbl[iks], ikr += nbr[iks];
         iknl += nbl[iks], iknr += nbr[iks];

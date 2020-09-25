@@ -1,6 +1,6 @@
 
 import numpy as np
-from itertools import accumulate
+from itertools import accumulate, groupby
 from collections import Counter
 from ..symmetry import SZ, BondInfo, BondFusingInfo
 
@@ -240,6 +240,16 @@ def flat_sparse_fuse(aqs, ashs, adata, aidxs, idxs, info, pattern):
     rqs, rshs, rdata = zip(*blocks_map.values())
     return np.array(rqs, dtype=np.uint32), np.array(rshs, dtype=np.uint32), np.concatenate([d.flatten() for d in rdata]), None
 
+def flat_sparse_trans_fusing_info(info):
+    from block3 import MapFusing, MapVUIntPUV, VectorUInt
+    minfo = MapFusing()
+    for k, v in info.items():
+        mp = MapVUIntPUV()
+        for kk, (vv, tvv) in info.finfo[k].items():
+            vk = VectorUInt([x.to_flat() for x in kk])
+            mp[vk] = (vv, VectorUInt(tvv))
+        minfo[k.to_flat()] = (v, mp)
+    return minfo
 
 def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor):
     if len(aqs) == 0:
@@ -303,3 +313,81 @@ def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol
             bdata[bidxs[ib]:bidxs[ib + 1]].reshape(bshs[ib])
 
     return cqs, cshs, cdata, cidxs
+
+
+def flat_sparse_truncate_svd(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
+                             rqs, rshs, rdata, ridxs, max_bond_dim=-1, cutoff=0.0,
+                             max_dw=0.0, norm_cutoff=0.0):
+    ss = [(i, j, v) for i, (ist, ied) in enumerate(zip(sidxs, sidxs[1:]))
+          for j, v in enumerate(sdata[ist:ied])]
+    ss.sort(key=lambda x: -x[2])
+    ss_trunc = ss.copy()
+    if max_dw != 0:
+        p, dw = 0, 0.0
+        for x in ss_trunc[::-1]:
+            dw += x[2] * x[2]
+            if dw <= max_dw:
+                p += 1
+            else:
+                break
+        ss_trunc = ss_trunc[:-p]
+    if cutoff != 0:
+        ss_trunc = [x for x in ss_trunc if x[2] >= cutoff]
+    if max_bond_dim != -1:
+        ss_trunc = ss_trunc[:max_bond_dim]
+    ss_trunc.sort(key=lambda x: (x[0], x[1]))
+    l_blocks, r_blocks = [], []
+    error = 0.0
+    selected = np.array([False] * len(sqs), dtype=bool)
+    ikl, ikr, iks, iksz = 0, 0, 0, 0
+    nl, nr = len(lqs), len(rqs)
+    nsdata = np.zeros((len(ss_trunc), ), dtype=sdata.dtype)
+    gs = [(ik, list(g)) for ik, g in groupby(ss_trunc, key=lambda x: x[0])]
+    nsshs = np.zeros((len(gs), 1), dtype=sshs.dtype)
+    for ik, g in gs:
+        gl = np.array([ig[1] for ig in g], dtype=int)
+        ns, ng = sidxs[ik + 1] - sidxs[ik], len(gl)
+        gl_inv = np.array(list(set(range(ns)) - set(gl)), dtype=int)
+        while ikl < nl and lqs[ikl, -1] != sqs[ik, 0]:
+            ikl += 1
+        nkl, nkr = 0, 0
+        while ikl + nkl < nl and lqs[ikl + nkl, -1] == sqs[ik, 0]:
+            nkl += 1
+        sh = lshs[ikl:ikl + nkl].copy()
+        sh[:, -1] = ng
+        dt = ldata[lidxs[ikl]:lidxs[ikl + nkl]
+                   ].reshape((-1, ns))[:, gl].flatten()
+        l_blocks.append((lqs[ikl:ikl + nkl], sh, dt))
+        nsshs[iks, 0] = ng
+        nsdata[iksz:iksz + ng] = sdata[sidxs[ik]:sidxs[ik + 1]][gl]
+        while ikr < nr and rqs[ikr, 0] != sqs[ik, -1]:
+            ikr += 1
+        while ikr + nkr < nr and rqs[ikr + nkr, 0] == sqs[ik, -1]:
+            nkr += 1
+        sh = rshs[ikr:ikr + nkr].copy()
+        sh[:, 0] = ng
+        rrx = ridxs[ikr:ikr + nkr + 1]
+        rrxr = (rrx - ridxs[ikr]) // ns
+        dt = np.concatenate(
+            [rdata[irst:ired].reshape((ns, -1))
+                for irst, ired in zip(rrx[:-1], rrx[1:])], axis=1)[gl, :]
+        dt = np.concatenate(
+            [dt[:, irst:ired].flatten() for irst, ired in zip(rrxr[:-1], rrxr[1:])])
+        r_blocks.append((rqs[ikr:ikr + nkr], sh, dt))
+        error += (sdata[sidxs[ik]:sidxs[ik + 1]][gl_inv] ** 2).sum()
+        selected[ik] = True
+        iks += 1
+        iksz += ng
+        ikl += nkl
+        ikr += nkr
+    for ik in range(len(sqs)):
+        if not selected[ik]:
+            error += (sdata[sidxs[ik]:sidxs[ik + 1]] ** 2).sum()
+    error = np.asarray(error).item()
+    nlqs = np.concatenate([xl[0] for xl in l_blocks], axis=0)
+    nlshs = np.concatenate([xl[1] for xl in l_blocks], axis=0)
+    nldata = np.concatenate([xl[2] for xl in l_blocks])
+    nrqs = np.concatenate([xr[0] for xr in r_blocks], axis=0)
+    nrshs = np.concatenate([xr[1] for xr in r_blocks], axis=0)
+    nrdata = np.concatenate([xr[2] for xr in r_blocks])
+    return nlqs, nlshs, nldata, None, sqs[selected], nsshs, nsdata, None, nrqs, nrshs, nrdata, None, np.sqrt(error)

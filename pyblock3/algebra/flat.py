@@ -23,6 +23,7 @@ if ENABLE_FAST_IMPLS:
         flat_sparse_right_canonicalize = block3.flat_sparse_tensor.right_canonicalize
         flat_sparse_left_svd = block3.flat_sparse_tensor.left_svd
         flat_sparse_right_svd = block3.flat_sparse_tensor.right_svd
+        flat_sparse_truncate_svd = block3.flat_sparse_tensor.truncate_svd
 
         def flat_sparse_transpose_impl(aqs, ashs, adata, aidxs, axes):
             data = np.zeros_like(adata)
@@ -259,15 +260,15 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         return np.linalg.norm(self.data)
 
     def kron_sum_info(self, *idxs, pattern=None):
-        idxs = np.array([i if i >= 0 else self.ndim +
-                         i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim
+                         + i for i in idxs], dtype=np.int32)
         # using minimal fused dimension
         return flat_sparse_kron_sum_info(
             self.q_labels[:, idxs], self.shapes[:, idxs], pattern=pattern)
 
     def kron_product_info(self, *idxs, pattern=None):
-        idxs = np.array([i if i >= 0 else self.ndim +
-                         i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim
+                         + i for i in idxs], dtype=np.int32)
         return flat_sparse_kron_product_info(np.array(self.infos)[idxs], pattern=pattern)
 
     @staticmethod
@@ -288,8 +289,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
                 A str of '+'/'-'. Only required when info is not specified (if not in fast mode).
                 Indicating how quantum numbers are linearly combined.
         """
-        idxs = np.array([i if i >= 0 else self.ndim +
-                         i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim
+                         + i for i in idxs], dtype=np.int32)
         if info is None:
             info = self.kron_sum_info(*idxs, pattern=pattern)
         if pattern is None:
@@ -508,10 +509,34 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
 
     @staticmethod
-    def truncate_svd(l, s, r, *args, **kwargs):
-        l, s, r, error = SparseTensor.truncate_svd(
-            *tuple(x.to_sparse() for x in (l, s, r)), *args, **kwargs)
-        return (*tuple(FlatSparseTensor.from_sparse(x) for x in (l, s, r)), error)
+    def truncate_svd(l, s, r, max_bond_dim=-1, cutoff=0.0, max_dw=0.0, norm_cutoff=0.0):
+        """
+        Truncate tensors obtained from SVD.
+
+        Args:
+            l, s, r : tuple(FlatSparseTensor)
+                SVD tensors.
+            max_bond_dim : int
+                Maximal total bond dimension.
+                If `k == -1`, no restriction in total bond dimension.
+            cutoff : double
+                Minimal kept singular value.
+            max_dw : double
+                Maximal sum of square of discarded singular values.
+            norm_cutoff : double
+                Blocks with norm smaller than norm_cutoff will be deleted.
+
+        Returns:
+            l, s, r : tuple(FlatSparseTensor)
+            error : float
+                Truncation error (same unit as singular value).
+        """
+        lsre = flat_sparse_truncate_svd(
+            l.q_labels, l.shapes, l.data, l.idxs,
+            s.q_labels, s.shapes, s.data, s.idxs,
+            r.q_labels, r.shapes, r.data, r.idxs,
+            max_bond_dim, cutoff, max_dw, norm_cutoff)
+        return FlatSparseTensor(*lsre[:4]), FlatSparseTensor(*lsre[4:8]), FlatSparseTensor(*lsre[8:12]), lsre[12]
 
     @staticmethod
     @implements(np.diag)
@@ -723,8 +748,8 @@ class FlatFermionTensor(FermionTensor):
         return FlatFermionTensor(odd=odd, even=even)
 
     def kron_sum_info(self, *idxs, pattern=None):
-        idxs = np.array([i if i >= 0 else self.ndim +
-                         i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim
+                         + i for i in idxs], dtype=np.int32)
         if self.odd.n_blocks == 0:
             qs, shs = self.even.q_labels[:, idxs], self.even.shapes[:, idxs]
         elif self.even.n_blocks == 0:
@@ -738,8 +763,8 @@ class FlatFermionTensor(FermionTensor):
         return flat_sparse_kron_sum_info(qs, shs, pattern=pattern)
 
     def kron_product_info(self, *idxs, pattern=None):
-        idxs = np.array([i if i >= 0 else self.ndim +
-                         i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim
+                         + i for i in idxs], dtype=np.int32)
         return flat_sparse_kron_product_info(np.array(self.infos)[idxs], pattern=pattern)
 
     @staticmethod
@@ -760,8 +785,8 @@ class FlatFermionTensor(FermionTensor):
                 A str of '+'/'-'. Only required when info is not specified.
                 Indicating how quantum numbers are linearly combined.
         """
-        idxs = np.array([i if i >= 0 else self.ndim +
-                         i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim
+                         + i for i in idxs], dtype=np.int32)
         if info is None:
             info = self.kron_sum_info(*idxs, pattern=pattern)
         odd = self.odd.fuse(*idxs, info=info, pattern=pattern)
@@ -990,16 +1015,16 @@ class FlatFermionTensor(FermionTensor):
                 d = a.ndim // 2 - 1
                 aidx = list(range(d + 1, d + d + 1))
                 bidx = list(range(1, d + 1))
-                tr = tuple([0, d + 2] + list(range(1, d + 1)) +
-                           list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
+                tr = tuple([0, d + 2] + list(range(1, d + 1))
+                           + list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
             # MPO x MPS
             elif a.ndim > b.ndim:
                 assert isinstance(a, FlatFermionTensor)
                 dau, db = a.ndim - b.ndim, b.ndim - 2
                 aidx = list(range(dau + 1, dau + db + 1))
                 bidx = list(range(1, db + 1))
-                tr = tuple([0, dau + 2] + list(range(1, dau + 1)) +
-                           [dau + 1, dau + 3])
+                tr = tuple([0, dau + 2] + list(range(1, dau + 1))
+                           + [dau + 1, dau + 3])
             # MPS x MPO
             elif a.ndim < b.ndim:
                 assert isinstance(b, FlatFermionTensor)

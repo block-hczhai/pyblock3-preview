@@ -1883,7 +1883,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         ss = [(i, j, v) for i, ps in enumerate(s.blocks)
               for j, v in enumerate(ps)]
         ss.sort(key=lambda x: -x[2])
-        ss_trunc = ss
+        ss_trunc = ss.copy()
         if max_dw != 0:
             p, dw = 0, 0.0
             for x in ss_trunc:

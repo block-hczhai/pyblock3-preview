@@ -250,8 +250,8 @@ class MPS(NDArrayOperatorsMixin):
                 Maximal sum of square of discarded singluar values.
         """
         merror = 0.0
+        tensors = [ts for ts in self.tensors]
         if left:
-            tensors = self.canonicalize(self.n_sites - 1).tensors
             for i in range(self.n_sites - 1, 0, -1):
                 l, s, r = tensors[i].right_svd(full_matrices=False)
                 l, s, r, err = r.__class__.truncate_svd(l, s, r, **opts)
@@ -259,8 +259,11 @@ class MPS(NDArrayOperatorsMixin):
                 tensors[i] = r
                 tensors[i - 1] = np.tensordot(tensors[i - 1], ls, axes=1)
                 merror = max(merror, err)
+            for i in range(0, self.n_sites - 1):
+                q, r = tensors[i].left_canonicalize()
+                tensors[i] = q
+                tensors[i + 1] = np.tensordot(r, tensors[i + 1], axes=1)
         else:
-            tensors = self.canonicalize(0).tensors
             for i in range(0, self.n_sites - 1, 1):
                 l, s, r = tensors[i].left_svd(full_matrices=False)
                 l, s, r, err = l.__class__.truncate_svd(l, s, r, **opts)
@@ -268,6 +271,10 @@ class MPS(NDArrayOperatorsMixin):
                 tensors[i] = l
                 tensors[i + 1] = np.tensordot(rs, tensors[i + 1], axes=1)
                 merror = max(merror, err)
+            for i in range(self.n_sites - 1, 0, -1):
+                l, q = tensors[i].right_canonicalize()
+                tensors[i] = q
+                tensors[i - 1] = np.tensordot(tensors[i - 1], l, axes=1)
         return MPS(tensors=tensors, const=self.const, opts=self.opts), merror
 
     @staticmethod

@@ -24,8 +24,8 @@ dot = 2
 
 # fd = '../data/HUBBARD-L8.FCIDUMP'
 # fd = '../data/N2.STO3G.FCIDUMP'
-# fd = '../data/H8.STO6G.R1.8.FCIDUMP'
-fd = '../my_test/n2/N2.FCIDUMP'
+fd = '../data/H8.STO6G.R1.8.FCIDUMP'
+# fd = '../my_test/n2/N2.FCIDUMP'
 bdims = 200
 
 # with HamilTools.hubbard(n_sites=4, u=2, t=1) as hamil:
@@ -81,7 +81,7 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
             mpe[i:i + dot] = eff
             eners[iw] = min(eners[iw], ener)
             print(" %3s Site = %4d-%4d .. Ndav = %4d E = %20.12f Error = %10.5g T = %8.3f" % (
-                "<--" if iw % 2 else "-->", i, i + dot - 1, ndav, eners[iw], error, time.perf_counter() - tt))
+                "<--" if iw % 2 else "-->", i, i + dot - 1, ndav, ener, error, time.perf_counter() - tt))
         if abs(reduce(np.subtract, eners[:iw + 1][-2:])) < tol:
             break
     return eners[iw]
