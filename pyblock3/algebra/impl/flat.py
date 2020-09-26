@@ -105,7 +105,7 @@ def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
             linfo.finfo[q][qls][1])
         rk, rkn = rinfo.finfo[q][qrs][0], np.multiply.reduce(
             rinfo.finfo[q][qrs][1])
-        mats[q][lk:lk + lkn, rk:rk + rkn] = adata[aidxs[iq]                                                  :aidxs[iq + 1]].reshape((lkn, rkn))
+        mats[q][lk:lk + lkn, rk:rk + rkn] = adata[aidxs[iq]:aidxs[iq + 1]].reshape((lkn, rkn))
     n = len(mats)
     sqs = np.zeros((n, 1), dtype=aqs.dtype)
     sshs = np.zeros((n, 1), dtype=ashs.dtype)
