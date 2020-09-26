@@ -114,7 +114,7 @@ template <> struct less<SZLong> {
 
 } // namespace std
 
-inline SZLong to_sz(uint32_t x) {
+inline SZLong to_sz(uint32_t x) noexcept {
     return SZLong((int)((x >> 17) & 16383) - 8192,
                   (int)((x >> 3) & 16383) - 8192, x & 7);
 }
@@ -144,9 +144,9 @@ inline bool less_vsz(const vector<SZLong> &x,
     return false;
 }
 
-template<typename T>
+template <typename T>
 inline bool less_pvsz(const pair<vector<SZLong>, T> &x,
-                     const pair<vector<SZLong>, T> &y) noexcept {
+                      const pair<vector<SZLong>, T> &y) noexcept {
     return less_vsz(x.first, y.first);
 }
 

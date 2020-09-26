@@ -532,14 +532,14 @@ flat_sparse_tensor_kron_add(
         const int lc = (int)dimlc[ic], la = (int)dimla[i];
         const int rc = (int)pcshs[ic * ndima + ndima - 1],
                   ra = (int)ashs.data()[i * asi + (ndima - 1) * asj];
-        dlacpy("n", &ra, &la, pa + pia[i], &ra, pc + pcidxs[ic], &rc);
+        dlacpy("N", &ra, &la, pa + pia[i], &ra, pc + pcidxs[ic], &rc);
     }
     for (int i = 0; i < n_blocks_b; i++) {
         int ic = pic[iab_mp[i + n_blocks_a]];
         const int lc = (int)dimlc[ic], lb = (int)dimlb[i];
         const int rc = (int)pcshs[ic * ndima + ndima - 1],
                   rb = (int)bshs.data()[i * bsi + (ndimb - 1) * bsj];
-        dlacpy("n", &rb, &lb, pb + pib[i], &rb,
+        dlacpy("N", &rb, &lb, pb + pib[i], &rb,
                pc + pcidxs[ic] + (rc - rb) + (lc - lb) * rc, &rc);
     }
 
@@ -548,16 +548,12 @@ flat_sparse_tensor_kron_add(
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
-flat_sparse_tensor_fuse(
-    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
-    const py::array_t<int32_t> &idxs,
-    const unordered_map<
-        uint32_t,
-        pair<uint32_t,
-             unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>>
-        &info,
-    const string &pattern) {
+flat_sparse_tensor_fuse(const py::array_t<uint32_t> &aqs,
+                        const py::array_t<uint32_t> &ashs,
+                        const py::array_t<double> &adata,
+                        const py::array_t<uint32_t> &aidxs,
+                        const py::array_t<int32_t> &idxs,
+                        const map_fusing &info, const string &pattern) {
     if (aqs.shape()[0] == 0)
         return std::make_tuple(aqs, ashs, adata, aidxs);
     const int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
@@ -652,7 +648,7 @@ flat_sparse_tensor_fuse(
                 int nk = (size_t)(pia[ia + 1] - pia[ia]) * x / sz;
                 const int lc = diml, la = diml;
                 const int rc = x * dimr, ra = nk * dimr;
-                dlacpy("n", &ra, &la, pa + pia[ia], &ra,
+                dlacpy("N", &ra, &la, pa + pia[ia], &ra,
                        pc + pcidxs[0] + k * dimr, &rc);
             }
             pcqs += ndimc;
@@ -667,17 +663,10 @@ flat_sparse_tensor_fuse(
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
 
-unordered_map<uint32_t,
-              pair<uint32_t, unordered_map<vector<uint32_t>,
-                                           pair<uint32_t, vector<uint32_t>>>>>
-flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
-                                 const py::array_t<uint32_t> &ashs,
-                                 const string &pattern) {
-    unordered_map<
-        uint32_t,
-        pair<uint32_t,
-             unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>>
-        r;
+map_fusing flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
+                                            const py::array_t<uint32_t> &ashs,
+                                            const string &pattern) {
+    map_fusing r;
     if (aqs.shape()[0] == 0)
         return r;
     const int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
@@ -696,7 +685,7 @@ flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
         for (int j = 0; j < ndima; j++) {
             qs[j] = to_sz(pqs[i * asi + j * asj]);
             shs[j] = pshs[i * asi + j * asj];
-            xq = xq + (pattern[i] == '+' ? qs[j] : -qs[j]);
+            xq = xq + (pattern[j] == '+' ? qs[j] : -qs[j]);
         }
         uint32_t xxq = from_sz(xq);
         uint32_t sz =
@@ -710,8 +699,14 @@ flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
         auto &mr = r[m.first];
         mr.first = 0;
         for (auto &mm : m.second) {
-            for (int j = 0; j < ndima; j++)
-                xqs[j] = from_sz(mm.first[j]);
+            bool same = mr.first == 0 ? false : true;
+            for (int j = 0; j < ndima; j++) {
+                uint32_t qq = from_sz(mm.first[j]);
+                same = same && qq == xqs[j];
+                xqs[j] = qq;
+            }
+            if (same)
+                continue;
             mr.second[xqs] = make_pair(mr.first, mm.second.second);
             mr.first += mm.second.first;
         }
@@ -927,7 +922,7 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
         } else {
             for (int i = 0; i < nq; i++) {
                 int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
-                dlacpy("n", &ra, &lshape, pa + pia[ia], &ra, ptmp, &rshape);
+                dlacpy("N", &ra, &lshape, pa + pia[ia], &ra, ptmp, &rshape);
                 ptmp += ra;
             }
             dgeqrf(&rshape, &lshape, tmp.data(), &rshape, tau.data(),
@@ -942,7 +937,7 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
             ptmp = tmp.data();
             for (int i = 0; i < nq; i++) {
                 int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
-                dlacpy("n", &ra, &mshape, ptmp, &rshape, pq + pqidxs[iq + i],
+                dlacpy("N", &ra, &mshape, ptmp, &rshape, pq + pqidxs[iq + i],
                        &ra);
                 ptmp += ra;
             }
@@ -1040,7 +1035,7 @@ flat_sparse_svd(const py::array_t<uint32_t> &aqs,
         } else {
             for (int i = 0; i < nq; i++) {
                 int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
-                dlacpy("n", &ra, &lshape, pa + pia[ia], &ra, ptmp, &rshape);
+                dlacpy("N", &ra, &lshape, pa + pia[ia], &ra, ptmp, &rshape);
                 ptmp += ra;
             }
             dgesvd("S", "S", &rshape, &lshape, tmp.data(), &rshape,
@@ -1050,7 +1045,7 @@ flat_sparse_svd(const py::array_t<uint32_t> &aqs,
             ptmp = tmp2.data();
             for (int i = 0; i < nq; i++) {
                 int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
-                dlacpy("n", &ra, &mshape, ptmp, &rshape, pq + pqidxs[iq + i],
+                dlacpy("N", &ra, &mshape, ptmp, &rshape, pq + pqidxs[iq + i],
                        &ra);
                 ptmp += ra;
             }
@@ -1102,6 +1097,193 @@ flat_sparse_svd<RIGHT>(const py::array_t<uint32_t> &aqs,
                        const py::array_t<uint32_t> &ashs,
                        const py::array_t<double> &adata,
                        const py::array_t<uint32_t> &aidxs);
+
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
+                       const py::array_t<uint32_t> &ashs,
+                       const py::array_t<double> &adata,
+                       const py::array_t<uint32_t> &aidxs, int idx,
+                       const map_fusing &linfo, const map_fusing &rinfo,
+                       const string &pattern) {
+    if (aqs.shape()[0] == 0)
+        return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata, aidxs,
+                               aqs, ashs, adata, aidxs);
+    const int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
+    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
+                  asj = aqs.strides()[1] / sizeof(uint32_t);
+    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
+    vector<vector<uint32_t>> ufqsl(n_blocks_a), ufqsr(n_blocks_a);
+    vector<uint32_t> fqs(n_blocks_a);
+    unordered_map<uint32_t, size_t> mat_mp;
+    const uint32_t *pshs = ashs.data(), *pqs = aqs.data(), *pia = aidxs.data();
+    const double *pa = adata.data();
+    size_t s_size = 0, mat_size = 0;
+    unordered_map<uint32_t, vector<int>> mat_idxl, mat_idxr;
+    int max_lshape = 0, max_rshape = 0, max_tmpl_shape = 0, max_tmpr_shape = 0;
+    for (int ia = 0; ia < n_blocks_a; ia++) {
+        SZLong xql = SZLong(0), xqr = SZLong(0);
+        ufqsl[ia].resize(idx);
+        ufqsr[ia].resize(ndima - idx);
+        for (int j = 0; j < idx; j++) {
+            ufqsl[ia][j] = pqs[ia * asi + j * asj];
+            xql = xql + (pattern[j] == '+' ? to_sz(ufqsl[ia][j])
+                                           : -to_sz(ufqsl[ia][j]));
+        }
+        for (int j = idx; j < ndima; j++) {
+            ufqsr[ia][j - idx] = pqs[ia * asi + j * asj];
+            xqr = xqr + (pattern[j] == '+' ? to_sz(ufqsr[ia][j - idx])
+                                           : -to_sz(ufqsr[ia][j - idx]));
+        }
+        assert(xql == xqr);
+        uint32_t q = from_sz(xql);
+        fqs[ia] = q;
+        if (!linfo.count(q) || !rinfo.count(q))
+            continue;
+        mat_idxl[q].push_back(ia);
+        mat_idxr[q].push_back(ia);
+        if (!mat_mp.count(q)) {
+            mat_mp[q] = mat_size;
+            int ml = linfo.at(q).first, mr = rinfo.at(q).first;
+            mat_size += (size_t)ml * mr, s_size += min(ml, mr);
+            max_lshape = max(ml, max_lshape);
+            max_rshape = max(mr, max_rshape);
+            max_tmpl_shape = max(min(ml, mr) * ml, max_tmpl_shape);
+            max_tmpr_shape = max(min(ml, mr) * mr, max_tmpr_shape);
+        }
+    }
+
+    vector<double> mat_data(mat_size);
+    vector<pair<int, int>> lkns(n_blocks_a), rkns(n_blocks_a);
+    for (int ia = 0; ia < n_blocks_a; ia++) {
+        const uint32_t q = fqs[ia];
+        const vector<uint32_t> &qls = ufqsl[ia], &qrs = ufqsr[ia];
+        if (!mat_mp.count(q))
+            continue;
+        int lfn = linfo.at(q).first, rfn = rinfo.at(q).first;
+        int mfn = min(lfn, rfn);
+        const pair<uint32_t, vector<uint32_t>> &lpk =
+            linfo.at(q).second.at(qls);
+        const pair<uint32_t, vector<uint32_t>> &rpk =
+            rinfo.at(q).second.at(qrs);
+        int lk = (int)lpk.first, rk = (int)rpk.first;
+        int lkn = (int)accumulate(lpk.second.begin(), lpk.second.end(), 1,
+                                  multiplies<uint32_t>());
+        int rkn = (int)accumulate(rpk.second.begin(), rpk.second.end(), 1,
+                                  multiplies<uint32_t>());
+        dlacpy("N", &rkn, &lkn, pa + pia[ia], &rkn,
+               mat_data.data() + mat_mp[q] + rk + (size_t)lk * rfn, &rfn);
+        lkns[ia] = make_pair(lk, lkn), rkns[ia] = make_pair(rk, rkn);
+    }
+
+    int n_blocks_s = (int)mat_mp.size();
+    int n_blocks_l = 0, n_blocks_r = 0;
+    size_t l_size = 0, r_size = 0;
+    for (auto &v : mat_idxl) {
+        int mm = min(linfo.at(v.first).first, rinfo.at(v.first).first);
+        sort(v.second.begin(), v.second.end(),
+             [&lkns](int i, int j) { return lkns[i].first < lkns[j].first; });
+        for (size_t i = 1; i < v.second.size(); i++) {
+            const int vi = v.second[i], vip = v.second[i - 1];
+            if (lkns[vi].first == lkns[vip].first)
+                v.second[i - 1] = -1;
+        }
+        for (auto &vi : v.second)
+            if (vi != -1)
+                l_size += (size_t)mm * lkns[vi].second, n_blocks_l++;
+    }
+    for (auto &v : mat_idxr) {
+        int mm = min(linfo.at(v.first).first, rinfo.at(v.first).first);
+        sort(v.second.begin(), v.second.end(),
+             [&rkns](int i, int j) { return rkns[i].first < rkns[j].first; });
+        for (size_t i = 1; i < v.second.size(); i++) {
+            const int vi = v.second[i], vip = v.second[i - 1];
+            if (rkns[vi].first == rkns[vip].first)
+                v.second[i - 1] = -1;
+        }
+        for (auto &vi : v.second)
+            if (vi != -1)
+                r_size += (size_t)mm * rkns[vi].second, n_blocks_r++;
+    }
+
+    py::array_t<uint32_t> lqs(vector<ssize_t>{n_blocks_l, idx + 1}),
+        lshs(vector<ssize_t>{n_blocks_l, idx + 1});
+    py::array_t<uint32_t> lidxs(vector<ssize_t>{n_blocks_l + 1});
+    py::array_t<uint32_t> rqs(vector<ssize_t>{n_blocks_r, ndima - idx + 1}),
+        rshs(vector<ssize_t>{n_blocks_r, ndima - idx + 1});
+    py::array_t<uint32_t> ridxs(vector<ssize_t>{n_blocks_r + 1});
+    py::array_t<uint32_t> sqs(vector<ssize_t>{n_blocks_s, 1}),
+        sshs(vector<ssize_t>{n_blocks_s, 1});
+    py::array_t<uint32_t> sidxs(vector<ssize_t>{n_blocks_s + 1});
+    py::array_t<double> ldata(vector<ssize_t>{(ssize_t)l_size});
+    py::array_t<double> rdata(vector<ssize_t>{(ssize_t)r_size});
+    py::array_t<double> sdata(vector<ssize_t>{(ssize_t)s_size});
+
+    uint32_t *plqs = lqs.mutable_data(), *plshs = lshs.mutable_data(),
+             *plidxs = lidxs.mutable_data();
+    uint32_t *prqs = rqs.mutable_data(), *prshs = rshs.mutable_data(),
+             *pridxs = ridxs.mutable_data();
+    uint32_t *psqs = sqs.mutable_data(), *psshs = sshs.mutable_data(),
+             *psidxs = sidxs.mutable_data();
+    double *pl = ldata.mutable_data(), *pr = rdata.mutable_data(),
+           *ps = sdata.mutable_data();
+    int lwork = max(max_lshape, max_rshape) * 34, info = 0;
+    vector<double> work(lwork), tmpl(max_tmpl_shape), tmpr(max_tmpr_shape);
+    int iis = 0, iil = 0, iir = 0;
+    psidxs[0] = plidxs[0] = pridxs[0] = 0;
+    for (auto &mq : mat_mp) {
+        const uint32_t q = mq.first;
+        double *mat = mat_data.data() + mq.second;
+        int ml = linfo.at(q).first, mr = rinfo.at(q).first, mm = min(ml, mr);
+        int lwork = max(ml, mr) * 34;
+        psidxs[iis + 1] = psidxs[iis] + mm;
+        psqs[iis] = q, psshs[iis] = mm;
+        dgesvd("S", "S", &mr, &ml, mat, &mr, ps + psidxs[iis], tmpr.data(), &mr,
+               tmpl.data(), &mm, work.data(), &lwork, &info);
+        assert(info == 0);
+        int isl = 0, isr = 0;
+        for (auto &v : mat_idxl[q]) {
+            if (v == -1)
+                continue;
+            plidxs[iil + isl + 1] =
+                plidxs[iil + isl] + (uint32_t)mm * lkns[v].second;
+            dlacpy("N", &mm, &lkns[v].second, tmpl.data() + lkns[v].first * mm,
+                   &mm, pl + plidxs[iil + isl], &mm);
+            for (int i = 0; i < idx; i++) {
+                plqs[(iil + isl) * (idx + 1) + i] = pqs[v * asi + i * asj];
+                plshs[(iil + isl) * (idx + 1) + i] = pshs[v * asi + i * asj];
+            }
+            plqs[(iil + isl) * (idx + 1) + idx] = q;
+            plshs[(iil + isl) * (idx + 1) + idx] = mm;
+            isl++;
+        }
+        for (auto &v : mat_idxr[q]) {
+            if (v == -1)
+                continue;
+            pridxs[iir + isr + 1] =
+                pridxs[iir + isr] + (uint32_t)mm * rkns[v].second;
+            dlacpy("N", &rkns[v].second, &mm, tmpr.data() + rkns[v].first, &mr,
+                   pr + pridxs[iir + isr], &rkns[v].second);
+            for (int i = idx; i < ndima; i++) {
+                prqs[(iir + isr) * (ndima - idx + 1) + i - idx + 1] =
+                    pqs[v * asi + i * asj];
+                prshs[(iir + isr) * (ndima - idx + 1) + i - idx + 1] =
+                    pshs[v * asi + i * asj];
+            }
+            prqs[(iir + isr) * (ndima - idx + 1) + 0] = q;
+            prshs[(iir + isr) * (ndima - idx + 1) + 0] = mm;
+            isr++;
+        }
+        iis++, iil += isl, iir += isr;
+    }
+    assert(iis == n_blocks_s && iil == n_blocks_l && iir == n_blocks_r);
+    assert(psidxs[iis] == s_size && plidxs[iil] == l_size &&
+           pridxs[iir] == r_size);
+    return std::make_tuple(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
+                           rqs, rshs, rdata, ridxs);
+}
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
@@ -1287,9 +1469,8 @@ flat_sparse_truncate_svd(
             uint32_t rsz = rszr * ssz;
             pnridxs[iknr + i + 1] = pnridxs[iknr + i] + rsz;
             for (uint32_t j = 0; j < ssz; j++)
-                dcopy(&rszr,
-                      pr + pir[ikr + i] + (m.second[j] - ist) * rszr, &inc,
-                      pnr + pnridxs[iknr + i] + j * rszr, &inc);
+                dcopy(&rszr, pr + pir[ikr + i] + (m.second[j] - ist) * rszr,
+                      &inc, pnr + pnridxs[iknr + i] + j * rszr, &inc);
         }
         ikl += nbl[iks], ikr += nbr[iks];
         iknl += nbl[iks], iknr += nbr[iks];

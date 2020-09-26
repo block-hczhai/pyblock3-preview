@@ -23,6 +23,7 @@ if ENABLE_FAST_IMPLS:
         flat_sparse_right_canonicalize = block3.flat_sparse_tensor.right_canonicalize
         flat_sparse_left_svd = block3.flat_sparse_tensor.left_svd
         flat_sparse_right_svd = block3.flat_sparse_tensor.right_svd
+        flat_sparse_tensor_svd = block3.flat_sparse_tensor.tensor_svd
         flat_sparse_truncate_svd = block3.flat_sparse_tensor.truncate_svd
 
         def flat_sparse_transpose_impl(aqs, ashs, adata, aidxs, axes):
@@ -506,6 +507,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             l, s, r : tuple(FlatSparseTensor)
         """
         assert full_matrices == False
+        # lsr = self.to_sparse().tensor_svd(idx, linfo, rinfo, pattern, full_matrices)
+        # return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
         assert idx >= 1 and idx <= self.ndim - 1
         if pattern is None:
             pattern = '+' * self.ndim

@@ -9,11 +9,7 @@
 PYBIND11_MAKE_OPAQUE(vector<uint32_t>);
 PYBIND11_MAKE_OPAQUE(
     unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>);
-PYBIND11_MAKE_OPAQUE(
-    unordered_map<
-        uint32_t,
-        pair<uint32_t, unordered_map<vector<uint32_t>,
-                                     pair<uint32_t, vector<uint32_t>>>>>);
+PYBIND11_MAKE_OPAQUE(map_fusing);
 PYBIND11_MAKE_OPAQUE(vector<unordered_map<uint32_t, uint32_t>>);
 PYBIND11_MAKE_OPAQUE(unordered_map<uint32_t, uint32_t>);
 
@@ -66,11 +62,7 @@ PYBIND11_MODULE(block3, m) {
     py::bind_map<
         unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>(
         m, "MapVUIntPUV");
-    py::bind_map<unordered_map<
-        uint32_t,
-        pair<uint32_t, unordered_map<vector<uint32_t>,
-                                     pair<uint32_t, vector<uint32_t>>>>>>(
-        m, "MapFusing");
+    py::bind_map<map_fusing>(m, "MapFusing");
 
     py::module tensor = m.def_submodule("tensor", "Tensor");
     tensor.def("transpose", &tensor_transpose, py::arg("x"), py::arg("perm"),
@@ -93,6 +85,10 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
     flat_sparse_tensor.def("right_svd", &flat_sparse_svd<RIGHT>, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("tensor_svd", &flat_sparse_tensor_svd,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                           py::arg("aidxs"), py::arg("idx"), py::arg("linfo"),
+                           py::arg("rinfo"), py::arg("pattern"));
     flat_sparse_tensor.def(
         "truncate_svd", &flat_sparse_truncate_svd, py::arg("lqs"),
         py::arg("lshs"), py::arg("ldata"), py::arg("lidxs"), py::arg("sqs"),

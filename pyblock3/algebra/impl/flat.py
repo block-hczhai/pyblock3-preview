@@ -76,11 +76,9 @@ def flat_sparse_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs):
 
 
 def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
-    info = linfo | rinfo
+    info = linfo & rinfo
     mats = {}
     for q in info:
-        if q not in linfo or q not in rinfo:
-            continue
         mats[q] = np.zeros((linfo[q], rinfo[q]))
     items = {}
     xqls = [tuple(SZ.from_flat(q) for q in aq)

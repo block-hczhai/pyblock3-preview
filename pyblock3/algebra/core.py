@@ -1002,11 +1002,9 @@ class SparseTensor(NDArrayOperatorsMixin):
             for block in self.blocks:
                 items.append((block.q_labels[idx:], block.shape[idx:]))
             rinfo = BondFusingInfo.kron_sum(items, pattern=pattern[idx:])
-        info = linfo | rinfo
+        info = linfo & rinfo
         mats = {}
         for q in info:
-            if q not in linfo or q not in rinfo:
-                continue
             mats[q] = np.zeros((linfo[q], rinfo[q]))
         pattern = linfo.pattern + rinfo.pattern
         items = {}

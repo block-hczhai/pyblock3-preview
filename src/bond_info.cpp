@@ -23,9 +23,7 @@ void bond_info_trans_to_sz(
     }
 }
 
-unordered_map<uint32_t,
-              pair<uint32_t, unordered_map<vector<uint32_t>,
-                                           pair<uint32_t, vector<uint32_t>>>>>
+map_fusing
 bond_info_fusing_product(const vector<unordered_map<uint32_t, uint32_t>> &infos,
                          const string &pattern) {
     int ndim = (int)infos.size();
@@ -34,11 +32,7 @@ bond_info_fusing_product(const vector<unordered_map<uint32_t, uint32_t>> &infos,
         nx *= infos[i].size();
     vector<vector<pair<SZLong, uint32_t>>> infox;
     bond_info_trans_to_sz(infos, pattern, infox, true);
-    unordered_map<
-        uint32_t,
-        pair<uint32_t,
-             unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>>
-        r;
+    map_fusing r;
     vector<uint32_t> qk(ndim), shk(ndim);
     for (size_t x = 0; x < nx; x++) {
         uint32_t sz = 1;
