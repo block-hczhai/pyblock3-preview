@@ -1024,7 +1024,6 @@ class SparseTensor(NDArrayOperatorsMixin):
                 items[q] = [], []
             items[q][0].append(qls)
             items[q][1].append(qrs)
-            mat = mats[q]
             lk, lkn = linfo.finfo[q][qls][0], np.multiply.reduce(
                 linfo.finfo[q][qls][1])
             rk, rkn = rinfo.finfo[q][qrs][0], np.multiply.reduce(

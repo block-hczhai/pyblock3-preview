@@ -75,6 +75,79 @@ def flat_sparse_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs):
             None)
 
 
+def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
+    info = linfo | rinfo
+    mats = {}
+    for q in info:
+        if q not in linfo or q not in rinfo:
+            continue
+        mats[q] = np.zeros((linfo[q], rinfo[q]))
+    items = {}
+    xqls = [tuple(SZ.from_flat(q) for q in aq)
+            for ia, aq in enumerate(aqs[:, :idx])]
+    xqrs = [tuple(SZ.from_flat(q) for q in aq)
+            for ia, aq in enumerate(aqs[:, idx:])]
+    for iq in range(len(xqls)):
+        qls, qrs = xqls[iq], xqrs[iq]
+        ql = np.add.reduce([iq if ip == "+" else -iq for iq,
+                            ip in zip(qls, pattern[:idx])])
+        qr = np.add.reduce([iq if ip == "+" else -iq for iq,
+                            ip in zip(qrs, pattern[idx:])])
+        assert ql == qr
+        q = ql
+        if q not in mats:
+            continue
+        if q not in items:
+            items[q] = [], []
+        items[q][0].append(qls)
+        items[q][1].append(qrs)
+        lk, lkn = linfo.finfo[q][qls][0], np.multiply.reduce(
+            linfo.finfo[q][qls][1])
+        rk, rkn = rinfo.finfo[q][qrs][0], np.multiply.reduce(
+            rinfo.finfo[q][qrs][1])
+        mats[q][lk:lk + lkn, rk:rk + rkn] = adata[aidxs[iq]                                                  :aidxs[iq + 1]].reshape((lkn, rkn))
+    n = len(mats)
+    sqs = np.zeros((n, 1), dtype=aqs.dtype)
+    sshs = np.zeros((n, 1), dtype=ashs.dtype)
+    smats = [None] * n
+    l_blocks, r_blocks = [], []
+    for iq, (q, mat) in enumerate(mats.items()):
+        l, s, r = np.linalg.svd(mat, full_matrices=False)
+        sqs[iq, 0] = q.to_flat()
+        sshs[iq] = s.shape
+        smats[iq] = s
+        items[q][0].sort()
+        items[q][1].sort()
+        pqs = None
+        for qs in items[q][0]:
+            if qs == pqs:
+                continue
+            k, sh = linfo.finfo[q][qs]
+            nk = np.multiply.reduce(sh)
+            qq = np.array([x.to_flat() for x in qs + (q, )], dtype=aqs.dtype)
+            sh = np.array(sh + (l.shape[-1], ), dtype=ashs.dtype)
+            l_blocks.append((qq, sh, l[k:k + nk, :].flatten()))
+            pqs = qs
+        pqs = None
+        for qs in items[q][1]:
+            if qs == pqs:
+                continue
+            k, sh = rinfo.finfo[q][qs]
+            nk = np.multiply.reduce(sh)
+            qq = np.array([x.to_flat() for x in (q, ) + qs], dtype=aqs.dtype)
+            sh = np.array((r.shape[0], ) + sh, dtype=ashs.dtype)
+            r_blocks.append((qq, sh, r[:, k:k + nk].flatten()))
+            pqs = qs
+    lqs = np.array([xl[0] for xl in l_blocks], dtype=aqs.dtype)
+    lshs = np.array([xl[1] for xl in l_blocks], dtype=ashs.dtype)
+    ldata = np.concatenate([xl[2] for xl in l_blocks])
+    rqs = np.array([xr[0] for xr in r_blocks], dtype=aqs.dtype)
+    rshs = np.array([xr[1] for xr in r_blocks], dtype=ashs.dtype)
+    rdata = np.concatenate([xr[2] for xr in r_blocks])
+    sdata = np.concatenate(smats)
+    return lqs, lshs, ldata, None, sqs, sshs, sdata, None, rqs, rshs, rdata, None
+
+
 def flat_sparse_left_svd(aqs, ashs, adata, aidxs):
     collected_rows = {}
     for i, q in enumerate(aqs[:, -1]):
@@ -291,7 +364,8 @@ def flat_sparse_skeleton(bond_infos, pattern=None, dq=None):
 
 
 def flat_sparse_kron_sum_info(aqs, ashs, pattern):
-    items = zip(tuple(SZ.from_flat(q) for q in aqs), ashs)
+    items = list(zip((tuple(SZ.from_flat(q) for q in qs) for qs in aqs),
+                     (tuple(s.tolist()) for s in ashs)))
     return BondFusingInfo.kron_sum(items, pattern=pattern)
 
 

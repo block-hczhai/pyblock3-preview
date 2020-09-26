@@ -51,12 +51,14 @@ class MPSInfo:
         """FCI bond dimensions"""
 
         self.left_dims = [None] * (self.n_sites + 1)
-        self.left_dims[0] = BondInfo({self.vacuum: 1})
+        self.left_dims[0] = self.basis[0].__class__()
+        self.left_dims[0][self.vacuum] = 1
         for d in range(0, self.n_sites):
             self.left_dims[d + 1] = self.left_dims[d] * self.basis[d]
 
         self.right_dims = [None] * (self.n_sites + 1)
-        self.right_dims[-1] = BondInfo({self.target: 1})
+        self.right_dims[-1] = self.basis[0].__class__()
+        self.right_dims[-1][self.target] = 1
         for d in range(self.n_sites - 1, -1, -1):
             self.right_dims[d] = (-self.basis[d]) * self.right_dims[d + 1]
 

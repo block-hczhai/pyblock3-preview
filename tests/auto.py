@@ -20,6 +20,8 @@ fast = True
 iprint = False
 dot = 2
 
+np.random.seed(1000)
+
 def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
     fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n, twos=0, ipg=0, orb_sym=[0] * n)
     hamil = QCHamiltonian(fcidump)
@@ -60,8 +62,8 @@ def build_qc(filename, pg='d2h', cutoff=1E-9):
 
 tx = time.perf_counter()
 # fd = '../data/N2.STO3G.FCIDUMP'
-fd = '../data/H8.STO6G.R1.8.FCIDUMP'
-# fd = '../my_test/n2/N2.FCIDUMP'
+# fd = '../data/H8.STO6G.R1.8.FCIDUMP'
+fd = '../my_test/n2/N2.FCIDUMP'
 # hamil, mpo = build_hubbard(n=16)
 hamil, mpo = build_qc(fd)
 print('build mpo time = ', time.perf_counter() - tx)

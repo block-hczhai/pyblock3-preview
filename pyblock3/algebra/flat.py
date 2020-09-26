@@ -498,15 +498,24 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             self.q_labels, self.shapes, self.data, self.idxs)
         return FlatSparseTensor(*lsr[:4]), FlatSparseTensor(*lsr[4:8]), FlatSparseTensor(*lsr[8:])
 
-    def tensor_svd(self, *args, **kwargs):
+    def tensor_svd(self, idx=2, linfo=None, rinfo=None, pattern=None, full_matrices=False):
         """
         Separate tensor in the middle, collecting legs as [0, idx) and [idx, ndim), then perform SVD.
 
         Returns:
             l, s, r : tuple(FlatSparseTensor)
         """
-        lsr = self.to_sparse().tensor_svd(*args, **kwargs)
-        return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
+        assert full_matrices == False
+        assert idx >= 1 and idx <= self.ndim - 1
+        if pattern is None:
+            pattern = '+' * self.ndim
+        if linfo is None:
+            linfo = self.kron_sum_info(*range(0, idx), pattern=pattern[:idx])
+        if rinfo is None:
+            rinfo = self.kron_sum_info(*range(idx, self.ndim), pattern=pattern[idx:])
+        lsr = flat_sparse_tensor_svd(
+            self.q_labels, self.shapes, self.data, self.idxs, idx, linfo, rinfo, pattern)
+        return FlatSparseTensor(*lsr[:4]), FlatSparseTensor(*lsr[4:8]), FlatSparseTensor(*lsr[8:])
 
     @staticmethod
     def truncate_svd(l, s, r, max_bond_dim=-1, cutoff=0.0, max_dw=0.0, norm_cutoff=0.0):

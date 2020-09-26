@@ -34,9 +34,9 @@ class QCHamiltonian:
         self.n_syms = max(self.orb_sym) + 1
         self.fcidump = fcidump
         self.n_sites = fcidump.n_sites
+        self.basis = [None] * self.n_sites
         self.vacuum = SZ(0, 0, 0)
         self.target = SZ(fcidump.n_elec, fcidump.twos, fcidump.ipg)
-        self.basis = [None] * self.n_sites
         for i, ipg in enumerate(self.orb_sym):
             self.basis[i] = BondInfo()
             self.basis[i][SZ(0, 0, 0)] = 1
