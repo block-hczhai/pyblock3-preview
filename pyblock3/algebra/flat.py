@@ -19,12 +19,16 @@ if ENABLE_FAST_IMPLS:
         flat_sparse_kron_add = block3.flat_sparse_tensor.kron_add
         flat_sparse_fuse = block3.flat_sparse_tensor.fuse
         flat_sparse_get_infos = block3.flat_sparse_tensor.get_infos
+        flat_sparse_tensor_svd = block3.flat_sparse_tensor.tensor_svd
         flat_sparse_left_canonicalize = block3.flat_sparse_tensor.left_canonicalize
         flat_sparse_right_canonicalize = block3.flat_sparse_tensor.right_canonicalize
         flat_sparse_left_svd = block3.flat_sparse_tensor.left_svd
         flat_sparse_right_svd = block3.flat_sparse_tensor.right_svd
-        flat_sparse_tensor_svd = block3.flat_sparse_tensor.tensor_svd
         flat_sparse_truncate_svd = block3.flat_sparse_tensor.truncate_svd
+        flat_sparse_left_canonicalize_indexed = block3.flat_sparse_tensor.left_canonicalize_indexed
+        flat_sparse_right_canonicalize_indexed = block3.flat_sparse_tensor.right_canonicalize_indexed
+        flat_sparse_left_svd_indexed = block3.flat_sparse_tensor.left_svd_indexed
+        flat_sparse_right_svd_indexed = block3.flat_sparse_tensor.right_svd_indexed
 
         def flat_sparse_transpose_impl(aqs, ashs, adata, aidxs, axes):
             data = np.zeros_like(adata)
@@ -515,7 +519,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         if linfo is None:
             linfo = self.kron_sum_info(*range(0, idx), pattern=pattern[:idx])
         if rinfo is None:
-            rinfo = self.kron_sum_info(*range(idx, self.ndim), pattern=pattern[idx:])
+            rinfo = self.kron_sum_info(
+                *range(idx, self.ndim), pattern=pattern[idx:])
         lsr = flat_sparse_tensor_svd(
             self.q_labels, self.shapes, self.data, self.idxs, idx, linfo, rinfo, pattern)
         return FlatSparseTensor(*lsr[:4]), FlatSparseTensor(*lsr[4:8]), FlatSparseTensor(*lsr[8:])
@@ -1143,3 +1148,159 @@ class FlatFermionTensor(FermionTensor):
 
     def to_dense(self, infos=None):
         return self.to_fermion().to_dense(infos=infos)
+
+    @staticmethod
+    def _to_flat_sparse(a):
+        return a.to_flat_sparse()
+
+    def to_flat_sparse(self):
+        if self.odd.n_blocks == 0:
+            return self.even
+        elif self.even.n_blocks == 0:
+            return self.odd
+        qs = np.concatenate([self.odd.q_labels, self.even.q_labels], axis=0)
+        shs = np.concatenate([self.odd.shapes, self.even.shapes], axis=0)
+        data = np.concatenate([self.odd.data, self.even.data], axis=0)
+        return FlatSparseTensor(qs, shs, data)
+
+    def split(self, xidx, nodd):
+        assert self.even.n_blocks == 0
+        ii = np.arange(0, len(xidx), dtype=int)
+        mo, me = ii[xidx < nodd], ii[xidx >= nodd]
+        if len(mo) == 0:
+            return FlatFermionTensor(even=self.odd)
+        elif len(me) == 0:
+            return self
+        dt, ix = self.odd.data, self.odd.idxs
+        odata = np.concatenate([dt[st:ed]
+                                for st, ed in zip(ix[mo], ix[mo + 1])])
+        edata = np.concatenate([dt[st:ed]
+                                for st, ed in zip(ix[me], ix[me + 1])])
+        odd = FlatSparseTensor(
+            self.odd.q_labels[mo], self.odd.shapes[mo], odata)
+        even = FlatSparseTensor(
+            self.odd.q_labels[me], self.odd.shapes[me], edata)
+        return FlatFermionTensor(odd=odd, even=even)
+
+    def left_canonicalize(self, mode='reduced'):
+        """
+        Left canonicalization (using QR factorization).
+        Left canonicalization needs to collect all left indices for each specific right index.
+        So that we will only have one R, but left dim of q is unchanged.
+
+        Returns:
+            q, r : (FlatFermionTensor, FlatSparseTensor (gauge))
+        """
+        assert mode == 'reduced'
+        a = self.to_flat_sparse()
+        qr, xidx = flat_sparse_left_canonicalize_indexed(
+            a.q_labels, a.shapes, a.data, a.idxs)
+        return FlatFermionTensor(odd=FlatSparseTensor(*qr[0:4])).split(xidx, self.odd.n_blocks), \
+            FlatSparseTensor(*qr[4:8])
+
+    def right_canonicalize(self, mode='reduced'):
+        """
+        Right canonicalization (using QR factorization).
+
+        Returns:
+            l, q : (FlatSparseTensor (gauge), FlatFermionTensor)
+        """
+        assert mode == 'reduced'
+        a = self.to_flat_sparse()
+        lq, xidx = flat_sparse_right_canonicalize_indexed(
+            a.q_labels, a.shapes, a.data, a.idxs)
+        return FlatSparseTensor(*lq[0:4]), \
+            FlatFermionTensor(odd=FlatSparseTensor(
+                *lq[4:8])).split(xidx, self.odd.n_blocks)
+
+    def left_svd(self, full_matrices=True):
+        """
+        Left svd needs to collect all left indices for each specific right index.
+
+        Returns:
+            l, s, r : (FlatFermionTensor, FlatSparseTensor (vector), FlatSparseTensor (gauge))
+        """
+        assert full_matrices == False
+        a = self.to_flat_sparse()
+        lsr, xidx = flat_sparse_left_svd_indexed(
+            a.q_labels, a.shapes, a.data, a.idxs)
+        return FlatFermionTensor(odd=FlatSparseTensor(*lsr[0:4])).split(xidx, self.odd.n_blocks), \
+            FlatSparseTensor(*lsr[4:8]), FlatSparseTensor(*lsr[8:12])
+
+    def right_svd(self, full_matrices=True):
+        """
+        Right svd needs to collect all right indices for each specific left index.
+
+        Returns:
+            l, s, r : (FlatSparseTensor (gauge), FlatSparseTensor (vector), FlatFermionTensor)
+        """
+        assert full_matrices == False
+        a = self.to_flat_sparse()
+        lsr, xidx = flat_sparse_right_svd_indexed(
+            a.q_labels, a.shapes, a.data, a.idxs)
+        return FlatSparseTensor(*lsr[0:4]), FlatSparseTensor(*lsr[4:8]), \
+            FlatFermionTensor(odd=FlatSparseTensor(
+                *lsr[8:12])).split(xidx, self.odd.n_blocks)
+
+    @staticmethod
+    def truncate_svd(l, s, r, max_bond_dim=-1, cutoff=0.0, max_dw=0.0, norm_cutoff=0.0):
+        """
+        Truncate tensors obtained from SVD.
+
+        Args:
+            l, s, r : tuple(FlatSparseTensor/FlatFermionTensor)
+                SVD tensors.
+            max_bond_dim : int
+                Maximal total bond dimension.
+                If `k == -1`, no restriction in total bond dimension.
+            cutoff : double
+                Minimal kept singular value.
+            max_dw : double
+                Maximal sum of square of discarded singular values.
+            norm_cutoff : double
+                Blocks with norm smaller than norm_cutoff will be deleted.
+
+        Returns:
+            l, s, r : tuple(FlatSparseTensor/FlatFermionTensor)
+            error : float
+                Truncation error (same unit as singular value).
+        """
+        ll = (l.odd, l.even) if isinstance(l, FlatFermionTensor) else (l, l)
+        rr = (r.odd, r.even) if isinstance(r, FlatFermionTensor) else (r, r)
+        lsre = flat_sparse_truncate_svd(
+            ll[0].q_labels, ll[0].shapes, ll[0].data, ll[0].idxs, s.q_labels,
+            s.shapes, s.data, s.idxs, rr[0].q_labels, rr[0].shapes, rr[0].data,
+            rr[0].idxs, max_bond_dim, cutoff, max_dw, norm_cutoff)
+        if isinstance(l, FlatFermionTensor) or isinstance(r, FlatFermionTensor):
+            lsre2 = flat_sparse_truncate_svd(
+                ll[1].q_labels, ll[1].shapes, ll[1].data, ll[1].idxs, s.q_labels,
+                s.shapes, s.data, s.idxs, rr[1].q_labels, rr[1].shapes, rr[1].data,
+                rr[1].idxs, max_bond_dim, cutoff, max_dw, norm_cutoff)
+        nl = FlatSparseTensor(*lsre[0:4])
+        if isinstance(l, FlatFermionTensor):
+            nl = FlatFermionTensor(odd=nl, even=FlatSparseTensor(*lsre2[0:4]))
+        ns = FlatSparseTensor(*lsre[4:8])
+        nr = FlatSparseTensor(*lsre[8:12])
+        if isinstance(r, FlatFermionTensor):
+            nr = FlatFermionTensor(odd=nr, even=FlatSparseTensor(*lsre2[8:12]))
+        return nl, ns, nr, lsre[12]
+
+    @staticmethod
+    @implements(np.linalg.qr)
+    def _qr(a, mode='reduced'):
+        return a.left_canonicalize(mode)
+
+    def qr(self, mode='reduced'):
+        return self.left_canonicalize(mode)
+
+    @staticmethod
+    def _lq(a, mode='reduced'):
+        return a.right_canonicalize(mode)
+
+    def lq(self, mode='reduced'):
+        return self.right_canonicalize(mode)
+
+    @staticmethod
+    @implements(np.linalg.svd)
+    def _svd(a, full_matrices=True):
+        return a.left_svd(full_matrices)

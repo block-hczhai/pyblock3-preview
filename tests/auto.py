@@ -20,7 +20,7 @@ fast = True
 iprint = False
 dot = 2
 
-# np.random.seed(1000)
+np.random.seed(1000)
 
 def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
     fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n, twos=0, ipg=0, orb_sym=[0] * n)
@@ -62,9 +62,9 @@ def build_qc(filename, pg='d2h', cutoff=1E-9):
 
 tx = time.perf_counter()
 # fd = '../data/N2.STO3G.FCIDUMP'
-# fd = '../data/H8.STO6G.R1.8.FCIDUMP'
-fd = '../my_test/n2/N2.FCIDUMP'
-# hamil, mpo = build_hubbard(n=8)
+fd = '../data/H8.STO6G.R1.8.FCIDUMP'
+# fd = '../my_test/n2/N2.FCIDUMP'
+# hamil, mpo = build_hubbard(n=16)
 hamil, mpo = build_qc(fd)
 print('build mpo time = ', time.perf_counter() - tx)
 
@@ -72,15 +72,16 @@ mps_info = MPSInfo(hamil.n_sites, hamil.vacuum, hamil.target, hamil.basis)
 mps_info.set_bond_dimension(bdims)
 mps = MPS.random(mps_info)
 
+mps.opts = dict(cutoff=1E-12, norm_cutoff=1E-12, max_bond_dim=bdims)
+if flat:
+    mps = mps.to_flat()
+    mpo = mpo.to_flat()
+
 print('MPS = ', mps.show_bond_dims())
 print('MPO (build) =      ', mpo.show_bond_dims())
 mpo, _ = mpo.compress(left=True, cutoff=1E-9, norm_cutoff=1E-9)
 print('MPO (compressed) = ', mpo.show_bond_dims())
 
-mps.opts = dict(cutoff=1E-12, norm_cutoff=1E-12, max_bond_dim=bdims)
-if flat:
-    mps = mps.to_flat()
-    mpo = mpo.to_flat()
 mpe = MPE(mps, mpo, mps)
 
 def dmrg(n_sweeps=10, tol=1E-6, dot=2):

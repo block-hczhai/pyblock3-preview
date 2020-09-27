@@ -76,7 +76,7 @@ tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
 flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
                          const py::array_t<uint32_t> &ashs,
                          const py::array_t<double> &adata,
-                         const py::array_t<uint32_t> &aidxs);
+                         const py::array_t<uint32_t> &aidxs, uint32_t *pxidx);
 
 template <DIRECTION L>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
@@ -86,44 +86,78 @@ tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
 flat_sparse_svd(const py::array_t<uint32_t> &aqs,
                 const py::array_t<uint32_t> &ashs,
                 const py::array_t<double> &adata,
-                const py::array_t<uint32_t> &aidxs);
+                const py::array_t<uint32_t> &aidxs, uint32_t *pxidx);
 
-extern template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                      py::array_t<double>, py::array_t<uint32_t>,
-                      py::array_t<uint32_t>, py::array_t<uint32_t>,
-                      py::array_t<double>, py::array_t<uint32_t>>
-flat_sparse_canonicalize<LEFT>(const py::array_t<uint32_t> &aqs,
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_left_canonicalize(const py::array_t<uint32_t> &aqs,
+                              const py::array_t<uint32_t> &ashs,
+                              const py::array_t<double> &adata,
+                              const py::array_t<uint32_t> &aidxs);
+
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_right_canonicalize(const py::array_t<uint32_t> &aqs,
                                const py::array_t<uint32_t> &ashs,
                                const py::array_t<double> &adata,
                                const py::array_t<uint32_t> &aidxs);
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_left_svd(const py::array_t<uint32_t> &aqs,
+                     const py::array_t<uint32_t> &ashs,
+                     const py::array_t<double> &adata,
+                     const py::array_t<uint32_t> &aidxs);
 
-extern template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                      py::array_t<double>, py::array_t<uint32_t>,
-                      py::array_t<uint32_t>, py::array_t<uint32_t>,
-                      py::array_t<double>, py::array_t<uint32_t>>
-flat_sparse_canonicalize<RIGHT>(const py::array_t<uint32_t> &aqs,
-                                const py::array_t<uint32_t> &ashs,
-                                const py::array_t<double> &adata,
-                                const py::array_t<uint32_t> &aidxs);
-extern template tuple<
-    py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
-    py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-    py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-    py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>
-flat_sparse_svd<LEFT>(const py::array_t<uint32_t> &aqs,
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_right_svd(const py::array_t<uint32_t> &aqs,
                       const py::array_t<uint32_t> &ashs,
                       const py::array_t<double> &adata,
                       const py::array_t<uint32_t> &aidxs);
 
-extern template tuple<
-    py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
-    py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-    py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-    py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>
-flat_sparse_svd<RIGHT>(const py::array_t<uint32_t> &aqs,
-                       const py::array_t<uint32_t> &ashs,
-                       const py::array_t<double> &adata,
-                       const py::array_t<uint32_t> &aidxs);
+pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+           py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+           py::array_t<double>, py::array_t<uint32_t>>,
+     py::array_t<uint32_t>>
+flat_sparse_left_canonicalize_indexed(const py::array_t<uint32_t> &aqs,
+                                      const py::array_t<uint32_t> &ashs,
+                                      const py::array_t<double> &adata,
+                                      const py::array_t<uint32_t> &aidxs);
+
+pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+           py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+           py::array_t<double>, py::array_t<uint32_t>>,
+     py::array_t<uint32_t>>
+flat_sparse_right_canonicalize_indexed(const py::array_t<uint32_t> &aqs,
+                                       const py::array_t<uint32_t> &ashs,
+                                       const py::array_t<double> &adata,
+                                       const py::array_t<uint32_t> &aidxs);
+
+pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+           py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+           py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+           py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>,
+     py::array_t<uint32_t>>
+flat_sparse_left_svd_indexed(const py::array_t<uint32_t> &aqs,
+                             const py::array_t<uint32_t> &ashs,
+                             const py::array_t<double> &adata,
+                             const py::array_t<uint32_t> &aidxs);
+
+pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+           py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+           py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+           py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>,
+     py::array_t<uint32_t>>
+flat_sparse_right_svd_indexed(const py::array_t<uint32_t> &aqs,
+                              const py::array_t<uint32_t> &ashs,
+                              const py::array_t<double> &adata,
+                              const py::array_t<uint32_t> &aidxs);
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,

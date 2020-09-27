@@ -75,16 +75,28 @@ PYBIND11_MODULE(block3, m) {
         m.def_submodule("flat_sparse_tensor", "FlatSparseTensor");
     flat_sparse_tensor.def("skeleton", &flat_sparse_tensor_skeleton,
                            py::arg("infos"), py::arg("pattern"), py::arg("dq"));
-    flat_sparse_tensor.def("left_canonicalize", &flat_sparse_canonicalize<LEFT>,
+    flat_sparse_tensor.def("left_canonicalize", &flat_sparse_left_canonicalize,
                            py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                            py::arg("aidxs"));
     flat_sparse_tensor.def("right_canonicalize",
-                           &flat_sparse_canonicalize<RIGHT>, py::arg("aqs"),
+                           &flat_sparse_right_canonicalize, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("left_svd", &flat_sparse_svd<LEFT>, py::arg("aqs"),
+    flat_sparse_tensor.def("left_svd", &flat_sparse_left_svd, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("right_svd", &flat_sparse_svd<RIGHT>, py::arg("aqs"),
+    flat_sparse_tensor.def("right_svd", &flat_sparse_right_svd, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def(
+        "left_canonicalize_indexed", &flat_sparse_left_canonicalize_indexed,
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def(
+        "right_canonicalize_indexed", &flat_sparse_right_canonicalize_indexed,
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("left_svd_indexed", &flat_sparse_left_svd_indexed,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                           py::arg("aidxs"));
+    flat_sparse_tensor.def("right_svd_indexed", &flat_sparse_right_svd_indexed,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                           py::arg("aidxs"));
     flat_sparse_tensor.def("tensor_svd", &flat_sparse_tensor_svd,
                            py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                            py::arg("aidxs"), py::arg("idx"), py::arg("linfo"),

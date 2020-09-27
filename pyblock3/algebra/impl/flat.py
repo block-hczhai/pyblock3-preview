@@ -103,7 +103,8 @@ def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
             linfo.finfo[q][qls][1])
         rk, rkn = rinfo.finfo[q][qrs][0], np.multiply.reduce(
             rinfo.finfo[q][qrs][1])
-        mats[q][lk:lk + lkn, rk:rk + rkn] = adata[aidxs[iq]:aidxs[iq + 1]].reshape((lkn, rkn))
+        mats[q][lk:lk + lkn, rk:rk + rkn] = adata[aidxs[iq]
+            :aidxs[iq + 1]].reshape((lkn, rkn))
     n = len(mats)
     sqs = np.zeros((n, 1), dtype=aqs.dtype)
     sshs = np.zeros((n, 1), dtype=ashs.dtype)
@@ -146,7 +147,7 @@ def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
     return lqs, lshs, ldata, None, sqs, sshs, sdata, None, rqs, rshs, rdata, None
 
 
-def flat_sparse_left_svd(aqs, ashs, adata, aidxs):
+def flat_sparse_left_svd(aqs, ashs, adata, aidxs, indexed=False):
     collected_rows = {}
     for i, q in enumerate(aqs[:, -1]):
         if q not in collected_rows:
@@ -185,16 +186,18 @@ def flat_sparse_left_svd(aqs, ashs, adata, aidxs):
         ls = np.split(l, list(accumulate(l_shapes[:-1])), axis=0)
         assert len(ls) == len(v)
         lshs[v, -1] = l.shape[-1]
+        lidx[ill:ill + len(v)] = v
         for q, ia in zip(ls, v):
             lmats[ia] = q.flatten()
-            lidx[ill] = ia
             ill += 1
-    return lqs[lidx], lshs[lidx], np.concatenate([lmats[x] for x in lidx]), None, \
+    assert ill == nblocks_l
+    rr = lqs[lidx], lshs[lidx], np.concatenate([lmats[x] for x in lidx]), None, \
         sqs, sshs, np.concatenate(smats), sidxs, \
         rqs, rshs, np.concatenate(rmats), ridxs
+    return (rr, lidx) if indexed else r
 
 
-def flat_sparse_right_svd(aqs, ashs, adata, aidxs):
+def flat_sparse_right_svd(aqs, ashs, adata, aidxs, indexed=False):
     collected_cols = {}
     for i, q in enumerate(aqs[:, 0]):
         if q not in collected_cols:
@@ -233,14 +236,15 @@ def flat_sparse_right_svd(aqs, ashs, adata, aidxs):
         rs = np.split(r, list(accumulate(r_shapes[:-1])), axis=1)
         assert len(rs) == len(v)
         rshs[v, 0] = r.shape[0]
+        ridx[irr:irr + len(v)] = v
         for q, ia in zip(rs, v):
             rmats[ia] = q.flatten()
-            ridx[irr] = ia
             irr += 1
     assert irr == nblocks_r
-    return lqs, lshs, np.concatenate(lmats), lidxs, \
+    rr = lqs, lshs, np.concatenate(lmats), lidxs, \
         sqs, sshs, np.concatenate(smats), sidxs, \
         rqs[ridx], rshs[ridx], np.concatenate([rmats[x] for x in ridx]), None
+    return (rr, ridx) if indexed else rr
 
 
 def flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs):
@@ -307,6 +311,22 @@ def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
         for q, ia in zip(qs, v):
             qmats[ia] = q.T.flatten()
     return lqs, lshs, np.concatenate(lmats), lidxs, qqs, qshs, np.concatenate(qmats), None
+
+
+def flat_sparse_left_svd_indexed(aqs, ashs, adata, aidxs):
+    return flat_sparse_left_svd(aqs, ashs, adata, aidxs, indexed=True)
+
+
+def flat_sparse_right_svd_indexed(aqs, ashs, adata, aidxs):
+    return flat_sparse_right_svd(aqs, ashs, adata, aidxs, indexed=True)
+
+
+def flat_sparse_left_canonicalize_indexed(aqs, ashs, adata, aidxs):
+    return flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs), np.arange(0, aqs.shape[0], dtype=int)
+
+
+def flat_sparse_right_canonicalize_indexed(aqs, ashs, adata, aidxs):
+    return flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs), np.arange(0, aqs.shape[0], dtype=int)
 
 
 def flat_sparse_transpose(aqs, ashs, adata, aidxs, axes):
@@ -510,55 +530,81 @@ def flat_sparse_truncate_svd(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
     l_blocks, r_blocks = [], []
     error = 0.0
     selected = np.array([False] * len(sqs), dtype=bool)
-    ikl, ikr, iks, iksz = 0, 0, 0, 0
+    iks, iksz = 0, 0
     nl, nr = len(lqs), len(rqs)
     nsdata = np.zeros((len(ss_trunc), ), dtype=sdata.dtype)
     gs = [(ik, list(g)) for ik, g in groupby(ss_trunc, key=lambda x: x[0])]
     nsshs = np.zeros((len(gs), 1), dtype=sshs.dtype)
+    idxgl = np.zeros((len(sqs), ), dtype=int)
+    idxgr = np.zeros((len(sqs), ), dtype=int)
+    ikl, ikr = 0, 0
+    for ik, q in enumerate(sqs[:, 0]):
+        if ikl < nl and lqs[ikl, -1] == q:
+            idxgl[ik] = ikl
+            while ikl < nl and lqs[ikl, -1] == q:
+                ikl += 1
+        if ikr < nr and rqs[ikr, 0] == q:
+            idxgr[ik] = ikr
+            while ikr < nr and rqs[ikr, 0] == q:
+                ikr += 1
+    assert ikl == nl and ikr == nr
     for ik, g in gs:
         gl = np.array([ig[1] for ig in g], dtype=int)
         ns, ng = sidxs[ik + 1] - sidxs[ik], len(gl)
         gl_inv = np.array(list(set(range(ns)) - set(gl)), dtype=int)
-        while ikl < nl and lqs[ikl, -1] != sqs[ik, 0]:
-            ikl += 1
+        ikl = idxgl[ik]
         nkl, nkr = 0, 0
         while ikl + nkl < nl and lqs[ikl + nkl, -1] == sqs[ik, 0]:
             nkl += 1
-        sh = lshs[ikl:ikl + nkl].copy()
-        sh[:, -1] = ng
-        dt = ldata[lidxs[ikl]:lidxs[ikl + nkl]
-                   ].reshape((-1, ns))[:, gl].flatten()
-        l_blocks.append((lqs[ikl:ikl + nkl], sh, dt))
+        if nkl != 0:
+            sh = lshs[ikl:ikl + nkl].copy()
+            sh[:, -1] = ng
+            dt = ldata[lidxs[ikl]:lidxs[ikl + nkl]
+                       ].reshape((-1, ns))[:, gl].flatten()
+            l_blocks.append((lqs[ikl:ikl + nkl], sh, dt,
+                             np.arange(ikl, ikl + nkl, dtype=int)))
         nsshs[iks, 0] = ng
         nsdata[iksz:iksz + ng] = sdata[sidxs[ik]:sidxs[ik + 1]][gl]
-        while ikr < nr and rqs[ikr, 0] != sqs[ik, -1]:
-            ikr += 1
+        ikr = idxgr[ik]
         while ikr + nkr < nr and rqs[ikr + nkr, 0] == sqs[ik, -1]:
             nkr += 1
-        sh = rshs[ikr:ikr + nkr].copy()
-        sh[:, 0] = ng
-        rrx = ridxs[ikr:ikr + nkr + 1]
-        rrxr = (rrx - ridxs[ikr]) // ns
-        dt = np.concatenate(
-            [rdata[irst:ired].reshape((ns, -1))
-                for irst, ired in zip(rrx[:-1], rrx[1:])], axis=1)[gl, :]
-        dt = np.concatenate(
-            [dt[:, irst:ired].flatten() for irst, ired in zip(rrxr[:-1], rrxr[1:])])
-        r_blocks.append((rqs[ikr:ikr + nkr], sh, dt))
+        if nkr != 0:
+            sh = rshs[ikr:ikr + nkr].copy()
+            sh[:, 0] = ng
+            rrx = ridxs[ikr:ikr + nkr + 1]
+            rrxr = (rrx - ridxs[ikr]) // ns
+            dt = np.concatenate(
+                [rdata[irst:ired].reshape((ns, -1))
+                    for irst, ired in zip(rrx[:-1], rrx[1:])], axis=1)[gl, :]
+            dt = np.concatenate(
+                [dt[:, irst:ired].flatten() for irst, ired in zip(rrxr[:-1], rrxr[1:])])
+            r_blocks.append((rqs[ikr:ikr + nkr], sh, dt,
+                             np.arange(ikr, ikr + nkr, dtype=int)))
         error += (sdata[sidxs[ik]:sidxs[ik + 1]][gl_inv] ** 2).sum()
         selected[ik] = True
         iks += 1
         iksz += ng
-        ikl += nkl
-        ikr += nkr
     for ik in range(len(sqs)):
         if not selected[ik]:
             error += (sdata[sidxs[ik]:sidxs[ik + 1]] ** 2).sum()
     error = np.asarray(error).item()
-    nlqs = np.concatenate([xl[0] for xl in l_blocks], axis=0)
-    nlshs = np.concatenate([xl[1] for xl in l_blocks], axis=0)
-    nldata = np.concatenate([xl[2] for xl in l_blocks])
-    nrqs = np.concatenate([xr[0] for xr in r_blocks], axis=0)
-    nrshs = np.concatenate([xr[1] for xr in r_blocks], axis=0)
-    nrdata = np.concatenate([xr[2] for xr in r_blocks])
-    return nlqs, nlshs, nldata, None, sqs[selected], nsshs, nsdata, None, nrqs, nrshs, nrdata, None, np.sqrt(error)
+    if len(l_blocks) == 0 or len(r_blocks) == 0:
+        zq = np.zeros((0, lqs.shape[1]), dtype=lqs.dtype)
+        zi = np.zeros((1, ), dtype=lidxs.dtype)
+        zd = np.zeros((0, ), dtype=ldata.dtype)
+    if len(l_blocks) != 0:
+        nlqs = np.concatenate([xl[0] for xl in l_blocks], axis=0)
+        nlshs = np.concatenate([xl[1] for xl in l_blocks], axis=0)
+        nldata = np.concatenate([xl[2] for xl in l_blocks])
+        nlidxs = None
+    else:
+        nlqs, nlshs, nldata, nlidxs = zq, zq, zd, zi
+    if len(r_blocks) != 0:
+        nrqs = np.concatenate([xr[0] for xr in r_blocks], axis=0)
+        nrshs = np.concatenate([xr[1] for xr in r_blocks], axis=0)
+        nrdata = np.concatenate([xr[2] for xr in r_blocks])
+        nridxs = None
+    else:
+        nrqs, nrshs, nrdata, nridxs = zq, zq, zd, zi
+    return nlqs, nlshs, nldata, nlidxs, sqs[selected], nsshs, nsdata, None, nrqs, nrshs, nrdata, nridxs, np.sqrt(
+        error)
