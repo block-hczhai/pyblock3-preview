@@ -148,6 +148,24 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
 
     def __repr__(self):
         return repr(self.to_sparse())
+    
+    def __getitem__(self, i, idx=-1):
+        if isinstance(i, tuple):
+            qq = np.array([x.to_flat() for x in i], dtype=self.q_labels.dtype)
+            for j in range(self.n_blocks):
+                if np.array_equal(self.q_labels[j], qq):
+                    mat = self.data[self.idxs[j]:self.idxs[j + 1]]
+                    mat.shape = self.shapes[j]
+                    return mat
+        elif isinstance(i, slice) or isinstance(i, int):
+            return NotImplemented
+        else:
+            q = i.to_flat()
+            for j in range(self.n_blocks):
+                if self.q_labels[j, idx] == q:
+                    mat = self.data[self.idxs[j]:self.idxs[j + 1]]
+                    mat.shape = self.shapes[j]
+                    return mat
 
     @staticmethod
     def zeros_like(x):
@@ -621,6 +639,9 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
 
     def to_dense(self, infos=None):
         return self.to_sparse().to_dense(infos=infos)
+
+    def to_flat(self):
+        return self
 
 
 _flat_fermion_tensor_numpy_func_impls = {}
@@ -1304,3 +1325,6 @@ class FlatFermionTensor(FermionTensor):
     @implements(np.linalg.svd)
     def _svd(a, full_matrices=True):
         return a.left_svd(full_matrices)
+    
+    def to_flat(self):
+        return self

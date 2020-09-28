@@ -475,7 +475,7 @@ class SymbolicSparseTensor:
 
         def add_block(spmat, factor, ql, il, nl, qr, ir, nr):
             for ioe, oe in enumerate([spmat.odd, spmat.even]):
-                for block in oe:
+                for block in oe.to_sparse():
                     qx = (-ql, *block.q_labels, qr)
                     sh = (nl, *block.shape, nr)
                     if qx not in map_blocks[ioe]:

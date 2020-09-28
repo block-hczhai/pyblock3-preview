@@ -113,7 +113,7 @@ class BondInfo(Counter):
         n_total = self.n_bonds
         if n_total > bond_dim:
             for k, v in self.items():
-                self[k] = int(np.ceil(v * bond_dim // n_total + 0.1))
+                self[k] = int(np.ceil(v * bond_dim / n_total + 0.1))
                 if ref is not None:
                     self[k] = min(self[k], ref[k])
 

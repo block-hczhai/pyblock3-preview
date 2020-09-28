@@ -1223,6 +1223,9 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     def to_dense(self, infos=None):
         return self.to_sliceable(infos=infos).to_dense()
+    
+    def to_sparse(self):
+        return self
 
 
 _fermion_tensor_numpy_func_impls = {}

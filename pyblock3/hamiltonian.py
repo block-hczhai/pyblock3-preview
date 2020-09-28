@@ -29,7 +29,7 @@ class QCHamiltonian:
             target state
     """
 
-    def __init__(self, fcidump):
+    def __init__(self, fcidump, flat=False):
         self.orb_sym = fcidump.orb_sym
         self.n_syms = max(self.orb_sym) + 1
         self.fcidump = fcidump
@@ -43,6 +43,20 @@ class QCHamiltonian:
             self.basis[i][SZ(1, 1, ipg)] = 1
             self.basis[i][SZ(1, -1, ipg)] = 1
             self.basis[i][SZ(2, 0, 0)] = 1
+        if flat:
+            self.vacuum = self.vacuum.to_flat()
+            self.target = self.target.to_flat()
+            from block3 import MapUIntUInt
+            from .algebra.flat import FlatFermionTensor
+            for i, b in enumerate(self.basis):
+                dt = MapUIntUInt()
+                for k, v in b.items():
+                    dt[k.to_flat()] = v
+                self.basis[i] = dt
+            self.FT = FlatFermionTensor
+        else:
+            self.FT = FermionTensor
+
 
     def build_mpo(self, gen, cutoff=1E-12):
         vac = SZ(0, 0, 0)
@@ -91,8 +105,7 @@ class QCHamiltonian:
 
         @lru_cache(maxsize=None)
         def i_operator():
-            repr = FermionTensor.zeros(
-                bond_infos=(basis, basis), dq=SZ(0, 0, 0))
+            repr = self.FT.zeros(bond_infos=(basis, basis), dq=SZ(0, 0, 0))
             repr.even[SZ(0, 0, 0)][0, 0] = 1
             repr.even[SZ(1, -1, ipg)][0, 0] = 1
             repr.even[SZ(1, 1, ipg)][0, 0] = 1
@@ -101,8 +114,7 @@ class QCHamiltonian:
 
         @lru_cache(maxsize=None)
         def h_operator():
-            repr = FermionTensor.zeros(
-                bond_infos=(basis, basis), dq=SZ(0, 0, 0))
+            repr = self.FT.zeros(bond_infos=(basis, basis), dq=SZ(0, 0, 0))
             repr.even[SZ(0, 0, 0)][0, 0] = 0
             repr.even[SZ(1, -1, ipg)][0, 0] = t(1, m, m)
             repr.even[SZ(1, 1, ipg)][0, 0] = t(0, m, m)
@@ -112,16 +124,14 @@ class QCHamiltonian:
 
         @lru_cache(maxsize=None)
         def c_operator(s):
-            repr = FermionTensor.zeros(bond_infos=(
-                basis, basis), dq=SZ(1, sz[s], ipg))
+            repr = self.FT.zeros(bond_infos=(basis, basis), dq=SZ(1, sz[s], ipg))
             repr.odd[SZ(0, 0, 0)][0, 0] = 1
             repr.odd[SZ(1, -sz[s], ipg)][0, 0] = -1 if s else 1
             return repr
 
         @lru_cache(maxsize=None)
         def d_operator(s):
-            repr = FermionTensor.zeros(bond_infos=(
-                basis, basis), dq=SZ(-1, -sz[s], ipg))
+            repr = self.FT.zeros(bond_infos=(basis, basis), dq=SZ(-1, -sz[s], ipg))
             repr.odd[SZ(1, sz[s], ipg)][0, 0] = 1
             repr.odd[SZ(2, 0, 0)][0, 0] = -1 if s else 1
             return repr

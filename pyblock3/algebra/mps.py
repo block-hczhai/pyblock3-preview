@@ -141,8 +141,12 @@ class MPS(NDArrayOperatorsMixin):
         """Construct unfused MPS from MPSInfo, with zero matrix elements."""
         tensors = [None] * info.n_sites
         for i in range(info.n_sites):
-            tensors[i] = SparseTensor.zeros(
-                (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+            if isinstance(info.basis[i], BondInfo):
+                tensors[i] = SparseTensor.zeros(
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+            else:
+                tensors[i] = FlatSparseTensor.zeros(
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
         return MPS(tensors=tensors, opts=opts)
 
     @staticmethod
@@ -150,8 +154,12 @@ class MPS(NDArrayOperatorsMixin):
         """Construct unfused MPS from MPSInfo, with random matrix elements."""
         tensors = [None] * info.n_sites
         for i in range(info.n_sites):
-            tensors[i] = SparseTensor.random(
-                (info.left_dims[i], info.basis[i], info.left_dims[i + 1])) * (high - low) + low
+            if isinstance(info.basis[i], BondInfo):
+                tensors[i] = SparseTensor.random(
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1])) * (high - low) + low
+            else:
+                tensors[i] = FlatSparseTensor.random(
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1])) * (high - low) + low
         return MPS(tensors=tensors, opts=opts)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):

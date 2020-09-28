@@ -3,6 +3,7 @@
 #include "flat_sparse.hpp"
 #include "sz.hpp"
 #include "tensor.hpp"
+#include <cmath>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl_bind.h>
 
@@ -33,6 +34,13 @@ PYBIND11_MODULE(block3, m) {
                                        r += kv.second;
                                    return r;
                                })
+        .def("__neg__",
+             [](unordered_map<uint32_t, uint32_t> *self) {
+                 unordered_map<uint32_t, uint32_t> r;
+                 for (auto &kv : *self)
+                     r[from_sz(-to_sz(kv.first))] = kv.second;
+                 return r;
+             })
         .def("__add__",
              [](unordered_map<uint32_t, uint32_t> *self,
                 unordered_map<uint32_t, uint32_t> *other) {
@@ -40,7 +48,17 @@ PYBIND11_MODULE(block3, m) {
                  r.insert(self->begin(), self->end());
                  for (auto &kv : *other)
                      r[kv.first] += kv.second;
-                 return move(r);
+                 return r;
+             })
+        .def("__mul__",
+             [](unordered_map<uint32_t, uint32_t> *self,
+                unordered_map<uint32_t, uint32_t> *other) {
+                 unordered_map<uint32_t, uint32_t> r;
+                 for (auto &a : *self)
+                     for (auto &b : *other)
+                         r[from_sz(to_sz(a.first) + to_sz(b.first))] +=
+                             a.second * b.second;
+                 return r;
              })
         .def("__or__",
              [](unordered_map<uint32_t, uint32_t> *self,
@@ -48,14 +66,41 @@ PYBIND11_MODULE(block3, m) {
                  unordered_map<uint32_t, uint32_t> r;
                  r.insert(self->begin(), self->end());
                  r.insert(other->begin(), other->end());
-                 return move(r);
+                 return r;
              })
-        .def("__xor__", [](unordered_map<uint32_t, uint32_t> *self,
-                           unordered_map<uint32_t, uint32_t> *other) {
-            return move(bond_info_fusing_product(
-                vector<unordered_map<uint32_t, uint32_t>>{*self, *other},
-                "++"));
-        });
+        .def("__xor__",
+             [](unordered_map<uint32_t, uint32_t> *self,
+                unordered_map<uint32_t, uint32_t> *other) {
+                 return move(bond_info_fusing_product(
+                     vector<unordered_map<uint32_t, uint32_t>>{*self, *other},
+                     "++"));
+             })
+        .def("filter",
+             [](unordered_map<uint32_t, uint32_t> *self,
+                unordered_map<uint32_t, uint32_t> *other) {
+                 unordered_map<uint32_t, uint32_t> r;
+                 for (auto &a : *self)
+                     if (other->count(a.first))
+                         r[a.first] = min(a.second, other->at(a.first));
+                 return r;
+             })
+        .def("truncate",
+             [](unordered_map<uint32_t, uint32_t> *self, int bond_dim,
+                unordered_map<uint32_t, uint32_t> *ref = nullptr) {
+                 uint32_t n_total = 0;
+                 for (auto &kv : *self)
+                     n_total += kv.second;
+                 if (n_total > bond_dim) {
+                     for (auto &kv : *self) {
+                         kv.second = (uint32_t)ceil(
+                             (double)kv.second * bond_dim / n_total + 0.1);
+                         if (ref != nullptr)
+                             kv.second = ref->count(kv.first)
+                                             ? min(kv.second, ref->at(kv.first))
+                                             : 0;
+                     }
+                 }
+             });
     py::bind_vector<vector<unordered_map<uint32_t, uint32_t>>>(
         m, "VectorMapUIntUInt");
     py::bind_vector<vector<uint32_t>>(m, "VectorUInt");
