@@ -56,9 +56,23 @@ class QCHamiltonian:
             self.FT = FlatFermionTensor
         else:
             self.FT = FermionTensor
+        self.flat = flat
 
+    def build_mpo(self, gen, cutoff=1E-12, max_bond_dim=-1):
 
-    def build_mpo(self, gen, cutoff=1E-12):
+        if self.flat:
+            assert isinstance(gen, tuple)
+            from block3 import hamiltonian as hm
+            from .algebra.flat import FlatFermionTensor, FlatSparseTensor
+            orb_sym = np.array(self.orb_sym, dtype=int)
+            ts = hm.build_mpo(orb_sym, *gen, cutoff, max_bond_dim)
+            tensors = [None] * self.n_sites
+            for i in range(0, self.n_sites):
+                tensors[i] = FlatFermionTensor(
+                    odd=FlatSparseTensor(*ts[i * 2 + 0]),
+                    even=FlatSparseTensor(*ts[i * 2 + 1]))
+            return MPS(tensors=tensors, const=self.fcidump.const_e)
+
         vac = SZ(0, 0, 0)
         i_op = OpElement(OpNames.I, (), q_label=vac)
         h_op = OpElement(OpNames.H, (), q_label=vac)
@@ -70,8 +84,16 @@ class QCHamiltonian:
                 qb = SZ(-1, -[1, -1][s], self.orb_sym[m])
                 c_op[m, s] = OpElement(OpNames.C, (m, s), q_label=qa)
                 d_op[m, s] = OpElement(OpNames.D, (m, s), q_label=qb)
-        terms = list(gen(self.n_sites, c_op, d_op))
+        if isinstance(gen, tuple):
+            SPIN, SITE, OP = 1, 2, 16384
+            terms = [None] * len(gen[0])
+            for ii, (x, t) in enumerate(zip(*gen)):
+                terms[ii] = OpString(
+                    [[c_op, d_op][i // OP][(i % OP) // SITE, (i % SITE) // SPIN] for i in t if i != -1], x)
+        else:
+            terms = list(gen(self.n_sites, c_op, d_op))
         h_expr = OpSum(terms)
+
         h_expr.sort(fermion=True)
 
         mpots = SymbolicSparseTensor(
@@ -86,10 +108,10 @@ class QCHamiltonian:
         for i in range(0, self.n_sites - 1):
             print('MPO site %4d / %4d' % (i, self.n_sites))
             tensors[i], tensors[i + 1] = tensors[i].right_svd(i, cutoff=cutoff)
+
         for i in range(0, self.n_sites):
             tensors[i].ops = self.get_site_ops(
                 i, tensors[i].ops.items(), cutoff=cutoff)
-
         return MPS(tensors=tensors, const=self.fcidump.const_e)
 
     def get_site_ops(self, m, op_names, cutoff=1E-20):
@@ -124,14 +146,16 @@ class QCHamiltonian:
 
         @lru_cache(maxsize=None)
         def c_operator(s):
-            repr = self.FT.zeros(bond_infos=(basis, basis), dq=SZ(1, sz[s], ipg))
+            repr = self.FT.zeros(bond_infos=(
+                basis, basis), dq=SZ(1, sz[s], ipg))
             repr.odd[SZ(0, 0, 0)][0, 0] = 1
             repr.odd[SZ(1, -sz[s], ipg)][0, 0] = -1 if s else 1
             return repr
 
         @lru_cache(maxsize=None)
         def d_operator(s):
-            repr = self.FT.zeros(bond_infos=(basis, basis), dq=SZ(-1, -sz[s], ipg))
+            repr = self.FT.zeros(bond_infos=(basis, basis),
+                                 dq=SZ(-1, -sz[s], ipg))
             repr.odd[SZ(1, sz[s], ipg)][0, 0] = 1
             repr.odd[SZ(2, 0, 0)][0, 0] = -1 if s else 1
             return repr
@@ -167,23 +191,23 @@ class QCHamiltonian:
             elif op.name == OpNames.R:
                 i, s = op.site_index
                 if self.orb_sym[i] != self.orb_sym[m] or (
-                    abs(t(s, i, m)) < cutoff and abs(v(s, 0, i, m, m, m)) < cutoff and
-                        abs(v(s, 1, i, m, m, m)) < cutoff):
+                    abs(t(s, i, m)) < cutoff and abs(v(s, 0, i, m, m, m)) < cutoff
+                        and abs(v(s, 1, i, m, m, m)) < cutoff):
                     return 0
                 else:
                     return (0.5 * t(s, i, m)) * d_operator(s) + \
-                        (v(s, 0, i, m, m, m) * b_operator(0, 0)
-                         + v(s, 1, i, m, m, m) * b_operator(1, 1)) @ d_operator(s)
+                        (v(s, 0, i, m, m, m) * b_operator(0, 0) +
+                         v(s, 1, i, m, m, m) * b_operator(1, 1)) @ d_operator(s)
             elif op.name == OpNames.RD:
                 i, s = op.site_index
                 if self.orb_sym[i] != self.orb_sym[m] or (
-                    abs(t(s, i, m)) < cutoff and abs(v(s, 0, i, m, m, m)) < cutoff and
-                        abs(v(s, 1, i, m, m, m)) < cutoff):
+                    abs(t(s, i, m)) < cutoff and abs(v(s, 0, i, m, m, m)) < cutoff
+                        and abs(v(s, 1, i, m, m, m)) < cutoff):
                     return 0
                 else:
                     return (0.5 * t(s, i, m)) * c_operator(s) + \
-                        c_operator(s) @ (v(s, 0, i, m, m, m) * b_operator(0, 0)
-                                         + v(s, 1, i, m, m, m) * b_operator(1, 1))
+                        c_operator(s) @ (v(s, 0, i, m, m, m) * b_operator(0, 0) +
+                                         v(s, 1, i, m, m, m) * b_operator(1, 1))
             elif op.name == OpNames.P:
                 i, k, si, sk = op.site_index
                 if abs(v(si, sk, i, m, k, m)) < cutoff:
@@ -204,8 +228,8 @@ class QCHamiltonian:
                         return 0
                     else:
                         return (-v(si, sj, i, m, m, j)) * b_operator(sj, si) \
-                            + (b_operator(0, 0) * v(si, 0, i, j, m, m)
-                               + b_operator(1, 1) * v(si, 1, i, j, m, m))
+                            + (b_operator(0, 0) * v(si, 0, i, j, m, m) +
+                               b_operator(1, 1) * v(si, 1, i, j, m, m))
                 else:
                     if abs(v(si, sj, i, m, m, j)) < cutoff:
                         return 0

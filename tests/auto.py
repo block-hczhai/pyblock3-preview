@@ -16,7 +16,7 @@ from pyblock3.algebra.mps import MPSInfo, MPS
 bdims = 200
 flat = True
 contract = True
-fast = True
+fast = False
 iprint = False
 dot = 2
 
@@ -24,7 +24,7 @@ np.random.seed(1000)
 
 def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
     fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n, twos=0, ipg=0, orb_sym=[0] * n)
-    hamil = QCHamiltonian(fcidump, flat=True)
+    hamil = QCHamiltonian(fcidump, flat=False)
 
     def generate_terms(n_sites, c, d):
         for i in range(0, n_sites):
@@ -33,13 +33,13 @@ def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
                     yield t * c[i, s] * d[i - 1, s]
                 if i + 1 < n_sites:
                     yield t * c[i, s] * d[i + 1, s]
-                yield (0.5 * u) * (c[i, s] * c[i, 1 - s] * d[i, 1 - s] * d[i, s])
+            yield u * (c[i, 0] * c[i, 1] * d[i, 1] * d[i, 0])
 
     return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff).to_sparse()
 
 def build_qc(filename, pg='d2h', cutoff=1E-9):
     fcidump = FCIDUMP(pg=pg).read(fd)
-    hamil = QCHamiltonian(fcidump, flat=True)
+    hamil = QCHamiltonian(fcidump, flat=False)
 
     def generate_terms(n_sites, c, d):
         for i in range(0, n_sites):
@@ -64,8 +64,8 @@ tx = time.perf_counter()
 # fd = '../data/N2.STO3G.FCIDUMP'
 fd = '../data/H8.STO6G.R1.8.FCIDUMP'
 # fd = '../my_test/n2/N2.FCIDUMP'
-# hamil, mpo = build_hubbard(n=16)
-hamil, mpo = build_qc(fd)
+# hamil, mpo = build_hubbard(n=4)
+hamil, mpo = build_qc(fd, cutoff=1E-12)
 print('mpo build time = ', time.perf_counter() - tx)
 
 tx = time.perf_counter()

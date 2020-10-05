@@ -403,7 +403,7 @@ class SymbolicSparseTensor:
                 mat[il, ir] += v
             l, s, r = np.linalg.svd(mat, full_matrices=False)
             mask = s > cutoff
-            ll, rr = l[:, mask], s[mask, None] * r[mask, :]
+            ll, rr = s[None, mask] * l[:, mask], r[mask, :]
             mqlr[iq] = ll, rr, ql, qr
             m += ll.shape[1]
         lrop = SymbolicRowVector(m)

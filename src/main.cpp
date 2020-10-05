@@ -1,6 +1,7 @@
 
 #include "flat_functor.hpp"
 #include "flat_sparse.hpp"
+#include "hamiltonian.hpp"
 #include "sz.hpp"
 #include "tensor.hpp"
 #include <cmath>
@@ -13,6 +14,8 @@ PYBIND11_MAKE_OPAQUE(
 PYBIND11_MAKE_OPAQUE(map_fusing);
 PYBIND11_MAKE_OPAQUE(vector<unordered_map<uint32_t, uint32_t>>);
 PYBIND11_MAKE_OPAQUE(unordered_map<uint32_t, uint32_t>);
+PYBIND11_MAKE_OPAQUE(vector<std::tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                                  py::array_t<double>, py::array_t<uint32_t>>>);
 
 PYBIND11_MODULE(block3, m) {
 
@@ -109,6 +112,10 @@ PYBIND11_MODULE(block3, m) {
         m, "MapVUIntPUV");
     py::bind_map<map_fusing>(m, "MapFusing");
 
+    py::bind_vector<vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                                 py::array_t<double>, py::array_t<uint32_t>>>>(
+        m, "VectorFlat");
+
     py::module tensor = m.def_submodule("tensor", "Tensor");
     tensor.def("transpose", &tensor_transpose, py::arg("x"), py::arg("perm"),
                py::arg("alpha") = 1.0, py::arg("beta") = 0.0);
@@ -195,6 +202,11 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("bqs"), py::arg("bshs"), py::arg("bidxs"),
                            py::arg("idxa"), py::arg("idxb"), py::arg("cqs"),
                            py::arg("cidxs"), py::arg("ferm_op"));
+
+    py::module hamiltonian = m.def_submodule("hamiltonian", "Hamiltonian");
+    hamiltonian.def("build_mpo", &build_mpo, py::arg("orb_sym"),
+                    py::arg("h_values"), py::arg("h_terms"), py::arg("cutoff"),
+                    py::arg("max_bond_dim"));
 
     py::class_<SZLong>(m, "SZ")
         .def(py::init<>())

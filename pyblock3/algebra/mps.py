@@ -496,7 +496,12 @@ class MPS(NDArrayOperatorsMixin):
         return a.to_sparse()
 
     def to_sparse(self):
-        tensors = [ts.to_sparse() for ts in self.tensors]
+        tensors = [None] * len(self.tensors)
+        for it, ts in enumerate(self.tensors):
+            if isinstance(ts, FlatSparseTensor) or isinstance(ts, FlatFermionTensor):
+                tensors[it] = ts
+            else:
+                tensors[it] = ts.to_sparse()
         return MPS(tensors=tensors, const=self.const, opts=self.opts)
 
     @staticmethod
@@ -506,7 +511,9 @@ class MPS(NDArrayOperatorsMixin):
     def to_flat(self):
         tensors = [None] * len(self.tensors)
         for it, ts in enumerate(self.tensors):
-            if isinstance(ts, SparseTensor):
+            if isinstance(ts, FlatSparseTensor) or isinstance(ts, FlatFermionTensor):
+                tensors[it] = ts
+            elif isinstance(ts, SparseTensor):
                 tensors[it] = FlatSparseTensor.from_sparse(ts)
             elif isinstance(ts, FermionTensor):
                 tensors[it] = FlatFermionTensor.from_fermion(ts)

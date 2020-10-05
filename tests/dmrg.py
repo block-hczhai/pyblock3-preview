@@ -16,9 +16,9 @@ from pyinstrument import Profiler
 profiler = Profiler()
 
 flat = True
-fast = False
-iprint = True
-contract = False
+fast = True
+iprint = False
+contract = True
 profile = False
 left = False
 dot = 2
@@ -27,8 +27,8 @@ np.random.seed(1000)
 
 # fd = '../data/HUBBARD-L8.FCIDUMP'
 # fd = '../data/N2.STO3G.FCIDUMP'
-fd = '../data/H8.STO6G.R1.8.FCIDUMP'
-# fd = '../my_test/n2/N2.FCIDUMP'
+# fd = '../data/H8.STO6G.R1.8.FCIDUMP'
+fd = '../my_test/n2/N2.FCIDUMP'
 bdims = 200
 
 # with HamilTools.hubbard(n_sites=4, u=2, t=1) as hamil:

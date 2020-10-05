@@ -725,7 +725,7 @@ flat_sparse_tensor_skeleton(
     vector<uint32_t> qs, shs;
     vector<uint32_t> idxs(1, 0);
     vector<vector<pair<SZLong, uint32_t>>> infox;
-    bond_info_trans_to_sz(infos, pattern, infox);
+    bond_info_trans_to_sz(infos, pattern, infox, true);
     SZLong dq = to_sz(fdq);
     vector<uint32_t> qk(ndim), shk(ndim);
     for (size_t x = 0; x < nx; x++) {
