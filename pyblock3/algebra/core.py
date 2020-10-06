@@ -413,7 +413,7 @@ class SparseTensor(NDArrayOperatorsMixin):
     def n_blocks(self):
         """Number of (non-zero) blocks."""
         return len(self.blocks)
-    
+
     @property
     def T(self):
         """Transpose."""
@@ -490,13 +490,13 @@ class SparseTensor(NDArrayOperatorsMixin):
         return bond_infos
 
     def quick_deflate(self):
-        return SparseTensor(blocks=[b for b in self.blocks if b is not None])
+        return self.__class__(blocks=[b for b in self.blocks if b is not None])
 
     def deflate(self, cutoff=0):
         """Remove zero blocks."""
         blocks = [
             b for b in self.blocks if b is not None and np.linalg.norm(b) > cutoff]
-        return SparseTensor(blocks=blocks)
+        return self.__class__(blocks=blocks)
 
     def __getitem__(self, i, idx=-1):
         if isinstance(i, tuple):
@@ -548,7 +548,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             return NotImplemented
         if out is not None:
             out.blocks = blocks
-        return SparseTensor(blocks=blocks)
+        return self.__class__(blocks=blocks)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _sparse_tensor_numpy_func_impls:
@@ -560,7 +560,7 @@ class SparseTensor(NDArrayOperatorsMixin):
     @staticmethod
     @implements(np.copy)
     def _copy(x):
-        return SparseTensor(blocks=[b.copy() for b in x.blocks])
+        return x.__class__(blocks=[b.copy() for b in x.blocks])
 
     def copy(self):
         return np.copy(self)
@@ -619,7 +619,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 new_qs = (qs[:i], *sqs, qs[i + 1:])
                 mat = np.asarray(block)[tuple(sl)].reshape(new_ns)
                 blocks.append(SubTensor(mat, q_labels=new_qs))
-        return SparseTensor(blocks=blocks)
+        return self.__class__(blocks=blocks)
 
     @staticmethod
     def _fuse(a, *idxs, info=None, pattern=None):
@@ -672,7 +672,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             sl = tuple(slice(None) if ix != idxs[0] else slice(
                 k, k + nk) for ix in range(len(ns)) if ix not in idxs[1:])
             blocks_map[new_qs][sl] = np.asarray(block).reshape(tuple(new_ns))
-        return SparseTensor(blocks=list(blocks_map.values()))
+        return self.__class__(blocks=list(blocks_map.values()))
 
     @staticmethod
     @implements(np.tensordot)
@@ -726,7 +726,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                     else:
                         blocks_map[outq] += mat
 
-        return SparseTensor(blocks=list(blocks_map.values()))
+        return a.__class__(blocks=list(blocks_map.values()))
 
     def tensordot(self, b, axes=2):
         return np.tensordot(self, b, axes)
@@ -859,7 +859,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             qs = block.q_labels
             sh = block.shape
             sub_mp[qs][-sh[0]:, ..., -sh[-1]:] += block
-        return SparseTensor(blocks=list(sub_mp.values()))
+        return a.__class__(blocks=list(sub_mp.values()))
 
     def kron_add(self, b, infos=None):
         """Direct sum of first and last legs.
@@ -894,7 +894,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             for q, b in zip(qs, blocks):
                 mat = q.reshape(b.shape[:-1] + (r.shape[0], ))
                 q_blocks.append(SubTensor(reduced=mat, q_labels=b.q_labels))
-        return SparseTensor(blocks=q_blocks), SparseTensor(blocks=r_blocks)
+        return self.__class__(blocks=q_blocks), self.__class__(blocks=r_blocks)
 
     def right_canonicalize(self, mode='reduced'):
         """
@@ -922,7 +922,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             for q, b in zip(qs, blocks):
                 mat = q.T.reshape((r.shape[0], ) + b.shape[1:])
                 q_blocks.append(SubTensor(reduced=mat, q_labels=b.q_labels))
-        return SparseTensor(blocks=l_blocks), SparseTensor(blocks=q_blocks)
+        return self.__class__(blocks=l_blocks), self.__class__(blocks=q_blocks)
 
     def left_svd(self, full_matrices=False):
         """
@@ -951,7 +951,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             s_blocks.append(SubTensor(reduced=s, q_labels=(q_label_r, )))
             r_blocks.append(
                 SubTensor(reduced=vh, q_labels=(q_label_r, q_label_r)))
-        return SparseTensor(blocks=l_blocks), SparseTensor(blocks=s_blocks), SparseTensor(blocks=r_blocks)
+        return self.__class__(blocks=l_blocks), self.__class__(blocks=s_blocks), self.__class__(blocks=r_blocks)
 
     def right_svd(self, full_matrices=False):
         """
@@ -980,7 +980,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             s_blocks.append(SubTensor(reduced=s, q_labels=(q_label_l, )))
             l_blocks.append(
                 SubTensor(reduced=u, q_labels=(q_label_l, q_label_l)))
-        return SparseTensor(blocks=l_blocks), SparseTensor(blocks=s_blocks), SparseTensor(blocks=r_blocks)
+        return self.__class__(blocks=l_blocks), self.__class__(blocks=s_blocks), self.__class__(blocks=r_blocks)
 
     def tensor_svd(self, idx=2, linfo=None, rinfo=None, pattern=None, full_matrices=False):
         """
@@ -1052,7 +1052,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 mat = vh[:, k:k + nk].reshape((-1, ) + sh)
                 r_blocks.append(SubTensor(reduced=mat, q_labels=(q, ) + sqs))
                 psqs = sqs
-        return SparseTensor(blocks=l_blocks), SparseTensor(blocks=s_blocks), SparseTensor(blocks=r_blocks)
+        return self.__class__(blocks=l_blocks), self.__class__(blocks=s_blocks), self.__class__(blocks=r_blocks)
 
     @staticmethod
     def truncate_svd(l, s, r, max_bond_dim=-1, cutoff=0.0, max_dw=0.0, norm_cutoff=0.0):
@@ -1120,8 +1120,8 @@ class SparseTensor(NDArrayOperatorsMixin):
             if not selected[ik]:
                 error += (s.blocks[ik] ** 2).sum()
         error = np.asarray(error).item()
-        return SparseTensor(blocks=l_blocks).deflate(cutoff=norm_cutoff), \
-            SparseTensor(blocks=s_blocks), SparseTensor(
+        return l.__class__(blocks=l_blocks).deflate(cutoff=norm_cutoff), \
+            s.__class__(blocks=s_blocks), r.__class__(
                 blocks=r_blocks).deflate(cutoff=norm_cutoff), np.sqrt(error)
 
     @staticmethod
@@ -1165,7 +1165,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 blocks.append(np.diag(block))
         elif len(v.blocks) != 0:
             raise RuntimeError("ndim for np.diag must be 1 or 2.")
-        return SparseTensor(blocks=blocks)
+        return v.__class__(blocks=blocks)
 
     def diag(self):
         return np.diag(self)
@@ -1190,7 +1190,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 a with its axes permuted. A view is returned whenever possible.
         """
         blocks = [np.transpose(block, axes=axes) for block in a.blocks]
-        return SparseTensor(blocks=blocks)
+        return a.__class__(blocks=blocks)
 
     def transpose(self, axes=None):
         return np.transpose(self, axes=axes)
@@ -1223,7 +1223,7 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     def to_dense(self, infos=None):
         return self.to_sliceable(infos=infos).to_dense()
-    
+
     def to_sparse(self):
         return self
 

@@ -19,6 +19,8 @@ contract = True
 dot = 1
 
 fd = '../data/HUBBARD-L8.FCIDUMP'
+# fd = '../my_test/n2/N2.FCIDUMP'
+# fd = '../data/CR2.SVP.FCIDUMP'
 bdims = 200
 
 fcidump = FCIDUMP(pg='d2h').read(fd)

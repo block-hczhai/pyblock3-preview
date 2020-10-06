@@ -7,7 +7,7 @@ import numpy as np
 import time
 from functools import reduce
 
-flat = True
+flat = False
 
 # hubbard
 
