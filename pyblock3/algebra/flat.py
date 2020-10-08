@@ -109,6 +109,10 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def dtype(self):
         return self.data.dtype
 
+    @property
+    def size(self):
+        return self.data.size
+
     def item(self):
         return self.data.item()
 
@@ -148,7 +152,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
 
     def __repr__(self):
         return repr(self.to_sparse())
-    
+
     def __getitem__(self, i, idx=-1):
         if isinstance(i, tuple):
             qq = np.array([x.to_flat() for x in i], dtype=self.q_labels.dtype)
@@ -169,7 +173,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
 
     @staticmethod
     def zeros_like(x):
-        return FlatSparseTensor(q_labels=x.q_labels, shapes=x.shapes, data=np.zeros_like(x.data), idxs=x.idxs)
+        return x.__class__(q_labels=x.q_labels, shapes=x.shapes, data=np.zeros_like(x.data), idxs=x.idxs)
 
     @staticmethod
     def zeros(bond_infos, pattern=None, dq=None, dtype=float):
@@ -257,7 +261,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             out.q_labels[...] = qs
             out.data[...] = data
             out.idxs[...] = idxs
-        return FlatSparseTensor(q_labels=qs, shapes=shs, data=data, idxs=idxs)
+        return self.__class__(q_labels=qs, shapes=shs, data=data, idxs=idxs)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _flat_sparse_tensor_numpy_func_impls:
@@ -269,7 +273,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     @staticmethod
     @implements(np.copy)
     def _copy(x):
-        return FlatSparseTensor(q_labels=x.q_labels.copy(), shapes=x.shapes.copy(), data=x.data.copy(), idxs=x.idxs.copy())
+        return x.__class__(q_labels=x.q_labels.copy(), shapes=x.shapes.copy(), data=x.data.copy(), idxs=x.idxs.copy())
 
     def copy(self):
         return np.copy(self)
@@ -354,7 +358,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         idxa[idxa < 0] += a.ndim
         idxb[idxb < 0] += b.ndim
 
-        return FlatSparseTensor(*flat_sparse_tensordot(
+        return a.__class__(*flat_sparse_tensordot(
             a.q_labels, a.shapes, a.data, a.idxs,
             b.q_labels, b.shapes, b.data, b.idxs,
             idxa, idxb))
@@ -424,16 +428,16 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def _add(a, b):
         if isinstance(a, numbers.Number):
             data = a + b.data
-            return FlatSparseTensor(b.q_labels, b.shapes, data, b.idxs)
+            return b.__class__(b.q_labels, b.shapes, data, b.idxs)
         elif isinstance(b, numbers.Number):
             data = a.data + b
-            return FlatSparseTensor(a.q_labels, a.shapes, data, a.idxs)
+            return a.__class__(a.q_labels, a.shapes, data, a.idxs)
         elif b.n_blocks == 0:
             return a
         elif a.n_blocks == 0:
             return b
         else:
-            return FlatSparseTensor(*flat_sparse_add(a.q_labels, a.shapes, a.data,
+            return a.__class__(*flat_sparse_add(a.q_labels, a.shapes, a.data,
                                                      a.idxs, b.q_labels, b.shapes, b.data, b.idxs))
 
     def add(self, b):
@@ -444,16 +448,16 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def _subtract(a, b):
         if isinstance(a, numbers.Number):
             data = a - b.data
-            return FlatSparseTensor(b.q_labels, b.shapes, data, b.idxs)
+            return b.__class__(b.q_labels, b.shapes, data, b.idxs)
         elif isinstance(b, numbers.Number):
             data = a.data - b
-            return FlatSparseTensor(a.q_labels, a.shapes, data, a.idxs)
+            return a.__class__(a.q_labels, a.shapes, data, a.idxs)
         elif b.n_blocks == 0:
             return a
         elif a.n_blocks == 0:
-            return FlatSparseTensor(b.q_labels, b.shapes, -b.data, b.idxs)
+            return b.__class__(b.q_labels, b.shapes, -b.data, b.idxs)
         else:
-            return FlatSparseTensor(*flat_sparse_add(a.q_labels, a.shapes, a.data,
+            return a.__class__(*flat_sparse_add(a.q_labels, a.shapes, a.data,
                                                      a.idxs, b.q_labels, b.shapes, -b.data, b.idxs))
 
     def subtract(self, b):
@@ -473,7 +477,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             abi, bbi = a.infos, b.infos
             infos = (abi[0] + bbi[0], abi[-1] + bbi[-1])
 
-        return FlatSparseTensor(
+        return a.__class__(
             *flat_sparse_kron_add(a.q_labels, a.shapes, a.data,
                                   a.idxs, b.q_labels, b.shapes,
                                   b.data, b.idxs, infos[0], infos[1]))
@@ -495,7 +499,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         assert mode == 'reduced'
         r = flat_sparse_left_canonicalize(
             self.q_labels, self.shapes, self.data, self.idxs)
-        return FlatSparseTensor(*r[:4]), FlatSparseTensor(*r[4:])
+        return self.__class__(*r[:4]), FlatSparseTensor(*r[4:])
 
     def right_canonicalize(self, mode='reduced'):
         """
@@ -507,19 +511,19 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         assert mode == 'reduced'
         r = flat_sparse_right_canonicalize(
             self.q_labels, self.shapes, self.data, self.idxs)
-        return FlatSparseTensor(*r[:4]), FlatSparseTensor(*r[4:])
+        return self.__class__(*r[:4]), FlatSparseTensor(*r[4:])
 
     def left_svd(self, full_matrices=False):
         assert not full_matrices
         lsr = flat_sparse_left_svd(
             self.q_labels, self.shapes, self.data, self.idxs)
-        return FlatSparseTensor(*lsr[:4]), FlatSparseTensor(*lsr[4:8]), FlatSparseTensor(*lsr[8:])
+        return self.__class__(*lsr[:4]), self.__class__(*lsr[4:8]), self.__class__(*lsr[8:])
 
     def right_svd(self, full_matrices=False):
         assert not full_matrices
         lsr = flat_sparse_right_svd(
             self.q_labels, self.shapes, self.data, self.idxs)
-        return FlatSparseTensor(*lsr[:4]), FlatSparseTensor(*lsr[4:8]), FlatSparseTensor(*lsr[8:])
+        return self.__class__(*lsr[:4]), self.__class__(*lsr[4:8]), self.__class__(*lsr[8:])
 
     def tensor_svd(self, idx=2, linfo=None, rinfo=None, pattern=None, full_matrices=False):
         """
@@ -541,7 +545,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
                 *range(idx, self.ndim), pattern=pattern[idx:])
         lsr = flat_sparse_tensor_svd(
             self.q_labels, self.shapes, self.data, self.idxs, idx, linfo, rinfo, pattern)
-        return FlatSparseTensor(*lsr[:4]), FlatSparseTensor(*lsr[4:8]), FlatSparseTensor(*lsr[8:])
+        return self.__class__(*lsr[:4]), self.__class__(*lsr[4:8]), self.__class__(*lsr[8:])
 
     @staticmethod
     def truncate_svd(l, s, r, max_bond_dim=-1, cutoff=0.0, max_dw=0.0, norm_cutoff=0.0):
@@ -571,7 +575,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             s.q_labels, s.shapes, s.data, s.idxs,
             r.q_labels, r.shapes, r.data, r.idxs,
             max_bond_dim, cutoff, max_dw, norm_cutoff)
-        return FlatSparseTensor(*lsre[:4]), FlatSparseTensor(*lsre[4:8]), FlatSparseTensor(*lsre[8:12]), lsre[12]
+        return l.__class__(*lsre[:4]), s.__class__(*lsre[4:8]), r.__class__(*lsre[8:12]), lsre[12]
 
     @staticmethod
     @implements(np.diag)
@@ -587,11 +591,11 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         if v.ndim == 2:
             mask = v.q_labels[:, 0] == v.q_labels[:, 1]
             shapes = v.shapes[mask, 0]
-            return FlatSparseTensor(
+            return v.__class__(
                 q_labels=v.q_labels[mask, 0], shapes=shapes,
                 data=np.concatenate([np.diag(v.data[i:j].reshape(sh, sh)) for i, j, sh in zip(v.idxs[:-1][mask], v.idxs[1:][mask], shapes)]))
         elif v.ndim == 1:
-            return FlatSparseTensor(
+            return v.__class__(
                 q_labels=np.repeat(v.q_labels, 2, axis=1),
                 shapes=np.repeat(v.shapes, 2, axis=1),
                 data=np.concatenate([np.diag(v.data[i:j]).flatten() for i, j in zip(v.idxs, v.idxs[1:])]))
@@ -628,7 +632,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             return a
         else:
             axes = np.array(axes, dtype=np.int32)
-            return FlatSparseTensor(*flat_sparse_transpose(a.q_labels, a.shapes, a.data, a.idxs, axes))
+            return a.__class__(*flat_sparse_transpose(a.q_labels, a.shapes, a.data, a.idxs, axes))
 
     def transpose(self, axes=None):
         return np.transpose(self, axes=axes)
@@ -1325,6 +1329,6 @@ class FlatFermionTensor(FermionTensor):
     @implements(np.linalg.svd)
     def _svd(a, full_matrices=True):
         return a.left_svd(full_matrices)
-    
+
     def to_flat(self):
         return self
