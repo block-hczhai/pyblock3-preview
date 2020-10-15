@@ -1,11 +1,40 @@
 import numpy as np
-from .core import SparseTensor, SubTensor, implements
+from .core import SparseTensor, SubTensor
 from .flat import FlatSparseTensor, flat_sparse_skeleton
 from .symmetry import SZ
 import numbers
 
-_sub_tensor_numpy_func_impls = {}
-_numpy_func_impls = _sub_tensor_numpy_func_impls
+def method_alias(name):
+    def ff(f):
+        def fff(obj, *args, **kwargs):
+            if hasattr(obj, name):
+                if isinstance(getattr(obj, name), staticmethod):
+                    return getattr(obj, name)(obj, *args, **kwargs)
+                else:
+                    return getattr(obj, name)(*args, **kwargs)
+            else:
+                return f(obj, *args, **kwargs)
+        return fff
+    return ff
+
+def implements(np_func):
+    global _numpy_func_impls
+    return lambda f: (_numpy_func_impls.update({np_func: f})
+                      if np_func not in _numpy_func_impls else None,
+                      _numpy_func_impls[np_func])[1]
+
+def compute_phase(q_labels, axes):
+    nlist = [qlab.n for qlab in q_labels]
+    counted = []
+    phase = 1
+    for x in axes:
+        parity = sum([nlist[i] for i in range(x) if i not in counted]) * nlist[x]
+        phase *= (-1) ** parity
+        counted.append(x)
+    return phase
+
+_fermion_sparse_tensor_numpy_func_impls = {}
+_numpy_func_impls = _fermion_sparse_tensor_numpy_func_impls
 
 class FermionSparseTensor(SparseTensor):
 
@@ -145,6 +174,18 @@ class FermionSparseTensor(SparseTensor):
 
         return r
 
+    @staticmethod
+    @implements(np.transpose)
+    def _transpose(a, axes=None):
+        phase = [compute_phase(block.q_labels, axes) for block in a.blocks]
+        blocks = [np.transpose(block, axes=axes)*phase[ibk] for ibk, block in enumerate(a.blocks)]
+        return a.__class__(blocks=blocks)
+
+    def transpose(self, axes=None):
+        return np.transpose(self, axes=axes)
+
+_fermion_flat_tensor_numpy_func_impls = {}
+_numpy_func_impls = _fermion_flat_tensor_numpy_func_impls
 
 class FlatFermionTensor(FlatSparseTensor):
 
