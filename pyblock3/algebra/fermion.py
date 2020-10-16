@@ -1,6 +1,6 @@
 import numpy as np
-from .core import SparseTensor, SubTensor
-from .flat import FlatSparseTensor, flat_sparse_skeleton
+from .core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
+from .flat import FlatSparseTensor, flat_sparse_skeleton, _flat_sparse_tensor_numpy_func_impls
 from .symmetry import SZ
 import numbers
 
@@ -33,7 +33,10 @@ def compute_phase(q_labels, axes):
         counted.append(x)
     return phase
 
-_fermion_sparse_tensor_numpy_func_impls = {}
+NEW_METHODS = [np.transpose, np.tensordot]
+
+_fermion_sparse_tensor_numpy_func_impls = _sparse_tensor_numpy_func_impls.copy()
+[_fermion_sparse_tensor_numpy_func_impls.pop(key) for key in NEW_METHODS]
 _numpy_func_impls = _fermion_sparse_tensor_numpy_func_impls
 
 class FermionSparseTensor(SparseTensor):
@@ -101,7 +104,7 @@ class FermionSparseTensor(SparseTensor):
         return FermionSparseTensor(blocks=blocks)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        if ufunc in _sparse_tensor_numpy_func_impls:
+        if ufunc in _fermion_sparse_tensor_numpy_func_impls:
             types = tuple(
                 x.__class__ for x in inputs if not isinstance(x, numbers.Number))
             return self.__array_function__(ufunc, types, inputs, kwargs)
@@ -181,10 +184,55 @@ class FermionSparseTensor(SparseTensor):
         blocks = [np.transpose(block, axes=axes)*phase[ibk] for ibk, block in enumerate(a.blocks)]
         return a.__class__(blocks=blocks)
 
-    def transpose(self, axes=None):
-        return np.transpose(self, axes=axes)
+    def __array_function__(self, func, types, args, kwargs):
+        if func not in _fermion_sparse_tensor_numpy_func_impls:
+            return NotImplemented
+        if not all(issubclass(t, self.__class__) for t in types):
+            return NotImplemented
+        return _fermion_sparse_tensor_numpy_func_impls[func](*args, **kwargs)
 
-_fermion_flat_tensor_numpy_func_impls = {}
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        if ufunc in _fermion_sparse_tensor_numpy_func_impls:
+            types = tuple(
+                x.__class__ for x in inputs if not isinstance(x, numbers.Number))
+            return self.__array_function__(ufunc, types, inputs, kwargs)
+        out = kwargs.pop("out", None)
+        if out is not None and not all(isinstance(x, FermionSparseTensor) for x in out):
+            return NotImplemented
+        if any(isinstance(x, FermionSparseTensor) for x in inputs):
+            return NotImplemented
+        if method == "__call__":
+            if ufunc.__name__ in ["matmul"]:
+                a, b = inputs
+                if isinstance(a, numbers.Number):
+                    blocks = [a * block for block in b.blocks]
+                elif isinstance(b, numbers.Number):
+                    blocks = [block * b for block in a.blocks]
+                else:
+                    blocks = self._tensordot(a, b, axes=([-1], [0])).blocks
+            elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
+                a, b = inputs
+                if isinstance(a, numbers.Number):
+                    blocks = [getattr(ufunc, method)(a, block)
+                              for block in b.blocks]
+                elif isinstance(b, numbers.Number):
+                    blocks = [getattr(ufunc, method)(block, b)
+                              for block in a.blocks]
+                else:
+                    return NotImplemented
+            elif len(inputs) == 1:
+                blocks = [getattr(ufunc, method)(block)
+                          for block in inputs[0].blocks]
+            else:
+                return NotImplemented
+        else:
+            return NotImplemented
+        if out is not None:
+            out.blocks = blocks
+        return self.__class__(blocks=blocks)
+
+_fermion_flat_tensor_numpy_func_impls = _flat_sparse_tensor_numpy_func_impls.copy()
+[_fermion_flat_tensor_numpy_func_impls.pop(key) for key in NEW_METHODS]
 _numpy_func_impls = _fermion_flat_tensor_numpy_func_impls
 
 class FlatFermionTensor(FlatSparseTensor):
@@ -299,7 +347,7 @@ class FlatFermionTensor(FlatSparseTensor):
         return self
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        if ufunc in _flat_sparse_tensor_numpy_func_impls:
+        if ufunc in _fermion_flat_tensor_numpy_func_impls:
             types = tuple(
                 x.__class__ for x in inputs if not isinstance(x, numbers.Number))
             return self.__array_function__(ufunc, types, inputs, kwargs)
