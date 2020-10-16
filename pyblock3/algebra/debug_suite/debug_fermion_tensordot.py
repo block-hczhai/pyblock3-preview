@@ -5,9 +5,10 @@ from collections import Counter
 from pyblock3.algebra.symmetry import SZ, BondInfo
 from pyblock3.algebra.core import SparseTensor
 from pyblock3.algebra.flat import FlatSparseTensor
+from block3.fermion_sparse_tensor import tensordot
 
 
-def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb):
+def fermion_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb):
     if len(aqs) == 0:
         return aqs, ashs, adata, aidxs
     elif len(bqs) == 0:
@@ -43,6 +44,7 @@ def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa
             phase *= (-1) ** counter
             counted.append(x)
         return phase
+
 
     for ia in range(la):
         ptca = [SZ.from_flat(i).n for i in aqs[ia]]
@@ -81,11 +83,23 @@ y = SZ(1,0,0)
 infox = BondInfo({x:3, y: 2})
 infoy = BondInfo({x:2, y: 3})
 
-arra = SparseTensor.random((infox,infoy))
+arra = SparseTensor.random((infox,infoy,infox, infox), dq=SZ(1,0,0))
 a = FlatSparseTensor.from_sparse(arra)
-arrb = SparseTensor.random((infoy,infox))
+arrb = SparseTensor.random((infoy,infox,infox, infox))
 b = FlatSparseTensor.from_sparse(arrb)
 
-x = flat_sparse_tensordot(a.q_labels, a.shapes, a.data, a.idxs, b.q_labels, b.shapes, b.data, b.idxs, (1,), (0,))
-from block3.fermion_sparse_tensor import tensordot
-y = tensordot(a.q_labels, a.shapes, a.data, a.idxs, b.q_labels, b.shapes, b.data, b.idxs, (1,), (0,))
+x = fermion_sparse_tensordot(a.q_labels, a.shapes, a.data, a.idxs, b.q_labels, b.shapes, b.data, b.idxs, (1,0), (0,2))
+
+y = tensordot(a.q_labels, a.shapes, a.data, a.idxs, b.q_labels, b.shapes, b.data, b.idxs, (1,0), (0,2))
+
+xlab = x[0]
+ylab = y[0]
+
+delta = abs(xlab-ylab)
+for ix in range(len(xlab)):
+    delta = abs(xlab[ix] - ylab).sum(axis=1)
+    idx_y = np.where(delta==0)[0][0]
+    xarr = x[2][x[3][ix]:x[3][ix+1]]
+    yarr = y[2][y[3][idx_y]:y[3][idx_y+1]]
+    err = abs(xarr-yarr).sum()
+    print(ix, err)

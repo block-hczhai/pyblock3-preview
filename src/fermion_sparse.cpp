@@ -294,7 +294,7 @@ fermion_sparse_tensor_tensordot(
                 const int *shape_a = (const int *)(psha + ia * ndima);
                 uint32_t size_a = pia[ia + 1] - pia[ia];
                 tensor_transpose_impl(ndima, size_a, perma, shape_a, a, new_a,
-                                      1.0, 0.0);
+                                      phase_a[ia], 0.0);
             }
         trans_a = 1;
         pa = new_pa;
@@ -314,7 +314,7 @@ fermion_sparse_tensor_tensordot(
                 const int *shape_b = (const int *)(pshb + ib * ndimb);
                 uint32_t size_b = pib[ib + 1] - pib[ib];
                 tensor_transpose_impl(ndimb, size_b, permb, shape_b, b, new_b,
-                                      1.0, 0.0);
+                                      phase_b[ib], 0.0);
             }
         trans_b = 1;
         pb = new_pb;
