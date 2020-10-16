@@ -87,7 +87,5 @@ arrb = SparseTensor.random((infoy,infox))
 b = FlatSparseTensor.from_sparse(arrb)
 
 x = flat_sparse_tensordot(a.q_labels, a.shapes, a.data, a.idxs, b.q_labels, b.shapes, b.data, b.idxs, (1,), (0,))
-
 from block3.fermion_sparse_tensor import tensordot
-
 y = tensordot(a.q_labels, a.shapes, a.data, a.idxs, b.q_labels, b.shapes, b.data, b.idxs, (1,), (0,))
