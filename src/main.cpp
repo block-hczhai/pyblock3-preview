@@ -1,7 +1,7 @@
 
 #include "flat_functor.hpp"
 #include "flat_sparse.hpp"
-#include "fermion_sparse.hpp"
+#include "flat_fermion.hpp"
 #include "hamiltonian.hpp"
 #include "sz.hpp"
 #include "tensor.hpp"
@@ -204,12 +204,12 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("idxa"), py::arg("idxb"), py::arg("cqs"),
                            py::arg("cidxs"), py::arg("ferm_op"));
 
-    py::module fermion_sparse_tensor =
-        m.def_submodule("fermion_sparse_tensor");
-    fermion_sparse_tensor.def("transpose", &fermion_sparse_tensor_transpose, py::arg("aqs"),
+    py::module flat_fermion_tensor =
+        m.def_submodule("flat_fermion_tensor");
+    flat_fermion_tensor.def("transpose", &flat_fermion_tensor_transpose, py::arg("aqs"),
                               py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
                               py::arg("perm"), py::arg("cdata"));
-    fermion_sparse_tensor.def("tensordot", &fermion_sparse_tensor_tensordot,
+    flat_fermion_tensor.def("tensordot", &flat_fermion_tensor_tensordot,
                               py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                               py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
                               py::arg("bdata"), py::arg("bidxs"), py::arg("idxa"),

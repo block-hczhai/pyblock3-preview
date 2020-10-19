@@ -12,7 +12,7 @@
 namespace py = pybind11;
 using namespace std;
 
-void fermion_sparse_tensor_transpose(const py::array_t<uint32_t> &aqs,
+void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
                                   const py::array_t<uint32_t> &ashs,
                                   const py::array_t<double> &adata,
                                   const py::array_t<uint32_t> &aidxs,
@@ -21,7 +21,7 @@ void fermion_sparse_tensor_transpose(const py::array_t<uint32_t> &aqs,
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
-fermion_sparse_tensor_tensordot(
+flat_fermion_tensor_tensordot(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
     const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,

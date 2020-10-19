@@ -5,10 +5,10 @@ from collections import Counter
 from pyblock3.algebra.symmetry import SZ, BondInfo
 from pyblock3.algebra.core import SparseTensor
 from pyblock3.algebra.flat import FlatSparseTensor
-from block3.fermion_sparse_tensor import tensordot
+from block3.flat_fermion_tensor import tensordot
 
 
-def fermion_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb):
+def flat_fermion_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb):
     if len(aqs) == 0:
         return aqs, ashs, adata, aidxs
     elif len(bqs) == 0:
@@ -88,7 +88,7 @@ a = FlatSparseTensor.from_sparse(arra)
 arrb = SparseTensor.random((infoy,infox,infox, infox))
 b = FlatSparseTensor.from_sparse(arrb)
 
-x = fermion_sparse_tensordot(a.q_labels, a.shapes, a.data, a.idxs, b.q_labels, b.shapes, b.data, b.idxs, (1,0), (0,2))
+x = flat_fermion_tensordot(a.q_labels, a.shapes, a.data, a.idxs, b.q_labels, b.shapes, b.data, b.idxs, (1,0), (0,2))
 
 y = tensordot(a.q_labels, a.shapes, a.data, a.idxs, b.q_labels, b.shapes, b.data, b.idxs, (1,0), (0,2))
 

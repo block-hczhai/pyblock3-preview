@@ -8,7 +8,7 @@
 #include <list>
 #include <math.h>
 
-void fermion_sparse_tensor_transpose(const py::array_t<uint32_t> &aqs,
+void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
                                   const py::array_t<uint32_t> &ashs,
                                   const py::array_t<double> &adata,
                                   const py::array_t<uint32_t> &aidxs,
@@ -21,6 +21,29 @@ void fermion_sparse_tensor_transpose(const py::array_t<uint32_t> &aqs,
     const double *pa = adata.data();
     const uint32_t *pia = aidxs.data(), *psha = ashs.data();
     double *pc = cdata.mutable_data();
+
+    const uint32_t *apqs = aqs.data();
+    int phase_a[n_blocks_a];
+    for (int ia = 0; ia < n_blocks_a; ia++) {
+        int pnuma[ndima];
+        for (int j=0; j<ndima; j++) {
+            pnuma[j] = to_sz_short(apqs[ia * asi + j * asj]).n();
+        }
+        int aparity_counter = 0;
+        list<int> acounted;
+        for (int xid=0; xid<ndima; xid++) {
+            int idx_a = perma[xid];
+            for (int j=0; j<idx_a; j++) {
+                bool a_not_counted = !(std::find(acounted.begin(), acounted.end(), j) != acounted.end());
+                if (a_not_counted){
+                    aparity_counter += pnuma[j] * pnuma[idx_a];
+                }
+            }
+            acounted.push_back(idx_a);
+        }
+        phase_a[ia] = pow(-1.0, (double)aparity_counter);
+    }
+
     for (int ia = 0; ia < n_blocks_a; ia++) {
         const double *a = pa + pia[ia];
         double *c = pc + pia[ia];
@@ -28,13 +51,13 @@ void fermion_sparse_tensor_transpose(const py::array_t<uint32_t> &aqs,
         for (int i = 0; i < ndima; i++)
             shape_a[i] = psha[ia * asi + i * asj];
         uint32_t size_a = pia[ia + 1] - pia[ia];
-        tensor_transpose_impl(ndima, size_a, perma, shape_a, a, c, 1.0, 0.0);
+        tensor_transpose_impl(ndima, size_a, perma, shape_a, a, c, phase_a[ia], 0.0);
     }
 }
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
-fermion_sparse_tensor_tensordot(
+flat_fermion_tensor_tensordot(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
     const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
@@ -159,19 +182,19 @@ fermion_sparse_tensor_tensordot(
 
         int pnuma[ndima];
         for (int j=0; j<ndima; j++) {
-          pnuma[j] = to_sz_short(apqs[i * asi + j * asj]).n();
+            pnuma[j] = to_sz_short(apqs[i * asi + j * asj]).n();
         }
         int aparity_counter = 0;
         list<int> acounted;
         for (int xid=0; xid<nctr; xid++) {
-          int idx_a = ppidxa[xid];
-          for (int j=idx_a+1; j<ndima; j++) {
-            bool a_not_counted = !(std::find(acounted.begin(), acounted.end(), j) != acounted.end());
-            if (a_not_counted){
-              aparity_counter += pnuma[j] * pnuma[idx_a];
+            int idx_a = ppidxa[xid];
+            for (int j=idx_a+1; j<ndima; j++) {
+                bool a_not_counted = !(std::find(acounted.begin(), acounted.end(), j) != acounted.end());
+                if (a_not_counted){
+                    aparity_counter += pnuma[j] * pnuma[idx_a];
+                }
             }
-          }
-          acounted.push_back(idx_a);
+            acounted.push_back(idx_a);
         }
         phase_a[i] = pow(-1.0, (double)aparity_counter);
     }
@@ -184,19 +207,19 @@ fermion_sparse_tensor_tensordot(
 
         int pnumb[ndimb];
         for (int j=0; j<ndimb; j++) {
-          pnumb[j] = to_sz_short(bpqs[i * bsi + j * bsj]).n();
+            pnumb[j] = to_sz_short(bpqs[i * bsi + j * bsj]).n();
         }
         int bparity_counter = 0;
         list<int> bcounted;
         for (int xid=0; xid<nctr; xid++) {
-          int idx_b = ppidxb[xid];
-          for (int j=0; j<idx_b; j++) {
-            bool b_not_counted = !(std::find(bcounted.begin(), bcounted.end(), j) != bcounted.end());
-            if (b_not_counted){
-              bparity_counter += pnumb[j] * pnumb[idx_b];
+            int idx_b = ppidxb[xid];
+            for (int j=0; j<idx_b; j++) {
+                bool b_not_counted = !(std::find(bcounted.begin(), bcounted.end(), j) != bcounted.end());
+                if (b_not_counted){
+                    bparity_counter += pnumb[j] * pnumb[idx_b];
+                }
             }
-          }
-          bcounted.push_back(idx_b);
+            bcounted.push_back(idx_b);
         }
         phase_b[i] = pow(-1.0, (double)bparity_counter);
     }
