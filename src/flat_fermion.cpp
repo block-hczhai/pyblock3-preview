@@ -317,7 +317,7 @@ flat_fermion_tensor_tensordot(
                 const int *shape_a = (const int *)(psha + ia * ndima);
                 uint32_t size_a = pia[ia + 1] - pia[ia];
                 tensor_transpose_impl(ndima, size_a, perma, shape_a, a, new_a,
-                                      phase_a[ia], 0.0);
+                                      1.0, 0.0);
             }
         trans_a = 1;
         pa = new_pa;
@@ -337,7 +337,7 @@ flat_fermion_tensor_tensordot(
                 const int *shape_b = (const int *)(pshb + ib * ndimb);
                 uint32_t size_b = pib[ib + 1] - pib[ib];
                 tensor_transpose_impl(ndimb, size_b, permb, shape_b, b, new_b,
-                                      phase_b[ib], 0.0);
+                                      1.0, 0.0);
             }
         trans_b = 1;
         pb = new_pb;
@@ -354,11 +354,12 @@ flat_fermion_tensor_tensordot(
             int xia = 0, xib = 0;
             for (size_t i = 0; i < mmq.second.size(); i++) {
                 xia = mmq.second[i].first, xib = mmq.second[i].second;
+                double phase = phase_a[xia] * phase_b[xib];
                 int ldb = trans_b == 1 ? b_free_dim[xib] : ctr_dim[xia];
                 int lda = trans_a == -1 ? ctr_dim[xia] : a_free_dim[xia];
                 int ldc = b_free_dim[xib];
                 dgemm(trb, tra, &b_free_dim[xib], &a_free_dim[xia],
-                      &ctr_dim[xia], &alpha, pb + pib[xib], &ldb, pa + pia[xia],
+                      &ctr_dim[xia], &phase, pb + pib[xib], &ldb, pa + pia[xia],
                       &lda, i == 0 ? &beta : &alpha, pc, &ldc);
             }
             pc += (uint32_t)a_free_dim[xia] * b_free_dim[xib];
