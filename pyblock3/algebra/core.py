@@ -785,8 +785,10 @@ class SparseTensor(NDArrayOperatorsMixin):
     def _add(a, b):
         if isinstance(a, numbers.Number):
             blocks = [np.add(a, block) for block in b.blocks]
+            return b.__class__(blocks=blocks)
         elif isinstance(b, numbers.Number):
             blocks = [np.add(block, b) for block in a.blocks]
+            return a.__class__(blocks=blocks)
         else:
             blocks_map = {block.q_labels: block for block in a.blocks}
             for block in b.blocks:
@@ -796,7 +798,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 else:
                     blocks_map[block.q_labels] = block
             blocks = list(blocks_map.values())
-        return SparseTensor(blocks=blocks)
+            return a.__class__(blocks=blocks)
 
     def add(self, b):
         return self._add(self, b)
@@ -806,8 +808,10 @@ class SparseTensor(NDArrayOperatorsMixin):
     def _subtract(a, b):
         if isinstance(a, numbers.Number):
             blocks = [np.subtract(a, block) for block in b.blocks]
+            return b.__class__(blocks=blocks)
         elif isinstance(b, numbers.Number):
             blocks = [np.subtract(block, b) for block in a.blocks]
+            return a.__class__(blocks=blocks)
         else:
             blocks_map = {block.q_labels: block for block in a.blocks}
             for block in b.blocks:
@@ -817,7 +821,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 else:
                     blocks_map[block.q_labels] = block
             blocks = list(blocks_map.values())
-        return SparseTensor(blocks=blocks)
+            return a.__class__(blocks=blocks)
 
     def subtract(self, b):
         return self._subtract(self, b)

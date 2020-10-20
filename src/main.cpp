@@ -1,6 +1,7 @@
 
 #include "flat_functor.hpp"
 #include "flat_sparse.hpp"
+#include "flat_fermion.hpp"
 #include "hamiltonian.hpp"
 #include "sz.hpp"
 #include "tensor.hpp"
@@ -202,6 +203,17 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("bqs"), py::arg("bshs"), py::arg("bidxs"),
                            py::arg("idxa"), py::arg("idxb"), py::arg("cqs"),
                            py::arg("cidxs"), py::arg("ferm_op"));
+
+    py::module flat_fermion_tensor =
+        m.def_submodule("flat_fermion_tensor");
+    flat_fermion_tensor.def("transpose", &flat_fermion_tensor_transpose, py::arg("aqs"),
+                              py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+                              py::arg("perm"), py::arg("cdata"));
+    flat_fermion_tensor.def("tensordot", &flat_fermion_tensor_tensordot,
+                              py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                              py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
+                              py::arg("bdata"), py::arg("bidxs"), py::arg("idxa"),
+                              py::arg("idxb"));
 
     py::module hamiltonian = m.def_submodule("hamiltonian", "Hamiltonian");
     hamiltonian.def("build_mpo", &build_mpo, py::arg("orb_sym"),
