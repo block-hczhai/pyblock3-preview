@@ -499,7 +499,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         assert mode == 'reduced'
         r = flat_sparse_left_canonicalize(
             self.q_labels, self.shapes, self.data, self.idxs)
-        return self.__class__(*r[:4]), FlatSparseTensor(*r[4:])
+        return self.__class__(*r[:4]), self.__class__(*r[4:])
 
     def right_canonicalize(self, mode='reduced'):
         """
@@ -511,7 +511,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         assert mode == 'reduced'
         r = flat_sparse_right_canonicalize(
             self.q_labels, self.shapes, self.data, self.idxs)
-        return self.__class__(*r[:4]), FlatSparseTensor(*r[4:])
+        return self.__class__(*r[:4]), self.__class__(*r[4:])
 
     def left_svd(self, full_matrices=False):
         assert not full_matrices
