@@ -3,7 +3,7 @@
 
 void bond_info_trans_to_sz(
     const vector<unordered_map<uint32_t, uint32_t>> &infos,
-    const string &pattern, vector<vector<pair<SZLong, uint32_t>>> &infox,
+    const string &pattern, vector<vector<pair<SZ, uint32_t>>> &infox,
     bool sorted) {
     int ndim = (int)infos.size();
     infox.resize(ndim);
@@ -30,14 +30,14 @@ bond_info_fusing_product(const vector<unordered_map<uint32_t, uint32_t>> &infos,
     size_t nx = 1;
     for (int i = 0; i < ndim; i++)
         nx *= infos[i].size();
-    vector<vector<pair<SZLong, uint32_t>>> infox;
+    vector<vector<pair<SZ, uint32_t>>> infox;
     bond_info_trans_to_sz(infos, pattern, infox, true);
     map_fusing r;
     vector<uint32_t> qk(ndim), shk(ndim);
     for (size_t x = 0; x < nx; x++) {
         uint32_t sz = 1;
         size_t xp = x;
-        SZLong xq = SZLong(0);
+        SZ xq;
         for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--) {
             auto &r = infox[i][xp % infox[i].size()];
             xq = xq + r.first;

@@ -575,7 +575,7 @@ flat_sparse_tensor_fuse(const py::array_t<uint32_t> &aqs,
     for (int ia = 0; ia < n_blocks_a; ia++) {
         // unfused size
         int nk = 1;
-        SZLong xq = SZLong(0);
+        SZ xq;
         ufqs[ia].resize(nctr);
         for (int j = 0; j < nctr; j++) {
             nk *= pshs[ia * asi + pi[j] * asj];
@@ -673,15 +673,15 @@ map_fusing flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
     const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
                   asj = aqs.strides()[1] / sizeof(uint32_t);
     assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
-    vector<SZLong> qs(ndima);
+    vector<SZ> qs(ndima);
     vector<uint32_t> shs(ndima);
     const uint32_t *pshs = ashs.data(), *pqs = aqs.data();
     unordered_map<
         uint32_t,
-        vector<pair<vector<SZLong>, pair<uint32_t, vector<uint32_t>>>>>
+        vector<pair<vector<SZ>, pair<uint32_t, vector<uint32_t>>>>>
         xr;
     for (int i = 0; i < n_blocks_a; i++) {
-        SZLong xq = SZLong(0);
+        SZ xq;
         for (int j = 0; j < ndima; j++) {
             qs[j] = to_sz(pqs[i * asi + j * asj]);
             shs[j] = pshs[i * asi + j * asj];
@@ -724,13 +724,13 @@ flat_sparse_tensor_skeleton(
         nx *= infos[i].size();
     vector<uint32_t> qs, shs;
     vector<uint32_t> idxs(1, 0);
-    vector<vector<pair<SZLong, uint32_t>>> infox;
+    vector<vector<pair<SZ, uint32_t>>> infox;
     bond_info_trans_to_sz(infos, pattern, infox, true);
-    SZLong dq = to_sz(fdq);
+    SZ dq = to_sz(fdq);
     vector<uint32_t> qk(ndim), shk(ndim);
     for (size_t x = 0; x < nx; x++) {
         size_t xp = x;
-        SZLong xq = SZLong(0);
+        SZ xq;
         for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--)
             xq = xq + infox[i][xp % infox[i].size()].first;
         if (xq == dq) {
@@ -1187,7 +1187,7 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
     unordered_map<uint32_t, vector<int>> mat_idxl, mat_idxr;
     int max_lshape = 0, max_rshape = 0, max_tmpl_shape = 0, max_tmpr_shape = 0;
     for (int ia = 0; ia < n_blocks_a; ia++) {
-        SZLong xql = SZLong(0), xqr = SZLong(0);
+        SZ xql, xqr;
         ufqsl[ia].resize(idx);
         ufqsr[ia].resize(ndima - idx);
         for (int j = 0; j < idx; j++) {

@@ -27,7 +27,7 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
     for (int ia = 0; ia < n_blocks_a; ia++) {
         int pnuma[ndima];
         for (int j=0; j<ndima; j++) {
-            pnuma[j] = to_sz_short(apqs[ia * asi + j * asj]).n();
+            pnuma[j] = to_sz(apqs[ia * asi + j * asj]).n();
         }
         int aparity_counter = 0;
         list<int> acounted;
@@ -182,7 +182,7 @@ flat_fermion_tensor_tensordot(
 
         int pnuma[ndima];
         for (int j=0; j<ndima; j++) {
-            pnuma[j] = to_sz_short(apqs[i * asi + j * asj]).n();
+            pnuma[j] = to_sz(apqs[i * asi + j * asj]).n();
         }
         int aparity_counter = 0;
         list<int> acounted;
@@ -207,7 +207,7 @@ flat_fermion_tensor_tensordot(
 
         int pnumb[ndimb];
         for (int j=0; j<ndimb; j++) {
-            pnumb[j] = to_sz_short(bpqs[i * bsi + j * bsj]).n();
+            pnumb[j] = to_sz(bpqs[i * bsi + j * bsj]).n();
         }
         int bparity_counter = 0;
         list<int> bcounted;

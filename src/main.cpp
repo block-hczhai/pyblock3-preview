@@ -220,27 +220,22 @@ PYBIND11_MODULE(block3, m) {
                     py::arg("h_values"), py::arg("h_terms"), py::arg("cutoff"),
                     py::arg("max_bond_dim"));
 
-    py::class_<SZLong>(m, "SZ")
+    py::class_<SZ>(m, "SZ")
         .def(py::init<>())
-        .def(py::init<uint32_t>())
         .def(py::init<int, int, int>())
-        .def_readwrite("data", &SZLong::data)
-        .def_property("n", &SZLong::n, &SZLong::set_n)
-        .def_property("twos", &SZLong::twos, &SZLong::set_twos)
-        .def_property("pg", &SZLong::pg, &SZLong::set_pg)
-        .def_property_readonly("multiplicity", &SZLong::multiplicity)
-        .def_property_readonly("is_fermion", &SZLong::is_fermion)
-        .def_property_readonly("count", &SZLong::count)
-        .def("combine", &SZLong::combine)
-        .def("__getitem__", &SZLong::operator[])
+        .def_property("n", &SZ::n, &SZ::set_n)
+        .def_property("twos", &SZ::twos, &SZ::set_twos)
+        .def_property("pg", &SZ::pg, &SZ::set_pg)
+        .def_property_readonly("multiplicity", &SZ::multiplicity)
+        .def_property_readonly("is_fermion", &SZ::is_fermion)
+        .def_property_readonly("count", &SZ::count)
+        .def("__getitem__", &SZ::operator[])
         .def(py::self == py::self)
         .def(py::self != py::self)
         .def(py::self < py::self)
         .def(-py::self)
         .def(py::self + py::self)
         .def(py::self - py::self)
-        .def("get_ket", &SZLong::get_ket)
-        .def("get_bra", &SZLong::get_bra, py::arg("dq"))
-        .def("__hash__", &SZLong::hash)
-        .def("__repr__", &SZLong::to_str);
+        .def("__hash__", &SZ::hash)
+        .def("__repr__", &SZ::to_str);
 }

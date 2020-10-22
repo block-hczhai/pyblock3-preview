@@ -14,7 +14,7 @@ typedef unordered_map<
 
 void bond_info_trans_to_sz(
     const vector<unordered_map<uint32_t, uint32_t>> &infos,
-    const string &pattern, vector<vector<pair<SZLong, uint32_t>>> &infox,
+    const string &pattern, vector<vector<pair<SZ, uint32_t>>> &infox,
     bool sorted = false);
 
 map_fusing

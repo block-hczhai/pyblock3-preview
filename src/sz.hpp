@@ -10,57 +10,41 @@
 
 using namespace std;
 
-// Quantum number with particle number, projected spin
-// and point group irreducible representation (non-spin-adapted)
-// N and 2S must be of the same odd/even property (not checked)
-// N/2S = -16384 ~ 16383
-// (N: 14bits) - (2S: 14bits) - (fermion: 1bit) - (pg: 3bits)
-struct SZLong {
-    typedef void is_sz_t;
-    uint32_t data;
-    // S(invalid) must have maximal particle number n
-    const static uint32_t invalid = 0x7FFFFFFFU;
-    SZLong() : data(0) {}
-    SZLong(uint32_t data) : data(data) {}
-    SZLong(int n, int twos, int pg)
-        : data((((uint32_t)n >> 1) << 18) |
-               ((uint32_t)((twos & 0x7FFFU) << 3) | pg)) {}
-    int n() const {
-        return (int)(((((int32_t)data) >> 18) << 1) | ((data >> 3) & 1));
-    }
-    int twos() const { return (int)((int16_t)(data >> 2) >> 1); }
-    int pg() const { return (int)(data & 0x7U); }
-    void set_n(int n) {
-        data = (data & 0x3FFF7U) | (((uint32_t)n >> 1) << 18) | ((n & 1) << 3);
-    }
-    void set_twos(int twos) {
-        data = (data & 0xFFFC0007U) | ((uint32_t)((twos & 0x7FFFU) << 3));
-    }
-    void set_pg(int pg) { data = (data & (~0x7U)) | ((uint32_t)pg); }
+struct SZ {
+    int _n, _twos, _pg;
+    SZ() : _n(0), _twos(0), _pg(0) {}
+    SZ(int _n, int _twos, int _pg) : _n(_n), _twos(_twos), _pg(_pg) {}
+    int n() const { return _n; }
+    int twos() const { return _twos; }
+    int pg() const { return _pg; }
+    void set_n(int _n) { this->_n = _n; }
+    void set_twos(int _twos) { this->_twos = _twos; }
+    void set_pg(int _pg) { this->_pg = _pg; }
     int multiplicity() const noexcept { return 1; }
-    bool is_fermion() const noexcept { return (data >> 3) & 1; }
-    bool operator==(SZLong other) const noexcept { return data == other.data; }
-    bool operator!=(SZLong other) const noexcept { return data != other.data; }
-    bool operator<(SZLong other) const noexcept { return data < other.data; }
-    SZLong operator-() const noexcept {
-        return SZLong((data & 0xFU) | (((~data) + (1 << 3)) & 0x3FFF8U) |
-                      (((~data) + (((~data) & 0x8U) << 15)) & 0xFFFC0000U));
+    bool is_fermion() const noexcept { return _n & 1; }
+    bool operator==(SZ other) const noexcept {
+        return _n == other._n && _twos == other._twos && _pg == other._pg;
     }
-    SZLong operator-(SZLong other) const noexcept { return *this + (-other); }
-    SZLong operator+(SZLong other) const noexcept {
-        return SZLong(
-            ((data & 0xFFFC0000U) + (other.data & 0xFFFC0000U) +
-             (((data & other.data) & 0x8U) << 15)) |
-            (((data & 0x3FFF8U) + (other.data & 0x3FFF8U)) & 0x3FFF8U) |
-            ((data ^ other.data) & 0xFU));
+    bool operator!=(SZ other) const noexcept {
+        return _n != other._n || _twos != other._twos || _pg != other._pg;
     }
-    SZLong operator[](int i) const noexcept { return *this; }
-    SZLong get_ket() const noexcept { return *this; }
-    SZLong get_bra(SZLong dq) const noexcept { return *this + dq; }
-    SZLong combine(SZLong bra, SZLong ket) const {
-        return ket + *this == bra ? ket : SZLong(invalid);
+    bool operator<(SZ other) const noexcept {
+        if (_n != other._n)
+            return _n < other._n;
+        else if (_twos != other._twos)
+            return _twos < other._twos;
+        else
+            return _pg < other._pg;
     }
-    size_t hash() const noexcept { return (size_t)data; }
+    SZ operator-() const noexcept { return SZ(-_n, -_twos, _pg); }
+    SZ operator-(SZ other) const noexcept { return *this + (-other); }
+    SZ operator+(SZ other) const noexcept {
+        return SZ(_n + other._n, _twos + other._twos, _pg ^ other._pg);
+    }
+    SZ operator[](int i) const noexcept { return *this; }
+    size_t hash() const noexcept {
+        return (size_t)(((size_t)_n << 24) | ((size_t)_twos << 8) | _pg);
+    }
     int count() const noexcept { return 1; }
     string to_str() const {
         stringstream ss;
@@ -72,64 +56,7 @@ struct SZLong {
         ss << " PG=" << pg() << " >";
         return ss.str();
     }
-    friend ostream &operator<<(ostream &os, SZLong c) {
-        os << c.to_str();
-        return os;
-    }
-};
-
-struct SZShort {
-    typedef void is_sz_t;
-    uint32_t data;
-    // S(invalid) must have maximal particle number n
-    const static uint32_t invalid = 0x7FFFFFFFU;
-    SZShort() : data(0) {}
-    SZShort(uint32_t data) : data(data) {}
-    SZShort(int n, int twos, int pg)
-        : data((uint32_t)((n << 24) | ((uint8_t)twos << 8) | pg)) {}
-    int n() const { return (int)(((int32_t)data) >> 24); }
-    int twos() const { return (int)(int8_t)((data >> 8) & 0xFFU); }
-    int pg() const { return (int)(data & 0xFFU); }
-    void set_n(int n) { data = (data & 0xFFFFFFU) | ((uint32_t)(n << 24)); }
-    void set_twos(int twos) {
-        data =
-            (data & (~0xFFFF00U)) | ((uint32_t)(((uint8_t)twos & 0xFFU) << 8));
-    }
-    void set_pg(int pg) { data = (data & (~0xFFU)) | ((uint32_t)pg); }
-    int multiplicity() const noexcept { return 1; }
-    bool is_fermion() const noexcept { return twos() & 1; }
-    bool operator==(SZShort other) const noexcept { return data == other.data; }
-    bool operator!=(SZShort other) const noexcept { return data != other.data; }
-    bool operator<(SZShort other) const noexcept { return data < other.data; }
-    SZShort operator-() const noexcept {
-        return SZShort((data & 0xFFU) | (((~data) + (1 << 8)) & 0xFF00U) |
-                       (((~data) + (1 << 24)) & (~0xFFFFFFU)));
-    }
-    SZShort operator-(SZShort other) const noexcept { return *this + (-other); }
-    SZShort operator+(SZShort other) const noexcept {
-        return SZShort((((data & 0xFF00FF00U) + (other.data & 0xFF00FF00U)) &
-                        0xFF00FF00U) |
-                       ((data & 0xFFU) ^ (other.data & 0xFFU)));
-    }
-    SZShort operator[](int i) const noexcept { return *this; }
-    SZShort get_ket() const noexcept { return *this; }
-    SZShort get_bra(SZShort dq) const noexcept { return *this + dq; }
-    SZShort combine(SZShort bra, SZShort ket) const {
-        return ket + *this == bra ? ket : SZShort(invalid);
-    }
-    size_t hash() const noexcept { return (size_t)data; }
-    int count() const noexcept { return 1; }
-    string to_str() const {
-        stringstream ss;
-        ss << "< N=" << n() << " SZ=";
-        if (twos() & 1)
-            ss << twos() << "/2";
-        else
-            ss << (twos() >> 1);
-        ss << " PG=" << pg() << " >";
-        return ss.str();
-    }
-    friend ostream &operator<<(ostream &os, SZShort c) {
+    friend ostream &operator<<(ostream &os, SZ c) {
         os << c.to_str();
         return os;
     }
@@ -153,8 +80,8 @@ inline size_t q_labels_hash(const uint32_t *qs, int nctr,
 
 namespace std {
 
-template <> struct hash<SZLong> {
-    size_t operator()(const SZLong &s) const noexcept { return s.hash(); }
+template <> struct hash<SZ> {
+    size_t operator()(const SZ &s) const noexcept { return s.hash(); }
 };
 
 template <> struct hash<vector<uint32_t>> {
@@ -163,43 +90,37 @@ template <> struct hash<vector<uint32_t>> {
     }
 };
 
-template <> struct less<SZLong> {
-    bool operator()(const SZLong &lhs, const SZLong &rhs) const noexcept {
+template <> struct less<SZ> {
+    bool operator()(const SZ &lhs, const SZ &rhs) const noexcept {
         return lhs < rhs;
     }
 };
 
 } // namespace std
 
-inline SZLong to_sz(uint32_t x) noexcept {
-    return SZLong((int)((x >> 17) & 16383) - 8192,
-                  (int)((x >> 3) & 16383) - 8192, x & 7);
+inline SZ to_sz(uint32_t x) noexcept {
+    return SZ((int)((x >> 17) & 16383) - 8192, (int)((x >> 3) & 16383) - 8192,
+              x & 7);
 }
 
-inline SZShort to_sz_short(uint32_t x) noexcept {
-    return SZShort((int)((x >> 17) & 16383) - 8192,
-                  (int)((x >> 3) & 16383) - 8192, x & 7);
-}
-
-inline uint32_t from_sz(SZLong x) {
+inline uint32_t from_sz(SZ x) {
     return ((((uint32_t)(x.n() + 8192U) << 14) + (uint32_t)(x.twos() + 8192U))
             << 3) +
            (uint32_t)x.pg();
 }
 
-inline bool less_sz(SZLong x, SZLong y) noexcept {
+inline bool less_sz(SZ x, SZ y) noexcept {
     return x.n() != y.n()
                ? x.n() < y.n()
                : (x.twos() != y.twos() ? x.twos() < y.twos() : x.pg() < y.pg());
 }
 
-inline bool less_psz(const pair<SZLong, uint32_t> &x,
-                     const pair<SZLong, uint32_t> &y) noexcept {
+inline bool less_psz(const pair<SZ, uint32_t> &x,
+                     const pair<SZ, uint32_t> &y) noexcept {
     return less_sz(x.first, y.first);
 }
 
-inline bool less_vsz(const vector<SZLong> &x,
-                     const vector<SZLong> &y) noexcept {
+inline bool less_vsz(const vector<SZ> &x, const vector<SZ> &y) noexcept {
     for (size_t i = 0; i < x.size(); i++)
         if (x[i] != y[i])
             return less_sz(x[i], y[i]);
@@ -207,8 +128,8 @@ inline bool less_vsz(const vector<SZLong> &x,
 }
 
 template <typename T>
-inline bool less_pvsz(const pair<vector<SZLong>, T> &x,
-                      const pair<vector<SZLong>, T> &y) noexcept {
+inline bool less_pvsz(const pair<vector<SZ>, T> &x,
+                      const pair<vector<SZ>, T> &y) noexcept {
     return less_vsz(x.first, y.first);
 }
 

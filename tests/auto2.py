@@ -99,8 +99,8 @@ tx = time.perf_counter()
 # fd = '../data/H8.STO6G.R1.8.FCIDUMP'
 fd = '../my_test/n2/N2.FCIDUMP'
 # fd = '../data/CR2.SVP.FCIDUMP'
-hamil, mpo = build_hubbard(n=16, cutoff=cutoff)
-# hamil, mpo = build_qc(fd, cutoff=cutoff, max_bond_dim=-1)
+# hamil, mpo = build_hubbard(n=16, cutoff=cutoff)
+hamil, mpo = build_qc(fd, cutoff=cutoff, max_bond_dim=-1)
 print('mpo build time = ', time.perf_counter() - tx)
 
 tx = time.perf_counter()
