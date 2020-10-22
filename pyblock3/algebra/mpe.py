@@ -3,6 +3,7 @@ import numpy as np
 import time
 from functools import reduce
 from .linalg import davidson
+from .dmrg import DMRG
 
 
 def implements(np_func):
@@ -243,6 +244,9 @@ class MPE:
     def gs_optimize(self, iprint=False, fast=False):
         """Return ground-state energy and ground-state effective MPE."""
         return self._gs_optimize(self, iprint=iprint, fast=fast)
+
+    def dmrg(self, bdims, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
+        return DMRG(self, bdims, iprint=iprint).solve(n_sweeps, tol, dot)
 
     @property
     def n_sites(self):
