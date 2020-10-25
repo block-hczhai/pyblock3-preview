@@ -8,7 +8,7 @@ import time
 import numpy as np
 import pyblock3.algebra.funcs as pbalg
 from pyblock3.algebra.mpe import MPE
-from pyblock3.hamiltonian import QCHamiltonian
+from pyblock3.hamiltonian import Hamiltonian
 from pyblock3.fcidump import FCIDUMP
 
 from pyblock3.algebra.mps import MPSInfo, MPS
@@ -24,7 +24,7 @@ np.random.seed(1000)
 
 def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
     fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n, twos=0, ipg=0, orb_sym=[0] * n)
-    hamil = QCHamiltonian(fcidump, flat=False)
+    hamil = Hamiltonian(fcidump, flat=False)
 
     def generate_terms(n_sites, c, d):
         for i in range(0, n_sites):
@@ -39,7 +39,7 @@ def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
 
 def build_qc(filename, pg='d2h', cutoff=1E-9):
     fcidump = FCIDUMP(pg=pg).read(fd)
-    hamil = QCHamiltonian(fcidump, flat=False)
+    hamil = Hamiltonian(fcidump, flat=False)
 
     def generate_terms(n_sites, c, d):
         for i in range(0, n_sites):

@@ -6,7 +6,7 @@ from pyblock3.aux.hamil import HamilTools
 from pyblock3.aux.io import SymbolicMPOTools
 from pyblock3.algebra.mpe import MPE
 from pyblock3.fcidump import FCIDUMP
-from pyblock3.hamiltonian import QCHamiltonian
+from pyblock3.hamiltonian import Hamiltonian
 from pyblock3.symbolic.symbolic_mpo import QCSymbolicMPO
 from pyblock3.algebra.symmetry import BondFusingInfo
 import pyblock3.algebra.funcs as pbalg
@@ -19,7 +19,7 @@ from block2.sz import MPOQC
 
 fd = '../data/N2.STO3G.FCIDUMP'
 fcidump = FCIDUMP(pg='d2h').read(fd)
-qchamil = QCHamiltonian(fcidump)
+qchamil = Hamiltonian(fcidump)
 pympo = QCSymbolicMPO(qchamil)
 
 with HamilTools.from_fcidump(fd) as hamil:

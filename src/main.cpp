@@ -1,8 +1,9 @@
 
+#include "flat_fermion.hpp"
 #include "flat_functor.hpp"
 #include "flat_sparse.hpp"
-#include "flat_fermion.hpp"
 #include "hamiltonian.hpp"
+#include "qc_hamiltonian.hpp"
 #include "sz.hpp"
 #include "tensor.hpp"
 #include <cmath>
@@ -15,8 +16,9 @@ PYBIND11_MAKE_OPAQUE(
 PYBIND11_MAKE_OPAQUE(map_fusing);
 PYBIND11_MAKE_OPAQUE(vector<unordered_map<uint32_t, uint32_t>>);
 PYBIND11_MAKE_OPAQUE(unordered_map<uint32_t, uint32_t>);
-PYBIND11_MAKE_OPAQUE(vector<std::tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                                  py::array_t<double>, py::array_t<uint32_t>>>);
+PYBIND11_MAKE_OPAQUE(
+    vector<std::tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                      py::array_t<double>, py::array_t<uint32_t>>>);
 
 PYBIND11_MODULE(block3, m) {
 
@@ -61,7 +63,7 @@ PYBIND11_MODULE(block3, m) {
                  for (auto &a : *self)
                      for (auto &b : *other)
                          r[from_sz(to_sz(a.first) + to_sz(b.first))] +=
-                             a.second * b.second;
+                             min(a.second * b.second, 65536U);
                  return r;
              })
         .def("__or__",
@@ -91,7 +93,7 @@ PYBIND11_MODULE(block3, m) {
         .def("truncate",
              [](unordered_map<uint32_t, uint32_t> *self, int bond_dim,
                 unordered_map<uint32_t, uint32_t> *ref = nullptr) {
-                 uint32_t n_total = 0;
+                 size_t n_total = 0;
                  for (auto &kv : *self)
                      n_total += kv.second;
                  if (n_total > bond_dim) {
@@ -175,6 +177,10 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
                            py::arg("bdata"), py::arg("bidxs"), py::arg("idxa"),
                            py::arg("idxb"));
+    flat_sparse_tensor.def("tensordot_skeleton",
+                           &flat_sparse_tensor_tensordot_skeleton,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("bqs"),
+                           py::arg("bshs"), py::arg("idxa"), py::arg("idxb"));
     flat_sparse_tensor.def("add", &flat_sparse_tensor_add, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
                            py::arg("bqs"), py::arg("bshs"), py::arg("bdata"),
@@ -204,21 +210,23 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("idxa"), py::arg("idxb"), py::arg("cqs"),
                            py::arg("cidxs"), py::arg("ferm_op"));
 
-    py::module flat_fermion_tensor =
-        m.def_submodule("flat_fermion_tensor");
-    flat_fermion_tensor.def("transpose", &flat_fermion_tensor_transpose, py::arg("aqs"),
-                              py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
-                              py::arg("perm"), py::arg("cdata"));
+    py::module flat_fermion_tensor = m.def_submodule("flat_fermion_tensor");
+    flat_fermion_tensor.def("transpose", &flat_fermion_tensor_transpose,
+                            py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                            py::arg("aidxs"), py::arg("perm"),
+                            py::arg("cdata"));
     flat_fermion_tensor.def("tensordot", &flat_fermion_tensor_tensordot,
-                              py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
-                              py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
-                              py::arg("bdata"), py::arg("bidxs"), py::arg("idxa"),
-                              py::arg("idxb"));
+                            py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                            py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
+                            py::arg("bdata"), py::arg("bidxs"), py::arg("idxa"),
+                            py::arg("idxb"));
 
     py::module hamiltonian = m.def_submodule("hamiltonian", "Hamiltonian");
     hamiltonian.def("build_mpo", &build_mpo, py::arg("orb_sym"),
                     py::arg("h_values"), py::arg("h_terms"), py::arg("cutoff"),
                     py::arg("max_bond_dim"));
+    hamiltonian.def("build_qc_mpo", &build_qc_mpo, py::arg("orb_sym"),
+                    py::arg("t"), py::arg("v"));
 
     py::class_<SZ>(m, "SZ")
         .def(py::init<>())

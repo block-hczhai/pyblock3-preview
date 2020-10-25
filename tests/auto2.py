@@ -8,7 +8,7 @@ import numpy as np
 import numba as nb
 import pyblock3.algebra.funcs as pbalg
 from pyblock3.algebra.mpe import MPE
-from pyblock3.hamiltonian import QCHamiltonian
+from pyblock3.hamiltonian import Hamiltonian
 from pyblock3.fcidump import FCIDUMP
 from pyblock3.symbolic.expr import OpNames
 
@@ -77,7 +77,7 @@ def generate_qc_terms(n_sites, h1e, g2e, cutoff=1E-9):
 def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
     fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n,
                       twos=0, ipg=0, orb_sym=[0] * n)
-    hamil = QCHamiltonian(fcidump, flat=flat)
+    hamil = Hamiltonian(fcidump, flat=flat)
 
     terms = generate_hubbard_terms(n, u, t)
     return hamil, hamil.build_mpo(terms, cutoff=cutoff).to_sparse()
@@ -85,7 +85,7 @@ def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
 
 def build_qc(filename, pg='d2h', cutoff=1E-9, max_bond_dim=-1):
     fcidump = FCIDUMP(pg=pg).read(filename)
-    hamil = QCHamiltonian(fcidump, flat=flat)
+    hamil = Hamiltonian(fcidump, flat=flat)
 
     tx = time.perf_counter()
     terms = generate_qc_terms(

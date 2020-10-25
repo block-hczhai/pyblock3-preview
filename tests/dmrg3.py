@@ -21,10 +21,11 @@ profile = False
 np.random.seed(1000)
 
 # fd = '../data/HUBBARD-L8.FCIDUMP'
-fd = '../data/HUBBARD-L16.FCIDUMP'
-# fd = '../data/N2.STO3G.FCIDUMP'
+# fd = '../data/HUBBARD-L16.FCIDUMP'
+fd = '../data/N2.STO3G.FCIDUMP'
 # fd = '../data/H8.STO6G.R1.8.FCIDUMP'
 # fd = '../my_test/n2/N2.FCIDUMP'
+# fd = '../data/CR2.SVP.FCIDUMP'
 bdims = 200
 
 # with HamilTools.hubbard(n_sites=4, u=2, t=1) as hamil:
@@ -37,18 +38,24 @@ bdims = 200
 
 tx = time.perf_counter()
 fcidump = FCIDUMP(pg='d2h').read(fd)
-hamil = Hamiltonian(fcidump)
-mpo = QCSymbolicMPO(hamil).to_sparse().to_flat()
-print('build mpo time = ', time.perf_counter() - tx)
 
-fhamil = Hamiltonian(fcidump, flat=True)
-mps_info = MPSInfo(fhamil.n_sites, fhamil.vacuum, fhamil.target, fhamil.basis)
+hamil = Hamiltonian(fcidump, flat=flat)
+
+mps_info = MPSInfo(hamil.n_sites, hamil.vacuum, hamil.target, hamil.basis)
 mps_info.set_bond_dimension(bdims)
 mps = MPS.random(mps_info)
 
 print('MPS = ', mps.show_bond_dims())
+
+mpo = hamil.build_qc_mpo()
+if not flat:
+    mpo = mpo.to_flat()
+    mps = mps.to_flat()
+# print(mpo[0])
+print('build mpo time = ', time.perf_counter() - tx)
+
 print('MPO (NC) =         ', mpo.show_bond_dims())
 mpo, _ = mpo.compress(left=True, cutoff=1E-9, norm_cutoff=1E-9)
 print('MPO (compressed) = ', mpo.show_bond_dims())
 
-print(MPE(mps, mpo, mps).dmrg(bdims=[bdims]))
+print(MPE(mps, mpo, mps).dmrg(bdims=[bdims], iprint=3))

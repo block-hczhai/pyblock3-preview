@@ -8,10 +8,10 @@ from functools import lru_cache, reduce
 import numpy as np
 
 
-class QCHamiltonian:
+class Hamiltonian:
     """
-    Quantum chemistry Hamiltonian.
-    For construction of QCMPO
+    Quantum chemistry/general Hamiltonian.
+    For construction of MPO
     Attributes:
         basis : list(BondInfo)
             BondInfo in each site
@@ -57,6 +57,21 @@ class QCHamiltonian:
         else:
             self.FT = FermionTensor
         self.flat = flat
+    
+    def build_qc_mpo(self):
+        if self.flat:
+            from block3 import hamiltonian as hm
+            from .algebra.flat import FlatFermionTensor, FlatSparseTensor
+            ts = hm.build_qc_mpo(self.fcidump.orb_sym, self.fcidump.h1e, self.fcidump.g2e)
+            tensors = [None] * self.n_sites
+            for i in range(0, self.n_sites):
+                tensors[i] = FlatFermionTensor(
+                    odd=FlatSparseTensor(*ts[i * 2 + 0]),
+                    even=FlatSparseTensor(*ts[i * 2 + 1]))
+            return MPS(tensors=tensors, const=self.fcidump.const_e)
+        else:
+            from .symbolic.symbolic_mpo import QCSymbolicMPO
+            return QCSymbolicMPO(self).to_sparse()
 
     def build_mpo(self, gen, cutoff=1E-12, max_bond_dim=-1):
 

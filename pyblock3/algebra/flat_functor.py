@@ -4,28 +4,38 @@ from .flat import FlatSparseTensor, ENABLE_FAST_IMPLS
 from .symmetry import SZ
 from .mps import MPS
 
+
 def flat_sparse_matmul_init(spt, pattern, dq):
     tl, tr = [ts.infos for ts in spt.tensors]
     dl, dr = [(len(tl) - 2) // 2, (len(tr) - 2) // 2]
-    vinfos = [tl[0], *[tl[i + 1] | tl[i + 1 + dl] for i in range(dl)], *[tr[i + 1] | tr[i + 1 + dr] for i in range(dr)], tr[-1]]
+    vinfos = [tl[0], *[tl[i + 1] | tl[i + 1 + dl]
+                       for i in range(dl)], *[tr[i + 1] | tr[i + 1 + dr] for i in range(dr)], tr[-1]]
     winfos = [tl[-1] | tr[0], *tr[1: 1 + dr], *tl[1 + dl: 1 + dl + dl]]
     vmat = FlatSparseTensor.zeros(vinfos, pattern, dq)
-    work = FlatSparseTensor.zeros(winfos, '+' + pattern[1 + dl:1 + dl + dr] + pattern[1:1 + dl], dq)
+    work = FlatSparseTensor.zeros(
+        winfos, '+' + pattern[1 + dl:1 + dl + dr] + pattern[1:1 + dl], dq)
     return dl, dr, vmat, work
+
 
 if ENABLE_FAST_IMPLS:
     import block3.flat_sparse_tensor
+
     def flat_sparse_matmul_init_impl(spt, pattern, dq):
         fdq = dq.to_flat() if dq is not None else SZ(0, 0, 0).to_flat()
         l, r = spt.tensors
         lo, le = l.odd, l.even
         ro, re = r.odd, r.even
-        dl, dr, vinfos, winfos = block3.flat_sparse_tensor.matmul_init(
+        dl, dr, vinfos = block3.flat_sparse_tensor.matmul_init(
             lo.q_labels, lo.shapes, le.q_labels, le.shapes, ro.q_labels,
             ro.shapes, re.q_labels, re.shapes)
-        vdqs, vshs, vidxs = block3.flat_sparse_tensor.skeleton(vinfos, pattern, fdq)
-        wpattern = '+' + pattern[1 + dl:1 + dl + dr] + pattern[1:1 + dl]
-        wdqs, wshs, widxs = block3.flat_sparse_tensor.skeleton(winfos, wpattern, fdq)
+        vdqs, vshs, vidxs = block3.flat_sparse_tensor.skeleton(
+            vinfos, pattern, fdq)
+        axru = np.arange(1 + dr, 1 + dr + dr, dtype=np.int32)
+        axrd = np.arange(dl, dl + dr, dtype=np.int32)
+        wdqs, wshs, widxs = block3.flat_sparse_tensor.tensordot_skeleton(
+            np.concatenate([ro.q_labels[:, :-1], re.q_labels[:, :-1]], axis=0),
+            np.concatenate([ro.shapes[:, :-1], re.shapes[:, :-1]], axis=0),
+            vdqs[:, 1:-1], vshs[:, 1:-1], axru, axrd)
         vdata = np.zeros((vidxs[-1], ), dtype=float)
         wdata = np.zeros((widxs[-1], ), dtype=float)
         return dl, dr, FlatSparseTensor(vdqs, vshs, vdata, vidxs), FlatSparseTensor(wdqs, wshs, wdata, widxs)
@@ -41,10 +51,12 @@ class FlatSparseFunctor:
         assert ENABLE_FAST_IMPLS
         assert isinstance(spt, MPS)
         self.op = spt
-        dl, dr, self.vmat, self.work = flat_sparse_matmul_init(self.op, pattern, dq)
+        dl, dr, self.vmat, self.work = flat_sparse_matmul_init(
+            self.op, pattern, dq)
         self.axtr = np.array(
             (*range(dr + 1, dr + dl + 1), 0, *range(1, dr + 1)), dtype=np.int32)
-        self.work2 = FlatSparseTensor(self.work.q_labels[:, self.axtr], self.work.shapes[:, self.axtr], np.zeros_like(self.work.data), self.work.idxs)
+        self.work2 = FlatSparseTensor(
+            self.work.q_labels[:, self.axtr], self.work.shapes[:, self.axtr], np.zeros_like(self.work.data), self.work.idxs)
         self.dmat = self._prepare_diag(dl, dr)
         if self.op.const != 0:
             self.dmat += self.op.const
@@ -60,8 +72,10 @@ class FlatSparseFunctor:
         axld = np.arange(1 + dl, 1 + dl + dl, dtype=np.int32)
         axru = np.arange(1, 1 + dr, dtype=np.int32)
         axrd = np.arange(1 + dr, 1 + dr + dr, dtype=np.int32)
-        led = FlatSparseTensor(*flat_sparse_diag(le.q_labels, le.shapes, le.data, le.idxs, axlu, axld))
-        red = FlatSparseTensor(*flat_sparse_diag(re.q_labels, re.shapes, re.data, re.idxs, axru, axrd))
+        led = FlatSparseTensor(
+            *flat_sparse_diag(le.q_labels, le.shapes, le.data, le.idxs, axlu, axld))
+        red = FlatSparseTensor(
+            *flat_sparse_diag(re.q_labels, re.shapes, re.data, re.idxs, axru, axrd))
         diag = np.tensordot(led, red, axes=1)
         return FlatSparseTensor.zeros_like(self.vmat).cast_assign(diag).data
 
