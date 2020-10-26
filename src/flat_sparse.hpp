@@ -181,4 +181,5 @@ flat_sparse_truncate_svd(
     const py::array_t<double> &sdata, const py::array_t<uint32_t> &sidxs,
     const py::array_t<uint32_t> &rqs, const py::array_t<uint32_t> &rshs,
     const py::array_t<double> &rdata, const py::array_t<uint32_t> &ridxs,
-    int max_bond_dim, double cutoff, double max_dw, double norm_cutoff);
+    int max_bond_dim, double cutoff, double max_dw, double norm_cutoff,
+    bool eigen_values);

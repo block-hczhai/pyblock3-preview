@@ -61,9 +61,10 @@ PYBIND11_MODULE(block3, m) {
                 unordered_map<uint32_t, uint32_t> *other) {
                  unordered_map<uint32_t, uint32_t> r;
                  for (auto &a : *self)
-                     for (auto &b : *other)
-                         r[from_sz(to_sz(a.first) + to_sz(b.first))] +=
-                             min(a.second * b.second, 65536U);
+                     for (auto &b : *other) {
+                         uint32_t q = from_sz(to_sz(a.first) + to_sz(b.first));
+                         r[q] = min(a.second * b.second + r[q], 65535U);
+                     }
                  return r;
              })
         .def("__or__",
@@ -106,7 +107,20 @@ PYBIND11_MODULE(block3, m) {
                                              : 0;
                      }
                  }
-             });
+             })
+        .def_static(
+            "set_bond_dimension_occ",
+            [](const vector<unordered_map<uint32_t, uint32_t>> &basis,
+               vector<unordered_map<uint32_t, uint32_t>> &left_dims,
+               vector<unordered_map<uint32_t, uint32_t>> &right_dims,
+               uint32_t vacuum, uint32_t target, int m,
+               py::array_t<double> &occ, double bias) {
+                vector<double> vocc(occ.data(), occ.data() + occ.size());
+                return bond_info_set_bond_dimension_occ(basis, left_dims,
+                                                        right_dims, vacuum,
+                                                        target, m, vocc, bias);
+            });
+
     py::bind_vector<vector<unordered_map<uint32_t, uint32_t>>>(
         m, "VectorMapUIntUInt");
     py::bind_vector<vector<uint32_t>>(m, "VectorUInt");
@@ -162,7 +176,8 @@ PYBIND11_MODULE(block3, m) {
         py::arg("sshs"), py::arg("sdata"), py::arg("sidxs"), py::arg("rqs"),
         py::arg("rshs"), py::arg("rdata"), py::arg("ridxs"),
         py::arg("max_bond_dim") = -1, py::arg("cutoff") = 0.0,
-        py::arg("max_dw") = 0.0, py::arg("norm_cutoff") = 0.0);
+        py::arg("max_dw") = 0.0, py::arg("norm_cutoff") = 0.0,
+        py::arg("eigen_values") = false);
     flat_sparse_tensor.def("get_infos", &flat_sparse_tensor_get_infos,
                            py::arg("aqs"), py::arg("ashs"));
     flat_sparse_tensor.def("kron_sum_info", &flat_sparse_tensor_kron_sum_info,

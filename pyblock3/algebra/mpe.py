@@ -227,7 +227,7 @@ class MPE:
         return np.dot(self.bra, self.mpo @ self.ket)
 
     @staticmethod
-    def _gs_optimize(x, iprint=False, fast=False):
+    def _eigs(x, iprint=False, fast=False, conv_thrd=1E-7):
         """Return ground-state energy and ground-state effective MPE."""
         if fast and x.ket.n_sites == 1 and x.mpo.n_sites == 2:
             from .flat_functor import FlatSparseFunctor
@@ -238,15 +238,15 @@ class MPE:
             v = [x.ket.__class__(
                 tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
         else:
-            w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint)
+            w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint, conv_thrd=conv_thrd)
         return w[0], MPE(bra=v[0], mpo=x.mpo, ket=v[0], do_canon=x.do_canon, idents=x.idents), ndav
 
-    def gs_optimize(self, iprint=False, fast=False):
+    def eigs(self, iprint=False, fast=False, conv_thrd=1E-7):
         """Return ground-state energy and ground-state effective MPE."""
-        return self._gs_optimize(self, iprint=iprint, fast=fast)
+        return self._eigs(self, iprint=iprint, fast=fast, conv_thrd=conv_thrd)
 
-    def dmrg(self, bdims, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
-        return DMRG(self, bdims, iprint=iprint).solve(n_sweeps, tol, dot)
+    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
+        return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
 
     @property
     def n_sites(self):

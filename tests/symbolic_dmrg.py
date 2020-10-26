@@ -52,7 +52,7 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
             tt = time.perf_counter()
             eff = me[i:i + dot]
             eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
-            eners[iw], eff, ndav = eff.gs_optimize(iprint=True)
+            eners[iw], eff, ndav = eff.eigs(iprint=True)
             if dot == 2:
                 l, s, r = eff.ket[0].tensor_svd(
                     idx=3, pattern='+++-++', full_matrices=False)

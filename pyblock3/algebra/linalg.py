@@ -73,7 +73,7 @@ def _olsen_precondition(q, c, ld, diag):
     q[mask] /= ld - diag[mask]
 
 # E.R. Davidson, J. Comput. Phys. 17 (1), 87-94 (1975).
-def davidson(a, b, k, max_iter=500, conv_thold=1E-7, deflation_min_size=2, deflation_max_size=30, iprint=False):
+def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflation_max_size=30, iprint=False):
     """
     Davidson diagonalization.
 
@@ -86,7 +86,7 @@ def davidson(a, b, k, max_iter=500, conv_thold=1E-7, deflation_min_size=2, defla
     Kwargs:
         max_iter : int
             Maximal number of davidson iteration.
-        conv_thold : float
+        conv_thrd : float
             Convergence threshold for squared norm of eigenvector.
         deflation_min_size : int
             Sub-space size after deflation.
@@ -148,7 +148,7 @@ def davidson(a, b, k, max_iter=500, conv_thold=1E-7, deflation_min_size=2, defla
             q = sigma[i].copy()
             q += (-ld[i]) * b[i]
             qq = np.dot(q, q)
-            if qq >= conv_thold:
+            if qq >= conv_thrd:
                 ck = i
                 break
         # q = sigma[ck] - b[ck] * ld[ck]
@@ -161,7 +161,7 @@ def davidson(a, b, k, max_iter=500, conv_thold=1E-7, deflation_min_size=2, defla
         if aa is not None:
             _olsen_precondition(q, b[ck], ld[ck], aa)
 
-        if qq < conv_thold:
+        if qq < conv_thrd:
             ck += 1
             if ck == k:
                 break

@@ -3,7 +3,7 @@ from .algebra.symmetry import SZ, BondInfo
 from .algebra.core import FermionTensor
 from .symbolic.expr import OpNames, OpElement, OpString, OpSum
 from .symbolic.symbolic import SymbolicSparseTensor, SymbolicColumnVector, SymbolicRowVector
-from .algebra.mps import MPS
+from .algebra.mps import MPS, MPSInfo
 from functools import lru_cache, reduce
 import numpy as np
 
@@ -46,17 +46,27 @@ class Hamiltonian:
         if flat:
             self.vacuum = self.vacuum.to_flat()
             self.target = self.target.to_flat()
-            from block3 import MapUIntUInt
+            from block3 import MapUIntUInt, VectorMapUIntUInt
             from .algebra.flat import FlatFermionTensor
             for i, b in enumerate(self.basis):
                 dt = MapUIntUInt()
                 for k, v in b.items():
                     dt[k.to_flat()] = v
                 self.basis[i] = dt
+            self.basis = VectorMapUIntUInt(self.basis)
             self.FT = FlatFermionTensor
         else:
             self.FT = FermionTensor
         self.flat = flat
+    
+    def build_mps(self, bond_dim, occ=None, bias=1):
+        mps_info = MPSInfo(self.n_sites, self.vacuum, self.target, self.basis)
+        if occ is None:
+            mps_info.set_bond_dimension(bond_dim)
+        else:
+            assert len(occ) == len(self.basis)
+            mps_info.set_bond_dimension_occ(bond_dim, occ, bias)
+        return MPS.random(mps_info)
     
     def build_qc_mpo(self):
         if self.flat:

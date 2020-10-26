@@ -71,7 +71,16 @@ class MPSInfo:
 
     def set_bond_dimension_occ(self, bond_dim, occ, bias=1):
         """bond dimensions from occupation numbers"""
-        return NotImplemented
+
+        if self.left_dims is None:
+            self.set_bond_dimension_fci()
+
+        occ = np.array(occ, dtype=float)
+
+        self.left_dims, self.right_dims = self.basis[0].__class__.set_bond_dimension_occ(
+            self.basis, self.basis.__class__(
+                self.left_dims), self.basis.__class__(self.right_dims),
+            self.vacuum, self.target, bond_dim, np.array(occ, dtype=float), bias)
 
     def set_bond_dimension(self, bond_dim, call_back=None):
         """Truncated bond dimension based on FCI quantum numbers

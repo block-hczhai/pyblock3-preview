@@ -52,7 +52,7 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
             eff = mpe[i:i + dot]
             if contract:
                 eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
-                ener, eff, ndav = eff.gs_optimize(iprint=iprint, fast=fast)
+                ener, eff, ndav = eff.eigs(iprint=iprint, fast=fast)
                 if dot == 2:
                     lsr = eff.ket[0].tensor_svd(idx=3, pattern='+++-+-')
                     l, s, r, error = pbalg.truncate_svd(*lsr, cutoff=1E-12, max_bond_dim=bdims)
@@ -60,7 +60,7 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
                 else:
                     error = 0
             else:
-                ener, eff, ndav = eff.gs_optimize(iprint=iprint, fast=fast)
+                ener, eff, ndav = eff.eigs(iprint=iprint, fast=fast)
                 cket, error = eff.ket.compress(cutoff=1E-12, max_bond_dim=bdims)
                 eff.ket[:] = cket[:]
             mpe[i:i + dot] = eff

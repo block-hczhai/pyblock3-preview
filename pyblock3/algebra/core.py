@@ -1059,7 +1059,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         return self.__class__(blocks=l_blocks), self.__class__(blocks=s_blocks), self.__class__(blocks=r_blocks)
 
     @staticmethod
-    def truncate_svd(l, s, r, max_bond_dim=-1, cutoff=0.0, max_dw=0.0, norm_cutoff=0.0):
+    def truncate_svd(l, s, r, max_bond_dim=-1, cutoff=0.0, max_dw=0.0, norm_cutoff=0.0, eigen_values=False):
         """
         Truncate tensors obtained from SVD.
 
@@ -1075,11 +1075,13 @@ class SparseTensor(NDArrayOperatorsMixin):
                 Maximal sum of square of discarded singular values.
             norm_cutoff : double
                 Blocks with norm smaller than norm_cutoff will be deleted.
+            eigen_values : bool
+                If True, treat `s` as eigenvalues.
 
         Returns:
             l, s, r : tuple(SparseTensor)
             error : float
-                Truncation error (same unit as singular value).
+                Truncation error (same unit as singular value squared).
         """
         ss = [(i, j, v) for i, ps in enumerate(s.blocks)
               for j, v in enumerate(ps)]
@@ -1088,13 +1090,15 @@ class SparseTensor(NDArrayOperatorsMixin):
         if max_dw != 0:
             p, dw = 0, 0.0
             for x in ss_trunc[::-1]:
-                dw += x[2] * x[2]
+                dw += x[2] if eigen_values else x[2] * x[2]
                 if dw <= max_dw:
                     p += 1
                 else:
                     break
             ss_trunc = ss_trunc[:-p]
         if cutoff != 0:
+            if not eigen_values:
+                cutoff = np.sqrt(cutoff)
             ss_trunc = [x for x in ss_trunc if x[2] >= cutoff]
         if max_bond_dim != -1:
             ss_trunc = ss_trunc[:max_bond_dim]
@@ -1118,15 +1122,21 @@ class SparseTensor(NDArrayOperatorsMixin):
             while ikr < r.n_blocks and r.blocks[ikr].q_labels[0] == s.blocks[ik].q_labels[-1]:
                 r_blocks.append(r.blocks[ikr][gl, ...])
                 ikr += 1
-            error += (s.blocks[ik][gl_inv] ** 2).sum()
+            if eigen_values:
+                error += s.blocks[ik][gl_inv].sum()
+            else:
+                error += (s.blocks[ik][gl_inv] ** 2).sum()
             selected[ik] = True
         for ik in range(len(s.blocks)):
             if not selected[ik]:
-                error += (s.blocks[ik] ** 2).sum()
+                if eigen_values:
+                    error += s.blocks[ik].sum()
+                else:
+                    error += (s.blocks[ik] ** 2).sum()
         error = np.asarray(error).item()
         return l.__class__(blocks=l_blocks).deflate(cutoff=norm_cutoff), \
             s.__class__(blocks=s_blocks), r.__class__(
-                blocks=r_blocks).deflate(cutoff=norm_cutoff), np.sqrt(error)
+                blocks=r_blocks).deflate(cutoff=norm_cutoff), error
 
     @staticmethod
     @implements(np.linalg.qr)
@@ -1882,7 +1892,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         Returns:
             l, s, r : tuple(SparseTensor/FermionTensor)
             error : float
-                Truncation error (same unit as singular value).
+                Truncation error (same unit as singular value squared).
         """
         ss = [(i, j, v) for i, ps in enumerate(s.blocks)
               for j, v in enumerate(ps)]
@@ -1968,7 +1978,7 @@ class FermionTensor(NDArrayOperatorsMixin):
             new_r = SparseTensor(blocks=r_blocks[0]).deflate(
                 cutoff=norm_cutoff)
         error = np.asarray(error).item()
-        return new_l, SparseTensor(blocks=s_blocks), new_r, np.sqrt(error)
+        return new_l, SparseTensor(blocks=s_blocks), new_r, error
 
     @staticmethod
     @implements(np.linalg.qr)

@@ -508,7 +508,7 @@ def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol
 
 def flat_sparse_truncate_svd(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
                              rqs, rshs, rdata, ridxs, max_bond_dim=-1, cutoff=0.0,
-                             max_dw=0.0, norm_cutoff=0.0):
+                             max_dw=0.0, norm_cutoff=0.0, eigen_values=False):
     ss = [(i, j, v) for i, (ist, ied) in enumerate(zip(sidxs, sidxs[1:]))
           for j, v in enumerate(sdata[ist:ied])]
     ss.sort(key=lambda x: -x[2])
@@ -516,13 +516,15 @@ def flat_sparse_truncate_svd(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
     if max_dw != 0:
         p, dw = 0, 0.0
         for x in ss_trunc[::-1]:
-            dw += x[2] * x[2]
+            dw += x[2] if eigen_values else x[2] * x[2]
             if dw <= max_dw:
                 p += 1
             else:
                 break
         ss_trunc = ss_trunc[:-p]
     if cutoff != 0:
+        if not eigen_values:
+            cutoff = np.sqrt(cutoff)
         ss_trunc = [x for x in ss_trunc if x[2] >= cutoff]
     if max_bond_dim != -1:
         ss_trunc = ss_trunc[:max_bond_dim]
@@ -580,13 +582,19 @@ def flat_sparse_truncate_svd(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
                 [dt[:, irst:ired].flatten() for irst, ired in zip(rrxr[:-1], rrxr[1:])])
             r_blocks.append((rqs[ikr:ikr + nkr], sh, dt,
                              np.arange(ikr, ikr + nkr, dtype=int)))
-        error += (sdata[sidxs[ik]:sidxs[ik + 1]][gl_inv] ** 2).sum()
+        if eigen_values:
+            error += sdata[sidxs[ik]:sidxs[ik + 1]][gl_inv].sum()
+        else:
+            error += (sdata[sidxs[ik]:sidxs[ik + 1]][gl_inv] ** 2).sum()
         selected[ik] = True
         iks += 1
         iksz += ng
     for ik in range(len(sqs)):
         if not selected[ik]:
-            error += (sdata[sidxs[ik]:sidxs[ik + 1]] ** 2).sum()
+            if eigen_values:
+                error += sdata[sidxs[ik]:sidxs[ik + 1]].sum()
+            else:
+                error += (sdata[sidxs[ik]:sidxs[ik + 1]] ** 2).sum()
     error = np.asarray(error).item()
     if len(l_blocks) == 0 or len(r_blocks) == 0:
         zq = np.zeros((0, lqs.shape[1]), dtype=lqs.dtype)
@@ -606,5 +614,4 @@ def flat_sparse_truncate_svd(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
         nridxs = None
     else:
         nrqs, nrshs, nrdata, nridxs = zq, zq, zd, zi
-    return nlqs, nlshs, nldata, nlidxs, sqs[selected], nsshs, nsdata, None, nrqs, nrshs, nrdata, nridxs, np.sqrt(
-        error)
+    return nlqs, nlshs, nldata, nlidxs, sqs[selected], nsshs, nsdata, None, nrqs, nrshs, nrdata, nridxs, error

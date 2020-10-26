@@ -103,7 +103,7 @@ if "PY" in mode:
         # if dot == 2:
         #     eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
         #     eff.bra[:] = [reduce(pbalg.hdot, eff.bra[:])]
-        # # ener, eff, ndav = eff.gs_optimize(iprint=True)
+        # # ener, eff, ndav = eff.eigs(iprint=True)
         # if dot == 2:
         #     l, s, r = eff.ket[0].tensor_svd(
         #         idx=3, pattern='+++-++', full_matrices=False)

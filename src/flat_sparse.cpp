@@ -1370,7 +1370,8 @@ flat_sparse_truncate_svd(
     const py::array_t<double> &sdata, const py::array_t<uint32_t> &sidxs,
     const py::array_t<uint32_t> &rqs, const py::array_t<uint32_t> &rshs,
     const py::array_t<double> &rdata, const py::array_t<uint32_t> &ridxs,
-    int max_bond_dim, double cutoff, double max_dw, double norm_cutoff) {
+    int max_bond_dim, double cutoff, double max_dw, double norm_cutoff,
+    bool eigen_values) {
     if (sqs.shape()[0] == 0)
         return std::make_tuple(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
                                sqs, sshs, sdata, sidxs, 0.0);
@@ -1408,7 +1409,9 @@ flat_sparse_truncate_svd(
     if (max_dw != 0) {
         int p = 0;
         for (int i = (int)ss_trunc.size(); i > 0; i--) {
-            double dw = get<2>(ss_trunc[i]) * get<2>(ss_trunc[i]);
+            double dw = eigen_values
+                            ? get<2>(ss_trunc[i])
+                            : get<2>(ss_trunc[i]) * get<2>(ss_trunc[i]);
             if (dw <= max_dw)
                 p++;
             else
@@ -1417,6 +1420,8 @@ flat_sparse_truncate_svd(
         ss_trunc.resize(ss_trunc.size() - p);
     }
     if (cutoff != 0) {
+        if (!eigen_values)
+            cutoff = sqrt(cutoff);
         for (int i = 1; i < (int)ss_trunc.size(); i++)
             if (get<2>(ss_trunc[i]) < cutoff) {
                 ss_trunc.resize(i);
@@ -1486,7 +1491,7 @@ flat_sparse_truncate_svd(
     double error = 0;
     for (int j = 0; j < (int)pis[n_blocks_s]; j++)
         if (!mask[j])
-            error += ps[j] * ps[j];
+            error += eigen_values ? ps[j] : ps[j] * ps[j];
 
     py::array_t<uint32_t> nlqs(vector<ssize_t>{n_blocks_l_new, ndiml}),
         nlshs(vector<ssize_t>{n_blocks_l_new, ndiml});
@@ -1555,5 +1560,5 @@ flat_sparse_truncate_svd(
     }
 
     return std::make_tuple(nlqs, nlshs, nldata, nlidxs, nsqs, nsshs, nsdata,
-                           nsidxs, nrqs, nrshs, nrdata, nridxs, sqrt(error));
+                           nsidxs, nrqs, nrshs, nrdata, nridxs, error);
 }
