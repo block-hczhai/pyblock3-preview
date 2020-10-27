@@ -5,8 +5,59 @@ from ..algebra.mps import MPS
 from .symbolic import SymbolicMatrix, SymbolicRowVector, SymbolicColumnVector, SymbolicSparseTensor
 import numpy as np
 
+
+class IdentityMPO(MPS):
+    """Symbolic MPO for identity operator."""
+
+    def __init__(self, hamil, opts=None):
+        n_sites = hamil.n_sites
+        vac = SZ(0, 0, 0)
+        tensors = [None] * n_sites
+        i_op = OpElement(OpNames.I, (), q_label=vac)
+        for m in range(n_sites):
+            if m == 0:
+                mat = SymbolicRowVector(1)
+            elif m == n_sites - 1:
+                mat = SymbolicColumnVector(1)
+            else:
+                mat = SymbolicMatrix(1, 1)
+            mat[0, 0] = i_op
+            lop = SymbolicColumnVector(1, data=np.array([i_op]))
+            rop = SymbolicRowVector(1, data=np.array([i_op]))
+            ops = hamil.get_site_ops(m, mat.get_symbols())
+            tensors[m] = SymbolicSparseTensor(mat, ops, lop, rop).deflate()
+        super().__init__(tensors=tensors, const=0.0, opts=opts)
+
+
+class SiteMPO(MPS):
+    """Symbolic MPO for site operator (at site k)."""
+
+    def __init__(self, hamil, op, k=-1, opts=None):
+        n_sites = hamil.n_sites
+        vac = SZ(0, 0, 0)
+        tensors = [None] * n_sites
+        i_op = OpElement(OpNames.I, (), q_label=vac)
+        if k == -1:
+            assert len(op.site_index) >= 1
+            k = op.site_index[0]
+        for m in range(n_sites):
+            if m == 0:
+                mat = SymbolicRowVector(1)
+            elif m == n_sites - 1:
+                mat = SymbolicColumnVector(1)
+            else:
+                mat = SymbolicMatrix(1, 1)
+            mat[0, 0] = op if m == k else i_op
+            lop = SymbolicColumnVector(
+                1, data=np.array([op if m <= k else i_op]))
+            rop = SymbolicRowVector(1, data=np.array([op if m >= k else i_op]))
+            ops = hamil.get_site_ops(m, mat.get_symbols())
+            tensors[m] = SymbolicSparseTensor(mat, ops, lop, rop).deflate()
+        super().__init__(tensors=tensors, const=0.0, opts=opts, dq=op.q_label)
+
+
 class QCSymbolicMPO(MPS):
-    """Quantum chemistry symbolic Matrix Product Operator"""
+    """Quantum chemistry symbolic Matrix Product Operator for Hamiltonain"""
 
     def __init__(self, hamil, symmetrized_p=True, opts=None):
         n_sites = hamil.n_sites

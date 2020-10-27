@@ -156,7 +156,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
         q += (-ld[ck]) * b[ck]
         qq = np.dot(q, q)
         if iprint:
-            print("%5d %5d %5d %15.8f %9.2e" % (xiter, m, ck, ld[ck], qq))
+            print("%5d %5d %5d %15.8f %9.2E" % (xiter, m, ck, ld[ck], qq))
         
         if aa is not None:
             _olsen_precondition(q, b[ck], ld[ck], aa)
@@ -183,3 +183,34 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
             raise RuntimeError("Only %d converged!" % ck)
     
     return ld[:ck], b[:ck], xiter
+
+def conjugate_gradient(a, x, b, max_iter=500, conv_thrd=1E-7, iprint=False):
+    r = -(a @ x) + b
+    error = np.dot(r, r)
+    if error < conv_thrd:
+        func = np.dot(x, b)
+        if iprint:
+            print("%5d %15.8f %9.2E" % (0, func, error))
+        return func, x, 1
+    old_error = error
+    p = r.copy()
+    xiter = 0
+    while xiter < max_iter:
+        xiter += 1
+        hp = a @ p
+        alpha = old_error / np.dot(p, hp)
+        x += alpha * p
+        r -= alpha * hp
+        error = np.dot(r, r)
+        func = np.dot(x, b)
+        if iprint:
+            print("%5d %15.8f %9.2E" % (xiter, func, error))
+        if error < conv_thrd:
+            break
+        else:
+            beta = error / old_error
+            old_error = error
+            p[:] = beta * p + r
+    if xiter == max_iter:
+        raise RuntimeError("Error : linear solver (cg) not converged!")
+    return func, x, xiter + 1

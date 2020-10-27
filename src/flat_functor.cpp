@@ -144,7 +144,8 @@ void flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
     }
 }
 
-tuple<int, int, vector<unordered_map<uint32_t, uint32_t>>>
+tuple<int, int, vector<unordered_map<uint32_t, uint32_t>>,
+      vector<unordered_map<uint32_t, uint32_t>>>
 flat_sparse_tensor_matmul_init(
     const py::array_t<uint32_t> &loqs, const py::array_t<uint32_t> &loshs,
     const py::array_t<uint32_t> &leqs, const py::array_t<uint32_t> &leshs,
@@ -196,18 +197,21 @@ flat_sparse_tensor_matmul_init(
     }
     int dl = (ndiml - 2) / 2, dr = (ndimr - 2) / 2;
     vector<unordered_map<uint32_t, uint32_t>> vinfos(dl + dr + 2);
+    vector<unordered_map<uint32_t, uint32_t>> cinfos(dl + dr + 2);
+    cinfos[0] = lqs[0];
     vinfos[0] = lqs[0];
     for (int i = 0; i < dl; i++) {
         vinfos[i + 1] = lqs[i + 1];
-        vinfos[i + 1].insert(lqs[i + 1 + dl].begin(), lqs[i + 1 + dl].end());
+        cinfos[i + 1].insert(lqs[i + 1 + dl].begin(), lqs[i + 1 + dl].end());
     }
     for (int i = 0; i < dr; i++) {
         vinfos[i + 1 + dl] = rqs[i + 1];
-        vinfos[i + 1 + dl].insert(rqs[i + 1 + dr].begin(),
+        cinfos[i + 1 + dl].insert(rqs[i + 1 + dr].begin(),
                                   rqs[i + 1 + dr].end());
     }
+    cinfos[dl + dr + 1] = rqs[ndimr - 1];
     vinfos[dl + dr + 1] = rqs[ndimr - 1];
-    return std::make_tuple(dl, dr, vinfos);
+    return std::make_tuple(dl, dr, cinfos, vinfos);
 }
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>

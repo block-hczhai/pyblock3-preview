@@ -34,7 +34,8 @@ void flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
                                const py::array_t<double> &bdata,
                                py::array_t<double> &cdata);
 
-tuple<int, int, vector<unordered_map<uint32_t, uint32_t>>>
+tuple<int, int, vector<unordered_map<uint32_t, uint32_t>>,
+      vector<unordered_map<uint32_t, uint32_t>>>
 flat_sparse_tensor_matmul_init(
     const py::array_t<uint32_t> &loqs, const py::array_t<uint32_t> &loshs,
     const py::array_t<uint32_t> &leqs, const py::array_t<uint32_t> &leshs,

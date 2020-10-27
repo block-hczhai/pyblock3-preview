@@ -14,6 +14,7 @@ fd = '../data/HUBBARD-L8.FCIDUMP'
 # fd = '../data/HUBBARD-L16.FCIDUMP'
 # fd = '../data/N2.STO3G.FCIDUMP'
 # fd = '../data/H8.STO6G.R1.8.FCIDUMP'
+# fd = '../data/H10.STO6G.R1.8.FCIDUMP'
 # fd = '../my_test/n2/N2.FCIDUMP'
 # fd = '../data/CR2.SVP.FCIDUMP'
 occ = None
@@ -34,12 +35,14 @@ mpo, _ = mpo.compress(left=True, cutoff=1E-9, norm_cutoff=1E-9)
 print('MPO (compressed) = ', mpo.show_bond_dims())
 print('compress mpo time = ', time.perf_counter() - tx)
 
-mps = hamil.build_mps(bond_dim, occ)
+mps = hamil.build_mps(bond_dim, occ=occ)
 print('MPS = ', mps.show_bond_dims())
 
 bdims = [250] * 5 + [500] * 5
 noises = [1E-5] * 2 + [1E-6] * 4 + [1E-7] * 4 + [0]
 davthrds = [1E-5] * 4 + [1E-6] * 4 + [1E-7]
 
-print(MPE(mps, mpo, mps).dmrg(bdims=bdims, noises=noises,
-                              dav_thrds=davthrds, iprint=2, n_sweeps=20))
+dmrg = MPE(mps, mpo, mps).dmrg(bdims=bdims, noises=noises,
+                              dav_thrds=davthrds, iprint=2, n_sweeps=20)
+ener = dmrg.energies[-1]
+print("Energy = %20.12f" % ener)
