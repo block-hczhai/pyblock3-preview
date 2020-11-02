@@ -48,7 +48,7 @@ class SparseFermionTensor(SparseTensor):
     @property
     def pairty(self):
         self.check_sanity()
-        parity_uniq = np.unique(self.parity_list)
+        parity_uniq = np.unique(self.parity_per_block)
         return parity_uniq[0]
 
     @property
@@ -235,6 +235,7 @@ class SparseFermionTensor(SparseTensor):
     @staticmethod
     @implements(np.transpose)
     def _transpose(a, axes=None):
+        print('sparse trans')
         phase = [compute_phase(block.q_labels, axes) for block in a.blocks]
         blocks = [np.transpose(block, axes=axes)*phase[ibk] for ibk, block in enumerate(a.blocks)]
         return a.__class__(blocks=blocks)
@@ -297,9 +298,9 @@ class FlatFermionTensor(FlatSparseTensor):
         self.check_sanity()
 
     @property
-    def pairty(self):
+    def parity(self):
         self.check_sanity()
-        parity_uniq = np.unique(self.parity_list)
+        parity_uniq = np.unique(self.parity_per_block)
         return parity_uniq[0]
 
     @property
@@ -309,6 +310,10 @@ class FlatFermionTensor(FlatSparseTensor):
             pval = sum([SZ.from_flat(qlab).n for qlab in q_label])
             parity_list.append(int(pval)%2)
         return parity_list
+
+    @property
+    def shape(self):
+        return np.amax(self.shapes, axis=1)
 
     def check_sanity(self):
         parity_uniq = np.unique(self.parity_per_block)
@@ -515,3 +520,21 @@ class FlatFermionTensor(FlatSparseTensor):
             a.q_labels, a.shapes, a.data, a.idxs,
             b.q_labels, b.shapes, b.data, b.idxs,
             idxa, idxb))
+
+    @staticmethod
+    @implements(np.linalg.norm)
+    def _norm(a):
+        return np.linalg.norm(a.data)
+
+    @staticmethod
+    @implements(np.reshape)
+    def _reshape(a, newshape, *args, **kwargs):
+        return np.reshape(a.data, newshape, *args, **kwargs)
+
+    def reshape(self, newshape, *args, **kwargs):
+        return np.reshape(self, newshape, *args, **kwargs)
+
+    def astype(self, dtype, *args, **kwargs):
+        return self.__class__(self.q_labels, self.shapes, \
+                              self.data.astype(dtype, *args, **kwargs), \
+                              self.idxs)
