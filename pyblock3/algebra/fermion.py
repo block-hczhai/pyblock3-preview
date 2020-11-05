@@ -3,7 +3,7 @@ from .core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
 from .flat import FlatSparseTensor, flat_sparse_skeleton, _flat_sparse_tensor_numpy_func_impls
 from .symmetry import SZ
 import numbers
-from block3 import flat_fermion_tensor
+from block3 import flat_fermion_tensor, flat_sparse_tensor
 def method_alias(name):
     def ff(f):
         def fff(obj, *args, **kwargs):
@@ -235,7 +235,6 @@ class SparseFermionTensor(SparseTensor):
     @staticmethod
     @implements(np.transpose)
     def _transpose(a, axes=None):
-        print('sparse trans')
         phase = [compute_phase(block.q_labels, axes) for block in a.blocks]
         blocks = [np.transpose(block, axes=axes)*phase[ibk] for ibk, block in enumerate(a.blocks)]
         return a.__class__(blocks=blocks)
@@ -504,6 +503,18 @@ class FlatFermionTensor(FlatSparseTensor):
             flat_fermion_tensor.transpose(a.q_labels, a.shapes, a.data, a.idxs, axes, data)
             return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, a.idxs)
+
+    def permute(self, axes=None):
+        if axes is None:
+            axes = np.arange(a.ndim)[::-1]
+        if self.n_blocks == 0:
+            return self
+        else:
+            axes = np.array(axes, dtype=np.int32)
+            data = np.zeros_like(self.data)
+            flat_sparse_tensor.transpose(self.shapes, self.data, self.idxs, axes, data)
+            return self.__class__(self.q_labels[:, axes], self.shapes[:, axes], data, self.idxs)
+
 
     @staticmethod
     @implements(np.tensordot)
