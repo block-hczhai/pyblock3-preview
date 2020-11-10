@@ -79,27 +79,46 @@ class SparseFermionTensor(SparseTensor):
         for i in range(self.n_blocks):
             self.blocks[i] *= -1
 
+    def _skeleton(bond_infos, dq=None):
+        if dq is None:
+            dq = SZ(0,0,0)
+        if not isinstance(dq, SZ):
+            raise TypeError("dq is not an instance of SZ class")
+        it = np.zeros(tuple(len(i) for i in bond_infos), dtype=int)
+        qsh = [sorted(i.items(), key=lambda x: x[0]) for i in bond_infos]
+        q = [[k for k, v in i] for i in qsh]
+        sh = [[v for k, v in i] for i in qsh]
+        nit = np.nditer(it, flags=['multi_index'])
+        for _ in nit:
+            x = nit.multi_index
+            ps = [iq[ix] for iq, ix in zip(q, x)]
+            parity = np.mod(sum([iq[ix].n for iq, ix in zip(q, x)]), 2)
+            if parity == dq.n:
+                xqs = tuple(iq[ix] for iq, ix in zip(q, x))
+                xsh = tuple(ish[ix] for ish, ix in zip(sh, x))
+                yield xsh, xqs
+
     @staticmethod
-    def zeros(bond_infos, pattern=None, dq=None, dtype=float):
+    def zeros(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with zero elements."""
         blocks = []
-        for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
+        for sh, qs in SparseFermionTensor._skeleton(bond_infos, dq=dq):
             blocks.append(SubTensor.zeros(shape=sh, q_labels=qs, dtype=dtype))
         return SparseFermionTensor(blocks=blocks)
 
     @staticmethod
-    def ones(bond_infos, pattern=None, dq=None, dtype=float):
+    def ones(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with ones."""
         blocks = []
-        for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
+        for sh, qs in SparseFermionTensor._skeleton(bond_infos, dq=dq):
             blocks.append(SubTensor.ones(shape=sh, q_labels=qs, dtype=dtype))
         return SparseFermionTensor(blocks=blocks)
 
     @staticmethod
-    def random(bond_infos, pattern=None, dq=None, dtype=float):
+    def random(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with random elements."""
         blocks = []
-        for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
+        for sh, qs in SparseFermionTensor._skeleton(bond_infos, dq=dq):
             blocks.append(SubTensor.random(shape=sh, q_labels=qs, dtype=dtype))
         return SparseFermionTensor(blocks=blocks)
 
