@@ -7,12 +7,12 @@
 #include <numeric>
 #include <unordered_map>
 
-inline SZLong from_op(int32_t op, const int32_t *orb_sym, const int32_t m_site,
+inline SZ from_op(int32_t op, const int32_t *orb_sym, const int32_t m_site,
                       const int32_t m_op) noexcept {
     int n = op / m_op ? -1 : 1;
     int twos = (op % m_site) ^ (op / m_op) ? -1 : 1;
     int pg = orb_sym[(op % m_op) / m_site];
-    return SZLong(n, twos, pg);
+    return SZ(n, twos, pg);
 }
 
 inline size_t op_hash(const int32_t *terms, int n,
@@ -63,7 +63,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
     int n_sites = (int)orb_sym.shape()[0], n_values = (int)h_values.shape()[0];
     int n_terms = (int)h_terms.shape()[0], term_len = (int)h_terms.shape()[1];
     assert(n_terms == n_values);
-    vector<SZLong> left_q = {SZLong(0, 0, 0)};
+    vector<SZ> left_q = {SZ(0, 0, 0)};
     unordered_map<uint32_t, uint32_t> info_l, info_r;
     info_l[from_sz(left_q[0])] = 1;
     // terms
@@ -83,7 +83,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
     vector<int> term_site(term_len);
     // pre-processing
     for (int it = 0, ix; it < n_terms; it++) {
-        SZLong q(0, 0, 0);
+        SZ q(0, 0, 0);
         for (ix = 0; ix < term_len; ix++) {
             int32_t op = pt[it * hsi + ix * hsj];
             if (op == -1)
@@ -92,7 +92,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
             term_site[ix] = (op % m_op) / m_site;
             term_sorted[it * term_len + ix] = op;
         }
-        if (q != SZLong(0, 0, 0)) {
+        if (q != SZ(0, 0, 0)) {
             cout << "Hamiltonian term #" << it
                  << " has a non-vanishing q: " << q << endl;
             abort();
@@ -117,7 +117,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
     // do svd from left to right
     // time complexity: O(KDLN(log N))
     // K: n_sites, D: max_bond_dim, L: term_len, N: n_terms
-    unordered_map<SZLong, int> q_map;
+    unordered_map<SZ, int> q_map;
     vector<unordered_map<size_t, vector<pair<pair<int, int>, int>>>> map_ls;
     vector<unordered_map<size_t, vector<pair<int, int>>>> map_rs;
     vector<vector<pair<pair<int, int>, double>>> mats;
@@ -136,12 +136,12 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         nms.clear();
         info_r.clear();
         unordered_map<uint32_t, uint32_t> basis;
-        basis[from_sz(SZLong(0, 0, 0))] = 1;
-        basis[from_sz(SZLong(1, 1, porb[ii]))] = 1;
-        basis[from_sz(SZLong(1, -1, porb[ii]))] = 1;
-        basis[from_sz(SZLong(2, 0, 0))] = 1;
+        basis[from_sz(SZ(0, 0, 0))] = 1;
+        basis[from_sz(SZ(1, 1, porb[ii]))] = 1;
+        basis[from_sz(SZ(1, -1, porb[ii]))] = 1;
+        basis[from_sz(SZ(2, 0, 0))] = 1;
         for (int ip = 0; ip < (int)cur_values.size(); ip++) {
-            SZLong qll = left_q[ip];
+            SZ qll = left_q[ip];
             for (int ic = 0; ic < (int)cur_terms[ip].size(); ic++) {
                 if (abs(cur_values[ip][ic]) < cutoff)
                     continue;
@@ -154,7 +154,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                 cur_term_i[it] = k;
                 size_t hl = op_hash(term_sorted.data() + itt + ik, k - ik, ip);
                 size_t hr = op_hash(term_sorted.data() + itt + k, kmax - k);
-                SZLong ql = qll;
+                SZ ql = qll;
                 for (int i = ik; i < k; i++)
                     ql = ql + from_op(term_sorted[itt + i], porb, m_site, m_op);
                 if (q_map.count(ql) == 0) {
@@ -210,7 +210,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
             }
         }
         vector<array<vector<double>, 3>> svds(q_map.size());
-        vector<SZLong> qs(q_map.size());
+        vector<SZ> qs(q_map.size());
         int s_kept_total = 0, nr_total = 0;
         for (auto &mq : q_map) {
             int iq = mq.second;
@@ -279,7 +279,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         vector<unordered_map<uint32_t, uint32_t>> infos = {info_l, info_r,
                                                            basis, basis};
         auto skl = flat_sparse_tensor_skeleton(infos, "+-+-",
-                                               from_sz(SZLong(0, 0, 0)));
+                                               from_sz(SZ(0, 0, 0)));
         // separate odd and even
         int n_odd = 0, n_total = get<0>(skl).shape()[0];
         ssize_t size_odd = 0;
@@ -350,9 +350,9 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         unordered_map<uint32_t, op_skeleton> sk_map;
         vector<unordered_map<uint32_t, uint32_t>> op_infos = {basis, basis};
         vector<uint32_t> sk_qs = {
-            from_sz(SZLong(0, 0, 0)), from_sz(SZLong(1, 1, porb[ii])),
-            from_sz(SZLong(1, -1, porb[ii])), from_sz(SZLong(-1, -1, porb[ii])),
-            from_sz(SZLong(-1, 1, porb[ii]))};
+            from_sz(SZ(0, 0, 0)), from_sz(SZ(1, 1, porb[ii])),
+            from_sz(SZ(1, -1, porb[ii])), from_sz(SZ(-1, -1, porb[ii])),
+            from_sz(SZ(-1, 1, porb[ii]))};
         for (auto &k : sk_qs)
             sk_map[k] = flat_sparse_tensor_skeleton(op_infos, "+-", k);
         // data for on-site operators
@@ -382,7 +382,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         // sum and multiplication
         for (auto &mq : q_map) {
             int iq = mq.second;
-            SZLong q = qs[iq];
+            SZ q = qs[iq];
             auto &matvs = mats[iq];
             auto &mpl = map_ls[iq];
             auto &nm = nms[iq];
@@ -403,11 +403,11 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         memcpy(reprs[il].data(), pi, sizeof(double) * 4);
                         repr_q[il] = sk_qs[0];
                     } else {
-                        SZLong qi =
+                        SZ qi =
                             from_op(term_sorted[itt + ik], porb, m_site, m_op);
                         vector<double> p = dt_map.at(from_sz(qi));
                         for (int i = ik + 1; i < k; i++) {
-                            SZLong qx = from_op(term_sorted[itt + i], porb,
+                            SZ qx = from_op(term_sorted[itt + i], porb,
                                                 m_site, m_op);
                             uint32_t fqk = from_sz(qi + qx), fqx = from_sz(qx),
                                      fqi = from_sz(qi);
@@ -488,7 +488,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         left_q.resize(s_kept_total);
         for (auto &mq : q_map) {
             int iq = mq.second;
-            SZLong q = qs[iq];
+            SZ q = qs[iq];
             auto &mpr = map_rs[iq];
             auto &nm = nms[iq];
             int rszm = (int)svds[iq][1].size(), szr = nm.second;

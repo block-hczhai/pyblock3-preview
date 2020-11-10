@@ -3,15 +3,15 @@ from .algebra.symmetry import SZ, BondInfo
 from .algebra.core import FermionTensor
 from .symbolic.expr import OpNames, OpElement, OpString, OpSum
 from .symbolic.symbolic import SymbolicSparseTensor, SymbolicColumnVector, SymbolicRowVector
-from .algebra.mps import MPS
+from .algebra.mps import MPS, MPSInfo
 from functools import lru_cache, reduce
 import numpy as np
 
 
-class QCHamiltonian:
+class Hamiltonian:
     """
-    Quantum chemistry Hamiltonian.
-    For construction of QCMPO
+    Quantum chemistry/general Hamiltonian.
+    For construction of MPO
     Attributes:
         basis : list(BondInfo)
             BondInfo in each site
@@ -46,22 +46,63 @@ class QCHamiltonian:
         if flat:
             self.vacuum = self.vacuum.to_flat()
             self.target = self.target.to_flat()
-            from block3 import MapUIntUInt
+            from block3 import MapUIntUInt, VectorMapUIntUInt
             from .algebra.flat import FlatFermionTensor
             for i, b in enumerate(self.basis):
                 dt = MapUIntUInt()
                 for k, v in b.items():
                     dt[k.to_flat()] = v
                 self.basis[i] = dt
+            self.basis = VectorMapUIntUInt(self.basis)
             self.FT = FlatFermionTensor
         else:
             self.FT = FermionTensor
         self.flat = flat
 
+    def build_mps(self, bond_dim, target=None, occ=None, bias=1):
+        if target is None:
+            target = self.target
+        mps_info = MPSInfo(self.n_sites, self.vacuum, target, self.basis)
+        if occ is None:
+            mps_info.set_bond_dimension(bond_dim)
+        else:
+            assert len(occ) == len(self.basis)
+            mps_info.set_bond_dimension_occ(bond_dim, occ, bias)
+        return MPS.random(mps_info)
+
+    def build_identity_mpo(self):
+        from .symbolic.symbolic_mpo import IdentityMPO
+        impo = IdentityMPO(self).to_sparse()
+        if self.flat:
+            impo = impo.to_flat()
+        return impo
+
+    def build_site_mpo(self, op, k=-1):
+        from .symbolic.symbolic_mpo import SiteMPO
+        impo = SiteMPO(self, op, k=k).to_sparse()
+        if self.flat:
+            impo = impo.to_flat()
+        return impo
+
+    def build_qc_mpo(self):
+        if self.flat:
+            from block3 import hamiltonian as hm
+            from .algebra.flat import FlatFermionTensor, FlatSparseTensor
+            ts = hm.build_qc_mpo(self.fcidump.orb_sym,
+                                 self.fcidump.h1e, self.fcidump.g2e)
+            tensors = [None] * self.n_sites
+            for i in range(0, self.n_sites):
+                tensors[i] = FlatFermionTensor(
+                    odd=FlatSparseTensor(*ts[i * 2 + 0]),
+                    even=FlatSparseTensor(*ts[i * 2 + 1]))
+            return MPS(tensors=tensors, const=self.fcidump.const_e)
+        else:
+            from .symbolic.symbolic_mpo import QCSymbolicMPO
+            return QCSymbolicMPO(self).to_sparse()
+
     def build_mpo(self, gen, cutoff=1E-12, max_bond_dim=-1):
 
-        if self.flat:
-            assert isinstance(gen, tuple)
+        if self.flat and isinstance(gen, tuple):
             from block3 import hamiltonian as hm
             from .algebra.flat import FlatFermionTensor, FlatSparseTensor
             orb_sym = np.array(self.orb_sym, dtype=int)
@@ -90,6 +131,10 @@ class QCHamiltonian:
             for ii, (x, t) in enumerate(zip(*gen)):
                 terms[ii] = OpString(
                     [[c_op, d_op][i // OP][(i % OP) // SITE, (i % SITE) // SPIN] for i in t if i != -1], x)
+        elif isinstance(gen, OpSum):
+            terms = gen.strings
+        elif isinstance(gen, OpString):
+            terms = [gen]
         else:
             terms = list(gen(self.n_sites, c_op, d_op))
         h_expr = OpSum(terms)
@@ -112,7 +157,10 @@ class QCHamiltonian:
         for i in range(0, self.n_sites):
             tensors[i].ops = self.get_site_ops(
                 i, tensors[i].ops.items(), cutoff=cutoff)
-        return MPS(tensors=tensors, const=self.fcidump.const_e)
+        mpo = MPS(tensors=tensors, const=self.fcidump.const_e)
+        if self.flat:
+            mpo = mpo.to_sparse().to_flat()
+        return mpo
 
     def get_site_ops(self, m, op_names, cutoff=1E-20):
         """Get dict for matrix representation of site operators in mat
@@ -191,23 +239,23 @@ class QCHamiltonian:
             elif op.name == OpNames.R:
                 i, s = op.site_index
                 if self.orb_sym[i] != self.orb_sym[m] or (
-                    abs(t(s, i, m)) < cutoff and abs(v(s, 0, i, m, m, m)) < cutoff
-                        and abs(v(s, 1, i, m, m, m)) < cutoff):
+                    abs(t(s, i, m)) < cutoff and abs(v(s, 0, i, m, m, m)) < cutoff and
+                        abs(v(s, 1, i, m, m, m)) < cutoff):
                     return 0
                 else:
                     return (0.5 * t(s, i, m)) * d_operator(s) + \
-                        (v(s, 0, i, m, m, m) * b_operator(0, 0) +
-                         v(s, 1, i, m, m, m) * b_operator(1, 1)) @ d_operator(s)
+                        (v(s, 0, i, m, m, m) * b_operator(0, 0)
+                         + v(s, 1, i, m, m, m) * b_operator(1, 1)) @ d_operator(s)
             elif op.name == OpNames.RD:
                 i, s = op.site_index
                 if self.orb_sym[i] != self.orb_sym[m] or (
-                    abs(t(s, i, m)) < cutoff and abs(v(s, 0, i, m, m, m)) < cutoff
-                        and abs(v(s, 1, i, m, m, m)) < cutoff):
+                    abs(t(s, i, m)) < cutoff and abs(v(s, 0, i, m, m, m)) < cutoff and
+                        abs(v(s, 1, i, m, m, m)) < cutoff):
                     return 0
                 else:
                     return (0.5 * t(s, i, m)) * c_operator(s) + \
-                        c_operator(s) @ (v(s, 0, i, m, m, m) * b_operator(0, 0) +
-                                         v(s, 1, i, m, m, m) * b_operator(1, 1))
+                        c_operator(s) @ (v(s, 0, i, m, m, m) * b_operator(0, 0)
+                                         + v(s, 1, i, m, m, m) * b_operator(1, 1))
             elif op.name == OpNames.P:
                 i, k, si, sk = op.site_index
                 if abs(v(si, sk, i, m, k, m)) < cutoff:
@@ -228,8 +276,8 @@ class QCHamiltonian:
                         return 0
                     else:
                         return (-v(si, sj, i, m, m, j)) * b_operator(sj, si) \
-                            + (b_operator(0, 0) * v(si, 0, i, j, m, m) +
-                               b_operator(1, 1) * v(si, 1, i, j, m, m))
+                            + (b_operator(0, 0) * v(si, 0, i, j, m, m)
+                               + b_operator(1, 1) * v(si, 1, i, j, m, m))
                 else:
                     if abs(v(si, sj, i, m, m, j)) < cutoff:
                         return 0

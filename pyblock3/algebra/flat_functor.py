@@ -4,31 +4,65 @@ from .flat import FlatSparseTensor, ENABLE_FAST_IMPLS
 from .symmetry import SZ
 from .mps import MPS
 
-def flat_sparse_matmul_init(spt, pattern, dq):
+
+def flat_sparse_matmul_init(spt, pattern, dq, symmetric):
     tl, tr = [ts.infos for ts in spt.tensors]
     dl, dr = [(len(tl) - 2) // 2, (len(tr) - 2) // 2]
-    vinfos = [tl[0], *[tl[i + 1] | tl[i + 1 + dl] for i in range(dl)], *[tr[i + 1] | tr[i + 1 + dr] for i in range(dr)], tr[-1]]
+    cinfos = [tl[0], *tl[1 + dl:1 + dl + dl], *tr[1 + dr:1 + dr + dr], tr[-1]]
+    vinfos = [tl[0], *tl[1:1 + dl], *tr[1:1 + dr], tr[-1]]
     winfos = [tl[-1] | tr[0], *tr[1: 1 + dr], *tl[1 + dl: 1 + dl + dl]]
-    vmat = FlatSparseTensor.zeros(vinfos, pattern, dq)
-    work = FlatSparseTensor.zeros(winfos, '+' + pattern[1 + dl:1 + dl + dr] + pattern[1:1 + dl], dq)
-    return dl, dr, vmat, work
+    if symmetric:
+        vinfos = [x | y for x, y in zip(cinfos, vinfos)]
+        vmat = FlatSparseTensor.zeros(vinfos, pattern, dq)
+        cmat = vmat
+    else:
+        cmat = FlatSparseTensor.zeros(cinfos, pattern, dq)
+        vmat = FlatSparseTensor.zeros(vinfos, pattern, dq)
+    work = FlatSparseTensor.zeros(
+        winfos, '+' + pattern[1 + dl:1 + dl + dr] + pattern[1:1 + dl], dq)
+    return dl, dr, cmat, vmat, work
+
 
 if ENABLE_FAST_IMPLS:
     import block3.flat_sparse_tensor
-    def flat_sparse_matmul_init_impl(spt, pattern, dq):
+
+    def flat_sparse_matmul_init_impl(spt, pattern, dq, symmetric):
         fdq = dq.to_flat() if dq is not None else SZ(0, 0, 0).to_flat()
         l, r = spt.tensors
         lo, le = l.odd, l.even
         ro, re = r.odd, r.even
-        dl, dr, vinfos, winfos = block3.flat_sparse_tensor.matmul_init(
+        dl, dr, cinfos, vinfos = block3.flat_sparse_tensor.matmul_init(
             lo.q_labels, lo.shapes, le.q_labels, le.shapes, ro.q_labels,
             ro.shapes, re.q_labels, re.shapes)
-        vdqs, vshs, vidxs = block3.flat_sparse_tensor.skeleton(vinfos, pattern, fdq)
-        wpattern = '+' + pattern[1 + dl:1 + dl + dr] + pattern[1:1 + dl]
-        wdqs, wshs, widxs = block3.flat_sparse_tensor.skeleton(winfos, wpattern, fdq)
+        if symmetric:
+            vinfos = vinfos.__class__([x | y for x, y in zip(cinfos, vinfos)])
+            vdqs, vshs, vidxs = block3.flat_sparse_tensor.skeleton(
+                vinfos, pattern, fdq)
+            cdqs, cshs, cidxs = vdqs, vshs, vidxs
+        else:
+            cdqs, cshs, cidxs = block3.flat_sparse_tensor.skeleton(
+                cinfos, pattern, fdq)
+            vdqs, vshs, vidxs = block3.flat_sparse_tensor.skeleton(
+                vinfos, pattern, fdq)
+        axru = np.arange(1 + dr, 1 + dr + dr, dtype=np.int32)
+        axrd = np.arange(dl, dl + dr, dtype=np.int32)
+        if ro.n_blocks != 0 and re.n_blocks != 0:
+            qxr = np.concatenate(
+                [ro.q_labels[:, :-1], re.q_labels[:, :-1]], axis=0)
+            sxr = np.concatenate(
+                [ro.shapes[:, :-1], re.shapes[:, :-1]], axis=0)
+        elif ro.n_blocks == 0:
+            qxr, sxr = re.q_labels[:, :-1], re.shapes[:, :-1]
+        else:
+            qxr, sxr = ro.q_labels[:, :-1], ro.shapes[:, :-1]
+        wdqs, wshs, widxs = block3.flat_sparse_tensor.tensordot_skeleton(
+            qxr, sxr, cdqs[:, 1:-1], cshs[:, 1:-1], axru, axrd)
         vdata = np.zeros((vidxs[-1], ), dtype=float)
+        cdata = vdata if symmetric else np.zeros((cidxs[-1], ), dtype=float)
         wdata = np.zeros((widxs[-1], ), dtype=float)
-        return dl, dr, FlatSparseTensor(vdqs, vshs, vdata, vidxs), FlatSparseTensor(wdqs, wshs, wdata, widxs)
+        return dl, dr, FlatSparseTensor(cdqs, cshs, cdata, cidxs), \
+            FlatSparseTensor(vdqs, vshs, vdata, vidxs), FlatSparseTensor(
+                wdqs, wshs, wdata, widxs)
     flat_sparse_matmul_init = flat_sparse_matmul_init_impl
     flat_sparse_matmul_plan = block3.flat_sparse_tensor.matmul_plan
     flat_sparse_matmul = block3.flat_sparse_tensor.matmul
@@ -37,20 +71,25 @@ if ENABLE_FAST_IMPLS:
 
 
 class FlatSparseFunctor:
-    def __init__(self, spt, pattern, dq=None):
+    def __init__(self, spt, pattern, dq=None, symmetric=True):
         assert ENABLE_FAST_IMPLS
         assert isinstance(spt, MPS)
         self.op = spt
-        dl, dr, self.vmat, self.work = flat_sparse_matmul_init(self.op, pattern, dq)
+        dl, dr, self.cmat, self.vmat, self.work = flat_sparse_matmul_init(
+            self.op, pattern, dq, symmetric)
         self.axtr = np.array(
             (*range(dr + 1, dr + dl + 1), 0, *range(1, dr + 1)), dtype=np.int32)
-        self.work2 = FlatSparseTensor(self.work.q_labels[:, self.axtr], self.work.shapes[:, self.axtr], np.zeros_like(self.work.data), self.work.idxs)
-        self.dmat = self._prepare_diag(dl, dr)
-        if self.op.const != 0:
-            self.dmat += self.op.const
+        self.work2 = FlatSparseTensor(
+            self.work.q_labels[:, self.axtr], self.work.shapes[:, self.axtr], np.zeros_like(self.work.data), self.work.idxs)
+        self.dmat = None
+        self.dlr = dl, dr
         self.plan = self._matmul_plan(dl, dr)
 
     def diag(self):
+        if self.dmat is None:
+            self.dmat = self._prepare_diag(*self.dlr)
+            if self.op.const != 0:
+                self.dmat += self.op.const
         return self.dmat
 
     def _prepare_diag(self, dl, dr):
@@ -60,8 +99,10 @@ class FlatSparseFunctor:
         axld = np.arange(1 + dl, 1 + dl + dl, dtype=np.int32)
         axru = np.arange(1, 1 + dr, dtype=np.int32)
         axrd = np.arange(1 + dr, 1 + dr + dr, dtype=np.int32)
-        led = FlatSparseTensor(*flat_sparse_diag(le.q_labels, le.shapes, le.data, le.idxs, axlu, axld))
-        red = FlatSparseTensor(*flat_sparse_diag(re.q_labels, re.shapes, re.data, re.idxs, axru, axrd))
+        led = FlatSparseTensor(
+            *flat_sparse_diag(le.q_labels, le.shapes, le.data, le.idxs, axlu, axld))
+        red = FlatSparseTensor(
+            *flat_sparse_diag(re.q_labels, re.shapes, re.data, re.idxs, axru, axrd))
         diag = np.tensordot(led, red, axes=1)
         return FlatSparseTensor.zeros_like(self.vmat).cast_assign(diag).data
 
@@ -71,18 +112,19 @@ class FlatSparseFunctor:
         axlu = np.arange(dl, dl + dl + 1, dtype=np.int32)
         axld = np.arange(0, dl + 1, dtype=np.int32)
         l, r = self.op.tensors
-        v, w, w2 = self.vmat, self.work, self.work2
+        c, v, w, w2 = self.cmat, self.vmat, self.work, self.work2
         vqs, vshs = v.q_labels[:, 1:-1], v.shapes[:, 1:-1]
+        cqs, cshs = c.q_labels[:, 1:-1], c.shapes[:, 1:-1]
         lo, le = l.odd, l.even
         ro, re = r.odd, r.even
         if ro.n_blocks != 0:
             plan_ro = flat_sparse_matmul_plan(
-                ro.q_labels[:, :-1], ro.shapes[:, :-1], ro.idxs, vqs, vshs, v.idxs, axru, axrd, w.q_labels, w.idxs, True)
+                ro.q_labels[:, :-1], ro.shapes[:, :-1], ro.idxs, cqs, cshs, c.idxs, axru, axrd, w.q_labels, w.idxs, True)
         else:
             plan_ro = np.zeros((0, 9), dtype=np.int32)
         if re.n_blocks != 0:
             plan_re = flat_sparse_matmul_plan(
-                re.q_labels[:, :-1], re.shapes[:, :-1], re.idxs, vqs, vshs, v.idxs, axru, axrd, w.q_labels, w.idxs, False)
+                re.q_labels[:, :-1], re.shapes[:, :-1], re.idxs, cqs, cshs, c.idxs, axru, axrd, w.q_labels, w.idxs, False)
         else:
             plan_re = np.zeros((0, 9), dtype=np.int32)
         if lo.n_blocks != 0:
@@ -99,7 +141,7 @@ class FlatSparseFunctor:
 
     def __matmul__(self, other):
         assert other.dtype == np.float64
-        assert other.size == self.vmat.idxs[-1]
+        assert other.size == self.cmat.idxs[-1]
         l, r = self.op.tensors
         pro, pre, plo, ple = self.plan
         self.work.data[:] = 0
@@ -117,8 +159,33 @@ class FlatSparseFunctor:
 
     def prepare_vector(self, spt):
         self.ket = spt
-        return FlatSparseTensor.zeros_like(self.vmat).cast_assign(spt).data
+        return FlatSparseTensor.zeros_like(self.cmat).cast_assign(spt).data
 
     def finalize_vector(self, data):
         self.vmat.data = data
-        return self.vmat
+        return self.vmat.copy()
+
+
+class GreensFunctionFunctor(FlatSparseFunctor):
+    def __init__(self, spt, pattern, omega, eta, dq=None, symmetric=True):
+        super().__init__(spt, pattern, dq=dq, symmetric=symmetric)
+        self.omega = omega
+        self.eta = eta
+
+    def __matmul__(self, other):
+        btmp = super().__matmul__(other)
+        if self.omega != 0:
+            btmp += self.omega * other
+        c = super().__matmul__(btmp)
+        if self.omega != 0:
+            c += self.omega * btmp
+        if self.eta != 0:
+            c += (self.eta * self.eta) * other
+        return c
+    
+    def real_part(self, other):
+        r = super().__matmul__(other)
+        if self.omega != 0:
+            r += self.omega * other
+        r /= -self.eta
+        return r

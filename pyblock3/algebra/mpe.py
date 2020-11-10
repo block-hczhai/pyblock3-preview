@@ -2,7 +2,10 @@
 import numpy as np
 import time
 from functools import reduce
-from .linalg import davidson
+from .linalg import davidson, conjugate_gradient
+from ..algorithms.dmrg import DMRG
+from ..algorithms.linear import Linear
+from ..algorithms.green import GreensFunction
 
 
 def implements(np_func):
@@ -50,8 +53,7 @@ class MPE:
         qbr, qkr, qmr = self.bra[-1].infos[-1], self.ket[-1].infos[-1], self.mpo[-1].infos[-1]
         l_mpo_id = self.mpo[0].ones(
             bond_infos=(qml, qbl, qkl, qml), pattern="++--")
-        r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr,
-                                                 qbr, qkr, qmr), pattern="++--")
+        r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr, qbr, qkr, qmr), pattern="++--", dq=self.mpo.dq)
         l_bra_id = self.bra[0].ones(bond_infos=(qbl, ))
         r_bra_id = self.bra[-1].ones(bond_infos=(qbl, ))
         l_ket_id = self.ket[0].ones(bond_infos=(qkl, ))
@@ -226,7 +228,7 @@ class MPE:
         return np.dot(self.bra, self.mpo @ self.ket)
 
     @staticmethod
-    def _gs_optimize(x, iprint=False, fast=False):
+    def _eigs(x, iprint=False, fast=False, conv_thrd=1E-7):
         """Return ground-state energy and ground-state effective MPE."""
         if fast and x.ket.n_sites == 1 and x.mpo.n_sites == 2:
             from .flat_functor import FlatSparseFunctor
@@ -237,12 +239,50 @@ class MPE:
             v = [x.ket.__class__(
                 tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
         else:
-            w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint)
+            w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint, conv_thrd=conv_thrd)
         return w[0], MPE(bra=v[0], mpo=x.mpo, ket=v[0], do_canon=x.do_canon, idents=x.idents), ndav
 
-    def gs_optimize(self, iprint=False, fast=False):
+    def eigs(self, iprint=False, fast=False, conv_thrd=1E-7):
         """Return ground-state energy and ground-state effective MPE."""
-        return self._gs_optimize(self, iprint=iprint, fast=fast)
+        return self._eigs(self, iprint=iprint, fast=fast, conv_thrd=conv_thrd)
+    
+    def multiply(self, fast=False):
+        if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
+            from .flat_functor import FlatSparseFunctor
+            pattern = '++' + '+' * (self.ket[0].ndim - 4) + '-+'
+            fst = FlatSparseFunctor(self.mpo, pattern=pattern, symmetric=False)
+            v = fst.finalize_vector(fst @ fst.prepare_vector(self.ket[0]))
+            v = self.ket.__class__(tensors=[v], opts=self.ket.opts)
+        else:
+            v = self.mpo @ self.ket
+        w = np.linalg.norm(v)
+        return w, MPE(bra=v, mpo=self.mpo, ket=self.ket, do_canon=self.do_canon, idents=self.idents), 1
+    
+    def solve_gf(self, ket, omega, eta, iprint=False, fast=False, conv_thrd=1E-7):
+        if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
+            from .flat_functor import GreensFunctionFunctor
+            pattern = '++' + '+' * (self.ket[0].ndim - 4) + '-+'
+            fst = GreensFunctionFunctor(self.mpo, pattern=pattern, omega=omega, eta=eta)
+            b = (-eta) * fst.prepare_vector(ket)
+            x = fst.prepare_vector(self.ket[0])
+            iw, x, ncg = conjugate_gradient(fst, x, b, iprint=iprint, conv_thrd=conv_thrd)
+            r = fst.real_part(x)
+            rw = np.dot(r, b) / (-eta)
+            iw /= -eta
+            x = self.ket.__class__(tensors=[fst.finalize_vector(x)], opts=self.ket.opts)
+            r = self.ket.__class__(tensors=[fst.finalize_vector(r)], opts=self.ket.opts)
+        else:
+            assert False
+        return (rw, iw), MPE(bra=r, mpo=self.mpo, ket=x, do_canon=self.do_canon, idents=self.idents), ncg
+
+    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
+        return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
+
+    def linear(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
+        return Linear(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
+
+    def greens_function(self, mpo, omega, eta, bdims, noises=None, cg_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
+        return GreensFunction(self, mpo, omega, eta, bdims, noises, cg_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
 
     @property
     def n_sites(self):

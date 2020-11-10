@@ -104,17 +104,16 @@ flat_sparse_tensor_tensordot(
             outb[j++] = i;
 
     // permutation
-    int perma[ndima + n_blocks_a + 1], permb[ndimb + n_blocks_b + 1];
-    int *piatr = perma + ndima, *pibtr = permb + ndimb;
+    vector<int> perma(ndima + n_blocks_a + 1, -1);
+    vector<int> permb(ndimb + n_blocks_b + 1, -1);
+    int *piatr = perma.data() + ndima, *pibtr = permb.data() + ndimb;
     if (trans_a == 0) {
-        memset(perma, -1, sizeof(int) * (ndima + n_blocks_a + 1));
         for (int i = 0; i < nctr; i++)
             perma[i] = pidxa[i];
         for (int i = nctr; i < ndima; i++)
             perma[i] = outa[i - nctr];
     }
     if (trans_b == 0) {
-        memset(permb, -1, sizeof(int) * (ndimb + n_blocks_b + 1));
         for (int i = 0; i < nctr; i++)
             permb[i] = pidxb[i];
         for (int i = nctr; i < ndimb; i++)
@@ -122,11 +121,12 @@ flat_sparse_tensor_tensordot(
     }
 
     // free and contracted dims
-    int a_free_dim[n_blocks_a], b_free_dim[n_blocks_b], ctr_dim[n_blocks_a];
-    int a_free_dims[n_blocks_a][ndima - nctr],
-        b_free_dims[n_blocks_b][ndimb - nctr];
+    vector<int> a_free_dim(n_blocks_a), b_free_dim(n_blocks_b),
+        ctr_dim(n_blocks_a);
+    vector<vector<int>> a_free_dims(n_blocks_a), b_free_dims(n_blocks_b);
     const uint32_t *psh = ashs.data();
     for (int i = 0; i < n_blocks_a; i++) {
+        a_free_dims[i].resize(ndima - nctr);
         a_free_dim[i] = ctr_dim[i] = 1;
         for (int j = 0; j < nctr; j++)
             ctr_dim[i] *= psh[i * asi + pidxa[j] * asj];
@@ -135,14 +135,15 @@ flat_sparse_tensor_tensordot(
     }
     psh = bshs.data();
     for (int i = 0; i < n_blocks_b; i++) {
+        b_free_dims[i].resize(ndimb - nctr);
         b_free_dim[i] = 1;
         for (int j = 0; j < ndimb - nctr; j++)
             b_free_dim[i] *= (b_free_dims[i][j] = psh[i * bsi + outb[j] * bsj]);
     }
 
     // contracted q_label hashs
-    size_t ctrqas[n_blocks_a], ctrqbs[n_blocks_b], outqas[n_blocks_a],
-        outqbs[n_blocks_b];
+    vector<size_t> ctrqas(n_blocks_a), ctrqbs(n_blocks_b), outqas(n_blocks_a),
+        outqbs(n_blocks_b);
     psh = aqs.data();
     for (int i = 0; i < n_blocks_a; i++) {
         ctrqas[i] = q_labels_hash(psh + i * asi, nctr, pidxa, asj);
@@ -172,6 +173,16 @@ flat_sparse_tensor_tensordot(
             for (int i = 0; i < ndima - nctr; i++)
                 q_out[i] = psh[outa[i] * asj];
             for (int ib : vb) {
+                // check hashing conflicits
+                bool same = true;
+                for (int ict = 0; ict < nctr; ict++)
+                    if (*aqs.data(ia, pidxa[ict]) !=
+                        *bqs.data(ib, pidxb[ict])) {
+                        same = false;
+                        break;
+                    }
+                if (!same)
+                    continue;
                 pibtr[ib] = 0;
                 size_t hout = outqas[ia];
                 hout ^= outqbs[ib] + 0x9E3779B9 + (hout << 6) + (hout >> 2);
@@ -208,7 +219,7 @@ flat_sparse_tensor_tensordot(
     py::array_t<double> cdata(vector<ssize_t>{csize});
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data(),
              *pcidxs = cidxs.mutable_data();
-    uint32_t psha[n_blocks_a * ndima], pshb[n_blocks_b * ndimb];
+    vector<uint32_t> psha(n_blocks_a * ndima), pshb(n_blocks_b * ndimb);
     for (int i = 0; i < n_blocks_a; i++)
         for (int j = 0; j < ndima; j++)
             psha[i * ndima + j] = ashs.data()[i * asi + j * asj];
@@ -221,8 +232,9 @@ flat_sparse_tensor_tensordot(
         for (auto &mmq : mq.second) {
             int xia = mmq.second[0].first, xib = mmq.second[0].second;
             memcpy(pcqs, mmq.first.data(), ndimc * sizeof(uint32_t));
-            memcpy(pcshs, a_free_dims[xia], (ndima - nctr) * sizeof(uint32_t));
-            memcpy(pcshs + (ndima - nctr), b_free_dims[xib],
+            memcpy(pcshs, a_free_dims[xia].data(),
+                   (ndima - nctr) * sizeof(uint32_t));
+            memcpy(pcshs + (ndima - nctr), b_free_dims[xib].data(),
                    (ndimb - nctr) * sizeof(uint32_t));
             pcidxs[1] = pcidxs[0] + (uint32_t)a_free_dim[xia] * b_free_dim[xib];
             pcqs += ndimc;
@@ -244,10 +256,10 @@ flat_sparse_tensor_tensordot(
         for (int ia = 0; ia < n_blocks_a; ia++)
             if (piatr[ia] != -1) {
                 double *a = pa + pia[ia], *new_a = new_pa + new_pia[ia];
-                const int *shape_a = (const int *)(psha + ia * ndima);
+                const int *shape_a = (const int *)(psha.data() + ia * ndima);
                 uint32_t size_a = pia[ia + 1] - pia[ia];
-                tensor_transpose_impl(ndima, size_a, perma, shape_a, a, new_a,
-                                      1.0, 0.0);
+                tensor_transpose_impl(ndima, size_a, perma.data(), shape_a, a,
+                                      new_a, 1.0, 0.0);
             }
         trans_a = 1;
         pa = new_pa;
@@ -264,10 +276,10 @@ flat_sparse_tensor_tensordot(
         for (int ib = 0; ib < n_blocks_b; ib++)
             if (pibtr[ib] != -1) {
                 double *b = pb + pib[ib], *new_b = new_pb + new_pib[ib];
-                const int *shape_b = (const int *)(pshb + ib * ndimb);
+                const int *shape_b = (const int *)(pshb.data() + ib * ndimb);
                 uint32_t size_b = pib[ib + 1] - pib[ib];
-                tensor_transpose_impl(ndimb, size_b, permb, shape_b, b, new_b,
-                                      1.0, 0.0);
+                tensor_transpose_impl(ndimb, size_b, permb.data(), shape_b, b,
+                                      new_b, 1.0, 0.0);
             }
         trans_b = 1;
         pb = new_pb;
@@ -311,7 +323,7 @@ inline void add_blocks(const int n_blocks_a, const int n_blocks_b,
                        unordered_map<size_t, vector<int>> &map_idx, int *iab_mp,
                        int &n_blocks_c, ssize_t &csize) {
     // q_label hashs
-    size_t hqas[n_blocks_a], hqbs[n_blocks_b];
+    vector<size_t> hqas(n_blocks_a), hqbs(n_blocks_b);
     vector<uint32_t> qs(ndim * (n_blocks_a + n_blocks_b));
     for (int i = 0; i < n_blocks_a; i++) {
         uint32_t *pq = qs.data() + i * ndim;
@@ -379,12 +391,12 @@ flat_sparse_tensor_add(
 
     unordered_map<size_t, vector<int>> map_idx;
     const uint32_t *pia = aidxs.data(), *pib = bidxs.data();
-    int iab_mp[n_blocks_a + n_blocks_b];
+    vector<int> iab_mp(n_blocks_a + n_blocks_b);
     ssize_t csize = 0;
     int n_blocks_c = 0;
 
     add_blocks(n_blocks_a, n_blocks_b, ndima, aqs.data(), bqs.data(), pia, pib,
-               asi, asj, bsi, bsj, map_idx, iab_mp, n_blocks_c, csize);
+               asi, asj, bsi, bsj, map_idx, iab_mp.data(), n_blocks_c, csize);
 
     vector<ssize_t> sh = {n_blocks_c, ndima};
     py::array_t<uint32_t> cqs(sh), cshs(sh),
@@ -395,7 +407,7 @@ flat_sparse_tensor_add(
              *pcidxs = cidxs.mutable_data();
     int ic = 0;
     pcidxs[0] = 0;
-    int pic[n_blocks_a + n_blocks_b];
+    vector<int> pic(n_blocks_a + n_blocks_b);
     for (auto &p : map_idx) {
         for (int iab : p.second) {
             pic[iab] = ic;
@@ -469,12 +481,12 @@ flat_sparse_tensor_kron_add(
 
     unordered_map<size_t, vector<int>> map_idx;
     const uint32_t *pia = aidxs.data(), *pib = bidxs.data();
-    int iab_mp[n_blocks_a + n_blocks_b];
+    vector<int> iab_mp(n_blocks_a + n_blocks_b);
     ssize_t csize = 0;
     int n_blocks_c = 0;
 
     add_blocks(n_blocks_a, n_blocks_b, ndima, aqs.data(), bqs.data(), pia, pib,
-               asi, asj, bsi, bsj, map_idx, iab_mp, n_blocks_c, csize);
+               asi, asj, bsi, bsj, map_idx, iab_mp.data(), n_blocks_c, csize);
 
     vector<ssize_t> sh = {n_blocks_c, ndima};
     py::array_t<uint32_t> cqs(sh), cshs(sh),
@@ -485,8 +497,8 @@ flat_sparse_tensor_kron_add(
              *pcidxs = cidxs.mutable_data();
     int ic = 0;
     pcidxs[0] = 0;
-    int pic[n_blocks_a + n_blocks_b];
-    uint32_t dimlc[n_blocks_c], dimla[n_blocks_a], dimlb[n_blocks_b];
+    vector<int> pic(n_blocks_a + n_blocks_b);
+    vector<uint32_t> dimlc(n_blocks_c), dimla(n_blocks_a), dimlb(n_blocks_b);
     for (int i = 0; i < n_blocks_a; i++) {
         dimla[i] = 1;
         for (int j = 0; j < ndima - 1; j++)
@@ -575,7 +587,7 @@ flat_sparse_tensor_fuse(const py::array_t<uint32_t> &aqs,
     for (int ia = 0; ia < n_blocks_a; ia++) {
         // unfused size
         int nk = 1;
-        SZLong xq = SZLong(0);
+        SZ xq;
         ufqs[ia].resize(nctr);
         for (int j = 0; j < nctr; j++) {
             nk *= pshs[ia * asi + pi[j] * asj];
@@ -673,15 +685,14 @@ map_fusing flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
     const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
                   asj = aqs.strides()[1] / sizeof(uint32_t);
     assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
-    vector<SZLong> qs(ndima);
+    vector<SZ> qs(ndima);
     vector<uint32_t> shs(ndima);
     const uint32_t *pshs = ashs.data(), *pqs = aqs.data();
-    unordered_map<
-        uint32_t,
-        vector<pair<vector<SZLong>, pair<uint32_t, vector<uint32_t>>>>>
+    unordered_map<uint32_t,
+                  vector<pair<vector<SZ>, pair<uint32_t, vector<uint32_t>>>>>
         xr;
     for (int i = 0; i < n_blocks_a; i++) {
-        SZLong xq = SZLong(0);
+        SZ xq;
         for (int j = 0; j < ndima; j++) {
             qs[j] = to_sz(pqs[i * asi + j * asj]);
             shs[j] = pshs[i * asi + j * asj];
@@ -724,13 +735,13 @@ flat_sparse_tensor_skeleton(
         nx *= infos[i].size();
     vector<uint32_t> qs, shs;
     vector<uint32_t> idxs(1, 0);
-    vector<vector<pair<SZLong, uint32_t>>> infox;
+    vector<vector<pair<SZ, uint32_t>>> infox;
     bond_info_trans_to_sz(infos, pattern, infox, true);
-    SZLong dq = to_sz(fdq);
+    SZ dq = to_sz(fdq);
     vector<uint32_t> qk(ndim), shk(ndim);
     for (size_t x = 0; x < nx; x++) {
         size_t xp = x;
-        SZLong xq = SZLong(0);
+        SZ xq;
         for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--)
             xq = xq + infox[i][xp % infox[i].size()].first;
         if (xq == dq) {
@@ -1187,7 +1198,7 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
     unordered_map<uint32_t, vector<int>> mat_idxl, mat_idxr;
     int max_lshape = 0, max_rshape = 0, max_tmpl_shape = 0, max_tmpr_shape = 0;
     for (int ia = 0; ia < n_blocks_a; ia++) {
-        SZLong xql = SZLong(0), xqr = SZLong(0);
+        SZ xql, xqr;
         ufqsl[ia].resize(idx);
         ufqsr[ia].resize(ndima - idx);
         for (int j = 0; j < idx; j++) {
@@ -1359,7 +1370,8 @@ flat_sparse_truncate_svd(
     const py::array_t<double> &sdata, const py::array_t<uint32_t> &sidxs,
     const py::array_t<uint32_t> &rqs, const py::array_t<uint32_t> &rshs,
     const py::array_t<double> &rdata, const py::array_t<uint32_t> &ridxs,
-    int max_bond_dim, double cutoff, double max_dw, double norm_cutoff) {
+    int max_bond_dim, double cutoff, double max_dw, double norm_cutoff,
+    bool eigen_values) {
     if (sqs.shape()[0] == 0)
         return std::make_tuple(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
                                sqs, sshs, sdata, sidxs, 0.0);
@@ -1397,7 +1409,9 @@ flat_sparse_truncate_svd(
     if (max_dw != 0) {
         int p = 0;
         for (int i = (int)ss_trunc.size(); i > 0; i--) {
-            double dw = get<2>(ss_trunc[i]) * get<2>(ss_trunc[i]);
+            double dw = eigen_values
+                            ? get<2>(ss_trunc[i])
+                            : get<2>(ss_trunc[i]) * get<2>(ss_trunc[i]);
             if (dw <= max_dw)
                 p++;
             else
@@ -1406,6 +1420,8 @@ flat_sparse_truncate_svd(
         ss_trunc.resize(ss_trunc.size() - p);
     }
     if (cutoff != 0) {
+        if (!eigen_values)
+            cutoff = sqrt(cutoff);
         for (int i = 1; i < (int)ss_trunc.size(); i++)
             if (get<2>(ss_trunc[i]) < cutoff) {
                 ss_trunc.resize(i);
@@ -1430,13 +1446,11 @@ flat_sparse_truncate_svd(
 
     int n_blocks_l_new = 0, n_blocks_r_new = 0,
         n_blocks_s_new = (int)selected.size();
-    int nbl[n_blocks_s], nbr[n_blocks_s], skbl[n_blocks_s], skbr[n_blocks_s];
+    vector<int> nbl(n_blocks_s, 0), nbr(n_blocks_s, 0), skbl(n_blocks_s),
+        skbr(n_blocks_s);
     int ikl = 0, ikr = 0, iks = 0;
     int size_l_new = 0, size_r_new = 0, size_s_new = 0;
-    int mask[pis[n_blocks_s]];
-    memset(mask, 0, sizeof(int) * pis[n_blocks_s]);
-    memset(nbl, 0, sizeof(int) * n_blocks_s);
-    memset(nbr, 0, sizeof(int) * n_blocks_s);
+    vector<int> mask(pis[n_blocks_s], 0);
     for (int i = 0; i < n_blocks_s; i++) {
         uint32_t sql = psqs[i * ssi + 0 * ssj];
         uint32_t sqr = psqs[i * ssi + (ndims - 1) * ssj];
@@ -1477,7 +1491,7 @@ flat_sparse_truncate_svd(
     double error = 0;
     for (int j = 0; j < (int)pis[n_blocks_s]; j++)
         if (!mask[j])
-            error += ps[j] * ps[j];
+            error += eigen_values ? ps[j] : ps[j] * ps[j];
 
     py::array_t<uint32_t> nlqs(vector<ssize_t>{n_blocks_l_new, ndiml}),
         nlshs(vector<ssize_t>{n_blocks_l_new, ndiml});
@@ -1546,5 +1560,5 @@ flat_sparse_truncate_svd(
     }
 
     return std::make_tuple(nlqs, nlshs, nldata, nlidxs, nsqs, nsshs, nsdata,
-                           nsidxs, nrqs, nrshs, nrdata, nridxs, sqrt(error));
+                           nsidxs, nrqs, nrshs, nrdata, nridxs, error);
 }

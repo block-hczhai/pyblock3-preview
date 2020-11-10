@@ -23,11 +23,11 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
     double *pc = cdata.mutable_data();
 
     const uint32_t *apqs = aqs.data();
-    int phase_a[n_blocks_a];
+    vector<int> phase_a(n_blocks_a);
     for (int ia = 0; ia < n_blocks_a; ia++) {
         int pnuma[ndima];
         for (int j=0; j<ndima; j++) {
-            pnuma[j] = to_sz_short(apqs[ia * asi + j * asj]).n();
+            pnuma[j] = to_sz(apqs[ia * asi + j * asj]).n();
         }
         int aparity_counter = 0;
         list<int> acounted;
@@ -132,17 +132,16 @@ flat_fermion_tensor_tensordot(
             outb[j++] = i;
 
     // permutation
-    int perma[ndima + n_blocks_a + 1], permb[ndimb + n_blocks_b + 1];
-    int *piatr = perma + ndima, *pibtr = permb + ndimb;
+    vector<int> perma(ndima + n_blocks_a + 1, -1);
+    vector<int> permb(ndimb + n_blocks_b + 1, -1);
+    int *piatr = perma.data() + ndima, *pibtr = permb.data() + ndimb;
     if (trans_a == 0) {
-        memset(perma, -1, sizeof(int) * (ndima + n_blocks_a + 1));
         for (int i = 0; i < nctr; i++)
             perma[i] = pidxa[i];
         for (int i = nctr; i < ndima; i++)
             perma[i] = outa[i - nctr];
     }
     if (trans_b == 0) {
-        memset(permb, -1, sizeof(int) * (ndimb + n_blocks_b + 1));
         for (int i = 0; i < nctr; i++)
             permb[i] = pidxb[i];
         for (int i = nctr; i < ndimb; i++)
@@ -150,11 +149,12 @@ flat_fermion_tensor_tensordot(
     }
 
     // free and contracted dims
-    int a_free_dim[n_blocks_a], b_free_dim[n_blocks_b], ctr_dim[n_blocks_a];
-    int a_free_dims[n_blocks_a][ndima - nctr],
-        b_free_dims[n_blocks_b][ndimb - nctr];
+    vector<int> a_free_dim(n_blocks_a), b_free_dim(n_blocks_b),
+        ctr_dim(n_blocks_a);
+    vector<vector<int>> a_free_dims(n_blocks_a), b_free_dims(n_blocks_b);
     const uint32_t *psh = ashs.data();
     for (int i = 0; i < n_blocks_a; i++) {
+        a_free_dims[i].resize(ndima - nctr);
         a_free_dim[i] = ctr_dim[i] = 1;
         for (int j = 0; j < nctr; j++)
             ctr_dim[i] *= psh[i * asi + pidxa[j] * asj];
@@ -163,15 +163,16 @@ flat_fermion_tensor_tensordot(
     }
     psh = bshs.data();
     for (int i = 0; i < n_blocks_b; i++) {
+        b_free_dims[i].resize(ndimb - nctr);
         b_free_dim[i] = 1;
         for (int j = 0; j < ndimb - nctr; j++)
             b_free_dim[i] *= (b_free_dims[i][j] = psh[i * bsi + outb[j] * bsj]);
     }
 
     // contracted q_label hashs
-    size_t ctrqas[n_blocks_a], ctrqbs[n_blocks_b], outqas[n_blocks_a],
-        outqbs[n_blocks_b];
-    double phase_a[n_blocks_a], phase_b[n_blocks_b];
+    vector<size_t> ctrqas(n_blocks_a), ctrqbs(n_blocks_b), outqas(n_blocks_a),
+        outqbs(n_blocks_b);
+    vector<double> phase_a(n_blocks_a), phase_b(n_blocks_b);
 
     psh = aqs.data();
     const uint32_t *apqs = aqs.data();
@@ -182,7 +183,7 @@ flat_fermion_tensor_tensordot(
 
         int pnuma[ndima];
         for (int j=0; j<ndima; j++) {
-            pnuma[j] = to_sz_short(apqs[i * asi + j * asj]).n();
+            pnuma[j] = to_sz(apqs[i * asi + j * asj]).n();
         }
         int aparity_counter = 0;
         list<int> acounted;
@@ -207,7 +208,7 @@ flat_fermion_tensor_tensordot(
 
         int pnumb[ndimb];
         for (int j=0; j<ndimb; j++) {
-            pnumb[j] = to_sz_short(bpqs[i * bsi + j * bsj]).n();
+            pnumb[j] = to_sz(bpqs[i * bsi + j * bsj]).n();
         }
         int bparity_counter = 0;
         list<int> bcounted;
@@ -242,6 +243,16 @@ flat_fermion_tensor_tensordot(
             for (int i = 0; i < ndima - nctr; i++)
                 q_out[i] = psh[outa[i] * asj];
             for (int ib : vb) {
+                // check hashing conflicits
+                bool same = true;
+                for (int ict = 0; ict < nctr; ict++)
+                    if (*aqs.data(ia, pidxa[ict]) !=
+                        *bqs.data(ib, pidxb[ict])) {
+                        same = false;
+                        break;
+                    }
+                if (!same)
+                    continue;
                 pibtr[ib] = 0;
                 size_t hout = outqas[ia];
                 hout ^= outqbs[ib] + 0x9E3779B9 + (hout << 6) + (hout >> 2);
@@ -278,7 +289,7 @@ flat_fermion_tensor_tensordot(
     py::array_t<double> cdata(vector<ssize_t>{csize});
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data(),
              *pcidxs = cidxs.mutable_data();
-    uint32_t psha[n_blocks_a * ndima], pshb[n_blocks_b * ndimb];
+    vector<uint32_t> psha(n_blocks_a * ndima), pshb(n_blocks_b * ndimb);
     for (int i = 0; i < n_blocks_a; i++)
         for (int j = 0; j < ndima; j++)
             psha[i * ndima + j] = ashs.data()[i * asi + j * asj];
@@ -291,8 +302,8 @@ flat_fermion_tensor_tensordot(
         for (auto &mmq : mq.second) {
             int xia = mmq.second[0].first, xib = mmq.second[0].second;
             memcpy(pcqs, mmq.first.data(), ndimc * sizeof(uint32_t));
-            memcpy(pcshs, a_free_dims[xia], (ndima - nctr) * sizeof(uint32_t));
-            memcpy(pcshs + (ndima - nctr), b_free_dims[xib],
+            memcpy(pcshs, a_free_dims[xia].data(), (ndima - nctr) * sizeof(uint32_t));
+            memcpy(pcshs + (ndima - nctr), b_free_dims[xib].data(),
                    (ndimb - nctr) * sizeof(uint32_t));
             pcidxs[1] = pcidxs[0] + (uint32_t)a_free_dim[xia] * b_free_dim[xib];
             pcqs += ndimc;
@@ -314,9 +325,9 @@ flat_fermion_tensor_tensordot(
         for (int ia = 0; ia < n_blocks_a; ia++)
             if (piatr[ia] != -1) {
                 double *a = pa + pia[ia], *new_a = new_pa + new_pia[ia];
-                const int *shape_a = (const int *)(psha + ia * ndima);
+                const int *shape_a = (const int *)(psha.data() + ia * ndima);
                 uint32_t size_a = pia[ia + 1] - pia[ia];
-                tensor_transpose_impl(ndima, size_a, perma, shape_a, a, new_a,
+                tensor_transpose_impl(ndima, size_a, perma.data(), shape_a, a, new_a,
                                       1.0, 0.0);
             }
         trans_a = 1;
@@ -334,9 +345,9 @@ flat_fermion_tensor_tensordot(
         for (int ib = 0; ib < n_blocks_b; ib++)
             if (pibtr[ib] != -1) {
                 double *b = pb + pib[ib], *new_b = new_pb + new_pib[ib];
-                const int *shape_b = (const int *)(pshb + ib * ndimb);
+                const int *shape_b = (const int *)(pshb.data() + ib * ndimb);
                 uint32_t size_b = pib[ib + 1] - pib[ib];
-                tensor_transpose_impl(ndimb, size_b, permb, shape_b, b, new_b,
+                tensor_transpose_impl(ndimb, size_b, permb.data(), shape_b, b, new_b,
                                       1.0, 0.0);
             }
         trans_b = 1;

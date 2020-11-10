@@ -71,7 +71,16 @@ class MPSInfo:
 
     def set_bond_dimension_occ(self, bond_dim, occ, bias=1):
         """bond dimensions from occupation numbers"""
-        return NotImplemented
+
+        if self.left_dims is None:
+            self.set_bond_dimension_fci()
+
+        occ = np.array(occ, dtype=float)
+
+        self.left_dims, self.right_dims = self.basis[0].__class__.set_bond_dimension_occ(
+            self.basis, self.basis.__class__(
+                self.left_dims), self.basis.__class__(self.right_dims),
+            self.vacuum, self.target, bond_dim, np.array(occ, dtype=float), bias)
 
     def set_bond_dimension(self, bond_dim, call_back=None):
         """Truncated bond dimension based on FCI quantum numbers
@@ -103,15 +112,18 @@ class MPS(NDArrayOperatorsMixin):
         const : float
             Constant term.
         opts : dict or None
-            options indicating how bond dimension trunctation
+            Options indicating how bond dimension trunctation
             should be done after MPO @ MPS, etc.
             Possible options are: max_bond_dim, cutoff, max_dw, norm_cutoff
+        dq : SZ
+            Delta quantum of MPO operator
     """
 
-    def __init__(self, tensors, const=0, opts=None):
+    def __init__(self, tensors, const=0, opts=None, dq=None):
         self.tensors = tensors
         self.opts = opts if opts is not None else {}
         self.const = const
+        self.dq = dq
 
     @property
     def n_sites(self):
@@ -134,7 +146,7 @@ class MPS(NDArrayOperatorsMixin):
             tr = (0, *tuple(range(d + 1, d + d + 1)),
                   *tuple(range(1, d + 1)), d + d + 1)
             tensors[i] = self.tensors[i].transpose(tr)
-        return MPS(tensors=tensors, const=self.const, opts=self.opts)
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod
     def zeros(info, opts=None):
@@ -216,7 +228,7 @@ class MPS(NDArrayOperatorsMixin):
                 out.tensors = tensors
                 out.const = const
                 out.opts = self.opts
-        return MPS(tensors=tensors, const=const, opts=self.opts)
+        return MPS(tensors=tensors, const=const, opts=self.opts, dq=self.dq)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _mps_numpy_func_impls:
@@ -245,7 +257,7 @@ class MPS(NDArrayOperatorsMixin):
             l, q = tensors[i].right_canonicalize()
             tensors[i] = q
             tensors[i - 1] = np.tensordot(tensors[i - 1], l, axes=1)
-        return MPS(tensors=tensors, opts=self.opts, const=self.const)
+        return MPS(tensors=tensors, opts=self.opts, const=self.const, dq=self.dq)
 
     def compress(self, **opts):
         """
@@ -286,7 +298,7 @@ class MPS(NDArrayOperatorsMixin):
                 tensors[i] = l
                 tensors[i + 1] = np.tensordot(rs, tensors[i + 1], axes=1)
                 merror = max(merror, err)
-        return MPS(tensors=tensors, const=self.const, opts=self.opts), merror
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq), merror
 
     @staticmethod
     def _add(a, b):
@@ -296,7 +308,7 @@ class MPS(NDArrayOperatorsMixin):
         n_sites = a.n_sites
 
         if n_sites == 1:
-            return MPS(tensors=[a[0] + b[0]], const=a.const + b.const, opts=a.opts)
+            return MPS(tensors=[a[0] + b[0]], const=a.const + b.const, opts=a.opts, dq=a.dq)
 
         ainfos = [t.infos for t in a.tensors]
         binfos = [t.infos for t in b.tensors]
@@ -312,7 +324,7 @@ class MPS(NDArrayOperatorsMixin):
         for i in range(n_sites):
             tensors.append(a.tensors[i].kron_add(
                 b.tensors[i], infos=(sum_bonds[i], sum_bonds[i + 1])))
-        return MPS(tensors=tensors, const=a.const + b.const, opts=a.opts)
+        return MPS(tensors=tensors, const=a.const + b.const, opts=a.opts, dq=a.dq)
 
     def __getitem__(self, i):
         return self.tensors[i]
@@ -323,7 +335,7 @@ class MPS(NDArrayOperatorsMixin):
     @staticmethod
     @implements(np.copy)
     def _copy(x):
-        return MPS(tensors=[t.copy() for t in x.tensors], const=x.const, opts=x.opts.copy())
+        return MPS(tensors=[t.copy() for t in x.tensors], const=x.const, opts=x.opts.copy(), dq=x.dq)
 
     def copy(self):
         return np.copy(self)
@@ -489,7 +501,7 @@ class MPS(NDArrayOperatorsMixin):
             sinfos = (bonds[i], *minfos, bonds[i + 1])
             tensors[i] = self[i].to_sliceable(infos=sinfos)
 
-        return MPS(tensors=tensors, const=self.const, opts=self.opts)
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod
     def _to_sparse(a):
@@ -501,8 +513,8 @@ class MPS(NDArrayOperatorsMixin):
             if isinstance(ts, FlatSparseTensor) or isinstance(ts, FlatFermionTensor):
                 tensors[it] = ts
             else:
-                tensors[it] = ts.to_sparse()
-        return MPS(tensors=tensors, const=self.const, opts=self.opts)
+                tensors[it] = ts.to_sparse(dq=None if it == 0 else self.dq)
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod
     def _to_flat(a):
@@ -519,7 +531,7 @@ class MPS(NDArrayOperatorsMixin):
                 tensors[it] = FlatFermionTensor.from_fermion(ts)
             else:
                 tensors[it] = ts.to_flat()
-        return MPS(tensors=tensors, const=self.const, opts=self.opts)
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod
     def _simplify(a):
@@ -543,7 +555,7 @@ class MPS(NDArrayOperatorsMixin):
             tensors[i] = tensors[i].simplify(r, left=True)
             tensors[i - 1] = tensors[i - 1].simplify(r, left=False)
 
-        return MPS(tensors=tensors, const=self.const, opts=self.opts)
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod
     def _amplitude(a, det):

@@ -221,6 +221,8 @@ class SymbolicSparseTensor:
         self.rop = rop
         # outer idx -> inner idx
         self.idx_perm = idx_perm
+        # delta quantum of the operator
+        self.target = None
 
     @property
     def ndim(self):
@@ -466,17 +468,19 @@ class SymbolicSparseTensor:
         tr = SymbolicSparseTensor(sprmat, rops, rlop, self.rop)
         return tl, tr
 
-    def to_sparse(self, infos=None):
+    def to_sparse(self, infos=None, dq=None):
 
         mat = self.mat
         ops = self.ops
         map_blocks = {}, {}
         linfo, rinfo = infos if infos is not None else self.virtual_infos
 
-        def add_block(spmat, factor, ql, il, nl, qr, ir, nr):
+        def add_block(spmat, dq, factor, ql, il, nl, qr, ir, nr):
+            if dq is None:
+                dq = ql.__class__()
             for ioe, oe in enumerate([spmat.odd, spmat.even]):
                 for block in oe.to_sparse():
-                    qx = (-ql, *block.q_labels, qr)
+                    qx = (dq - ql, *block.q_labels, qr)
                     sh = (nl, *block.shape, nr)
                     if qx not in map_blocks[ioe]:
                         map_blocks[ioe][qx] = block.__class__.zeros(
@@ -495,7 +499,7 @@ class SymbolicSparseTensor:
                 qr, ir = rinfo.q_labels[k]
                 nr = rinfo.n_states[qr]
                 ql, il, nl = qr.__class__(), 0, 1
-                add_block(spmat, expr.factor, ql, il, nl, qr, ir, nr)
+                add_block(spmat, dq, expr.factor, ql, il, nl, qr, ir, nr)
         elif isinstance(mat, SymbolicColumnVector):
             for k, expr in enumerate(mat.data):
                 if expr == 0:
@@ -507,7 +511,7 @@ class SymbolicSparseTensor:
                 ql, il = linfo.q_labels[k]
                 nl = linfo.n_states[ql]
                 qr, ir, nr = ql.__class__(), 0, 1
-                add_block(spmat, expr.factor, ql, il, nl, qr, ir, nr)
+                add_block(spmat, dq, expr.factor, ql, il, nl, qr, ir, nr)
         else:
             for (j, k), expr in zip(mat.indices, mat.data):
                 if expr == 0:
@@ -519,7 +523,7 @@ class SymbolicSparseTensor:
                 ql, il = linfo.q_labels[j]
                 qr, ir = rinfo.q_labels[k]
                 nl, nr = linfo.n_states[ql], rinfo.n_states[qr]
-                add_block(spmat, expr.factor, ql, il, nl, qr, ir, nr)
+                add_block(spmat, dq, expr.factor, ql, il, nl, qr, ir, nr)
         r = FermionTensor(
             odd=list(map_blocks[0].values()), even=list(map_blocks[1].values()))
         if self.idx_perm is None:
