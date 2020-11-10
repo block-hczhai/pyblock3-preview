@@ -193,7 +193,7 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
             if (!sk_map.count(k))
                 sk_map[k] = flat_sparse_tensor_skeleton(op_infos, "+-", k);
         // prims
-        vector<unordered_map<OpNames, vector<double>>> op_prims(4);
+        vector<map<OpNames, vector<double>>> op_prims(4);
         op_skeleton skt = sk_map[from_sz(vacuum)], skc[2], skd[2];
         op_prims[0][OpNames::I].resize(get<0>(skt).shape()[0]);
         op_prims[0][OpNames::I][idx(skt, SZ(0, 0, 0))] = 1.0;
