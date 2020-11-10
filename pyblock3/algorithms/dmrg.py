@@ -34,9 +34,9 @@ class DMRG(SweepAlgorithm):
         if len(self.dav_thrds) < n_sweeps:
             for i in range(len(self.dav_thrds), n_sweeps):
                 if self.noises[i] == 0:
-                    self.dav_thrds.append(1E-10 if tol == 0 else tol * 0.1)
+                    self.dav_thrds.append(1E-10 if tol == 0 else max(tol * 0.1, 1E-10))
                 else:
-                    self.dav_thrds.append(self.noises[i] * 0.1)
+                    self.dav_thrds.append(max(self.noises[i] * 0.1, 1E-10))
         self.energies = []
         telp = time.perf_counter()
         for iw in range(n_sweeps):
@@ -77,7 +77,7 @@ class DMRG(SweepAlgorithm):
                 self.energies[iw] - self.energies[iw - 1])
             print("Time elapsed = %10.3f | E = %20.12f | DE = %5.2E" %
                   (time.perf_counter() - telp, self.energies[iw], de))
-            if iw > 0 and de < tol:
+            if iw > 0 and de < tol and self.noises[iw] == self.noises[-1]:
                 break
         return self
 

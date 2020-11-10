@@ -172,6 +172,12 @@ class GreensFunctionFunctor(FlatSparseFunctor):
         self.omega = omega
         self.eta = eta
 
+    def diag(self):
+        if self.dmat is None:
+            self.dmat = super().diag()
+            self.dmat = (self.dmat + self.omega) ** 2 + self.eta ** 2
+        return self.dmat
+
     def __matmul__(self, other):
         btmp = super().__matmul__(other)
         if self.omega != 0:
@@ -182,7 +188,7 @@ class GreensFunctionFunctor(FlatSparseFunctor):
         if self.eta != 0:
             c += (self.eta * self.eta) * other
         return c
-    
+
     def real_part(self, other):
         r = super().__matmul__(other)
         if self.omega != 0:

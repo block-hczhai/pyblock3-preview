@@ -39,9 +39,9 @@ class GreensFunction(SweepAlgorithm):
         if len(self.cg_thrds) < n_sweeps:
             for i in range(len(self.cg_thrds), n_sweeps):
                 if self.noises[i] == 0:
-                    self.cg_thrds.append(1E-10 if tol == 0 else tol * 0.1)
+                    self.cg_thrds.append(1E-10 if tol == 0 else max(tol * 0.1, 1E-10))
                 else:
-                    self.cg_thrds.append(self.noises[i] * 0.1)
+                    self.cg_thrds.append(max(self.noises[i] * 0.1, 1E-10))
         self.targets = []
         telp = time.perf_counter()
         for iw in range(n_sweeps):
@@ -66,8 +66,8 @@ class GreensFunction(SweepAlgorithm):
                     tcg = time.perf_counter() - tx
                     if dot == 2:
                         error = self.decomp_two_site(
-                            ieff.mpo, [ieff.ket, ieff.bra, eff.bra],
-                            forward, self.noises[iw], self.bdims[iw], weights=[0.4, 0.4, 0.2])
+                            ieff.mpo, [ieff.ket, ieff.bra],
+                            forward, self.noises[iw], self.bdims[iw], weights=[0.5, 0.5])
                     else:
                         error = 0
                     ieff.bra = ieff.ket
@@ -78,17 +78,18 @@ class GreensFunction(SweepAlgorithm):
                 mmps = ieff.bra[0].infos[-1].n_bonds
                 impe[i:i + dot] = ieff
                 mpe[i:i + dot] = eff
-                self.targets[iw] = min(self.targets[iw], func[1])
+                if abs(self.targets[iw]) > abs(func):
+                    self.targets[iw] = func
                 if self.iprint >= 2:
                     print(" %3s Site = %4d-%4d .. Mmps = %4d Ncg = %4d Re = %20.12f Im = %20.12f MaxDW = %5.2E Tcg = %8.3f T = %8.3f" % (
-                        "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, ncg, func[0], func[1], error, tcg, time.perf_counter() - tt))
+                        "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, ncg, func.real, func.imag, error, tcg, time.perf_counter() - tt))
             df = 0 if iw == 0 else abs(
-                self.targets[iw] - self.targets[iw - 1])
-            print("Time elapsed = %10.3f | F = %20.12f | DF = %5.2E" %
-                  (time.perf_counter() - telp, self.targets[iw], df))
-            if iw > 0 and df < tol:
+                abs(self.targets[iw]) - abs(self.targets[iw - 1]))
+            print("Time elapsed = %10.3f | GF = Re %20.12f Im = %20.12f | DGF = %5.2E" %
+                  (time.perf_counter() - telp, self.targets[iw].real, self.targets[iw].imag, df))
+            if iw > 0 and df < tol and self.noises[iw] == self.noises[-1]:
                 break
         return self
 
     def __repr__(self):
-        return "F = %20.15f" % self.targets[-1]
+        return "GF = Re %20.15f Im = %20.15f" % (self.targets[-1].real, self.targets[-1].imag)

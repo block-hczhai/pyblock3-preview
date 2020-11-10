@@ -235,7 +235,7 @@ class MPE:
             pattern = '++' + '+' * (x.ket[0].ndim - 4) + '-+'
             fst = FlatSparseFunctor(x.mpo, pattern=pattern)
             w, v, ndav = davidson(
-                fst, [fst.prepare_vector(x.ket[0])], k=1, iprint=iprint)
+                fst, [fst.prepare_vector(x.ket[0])], k=1, iprint=iprint, conv_thrd=conv_thrd)
             v = [x.ket.__class__(
                 tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
         else:
@@ -273,7 +273,7 @@ class MPE:
             r = self.ket.__class__(tensors=[fst.finalize_vector(r)], opts=self.ket.opts)
         else:
             assert False
-        return (rw, iw), MPE(bra=r, mpo=self.mpo, ket=x, do_canon=self.do_canon, idents=self.idents), ncg
+        return rw + iw * 1j, MPE(bra=r, mpo=self.mpo, ket=x, do_canon=self.do_canon, idents=self.idents), ncg
 
     def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
         return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)

@@ -35,9 +35,9 @@ class Linear(SweepAlgorithm):
         if len(self.cg_thrds) < n_sweeps:
             for i in range(len(self.cg_thrds), n_sweeps):
                 if self.noises[i] == 0:
-                    self.cg_thrds.append(1E-10 if tol == 0 else tol * 0.1)
+                    self.cg_thrds.append(1E-10 if tol == 0 else max(tol * 0.1, 1E-10))
                 else:
-                    self.cg_thrds.append(self.noises[i] * 0.1)
+                    self.cg_thrds.append(max(self.noises[i] * 0.1, 1E-10))
         self.targets = []
         telp = time.perf_counter()
         for iw in range(n_sweeps):
@@ -73,7 +73,7 @@ class Linear(SweepAlgorithm):
                 self.targets[iw] - self.targets[iw - 1])
             print("Time elapsed = %10.3f | F = %20.12f | DF = %5.2E" %
                   (time.perf_counter() - telp, self.targets[iw], df))
-            if iw > 0 and df < tol:
+            if iw > 0 and df < tol and self.noises[iw] == self.noises[-1]:
                 break
         return self
 

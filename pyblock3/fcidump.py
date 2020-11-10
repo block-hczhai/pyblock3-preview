@@ -24,7 +24,7 @@ class FCIDUMP:
         self.ipg = ipg
         self.h1e = h1e
         self.g2e = g2e  # aa, ab, bb
-        self.const_e = 0
+        self.const_e = const_e
         self.uhf = uhf
         self.general = False
         self.orb_sym = [0] * self.n_sites if orb_sym is None else orb_sym
