@@ -46,7 +46,7 @@ class SparseFermionTensor(SparseTensor):
         self.check_sanity()
 
     @property
-    def pairty(self):
+    def parity(self):
         self.check_sanity()
         parity_uniq = np.unique(self.parity_per_block)
         return parity_uniq[0]
