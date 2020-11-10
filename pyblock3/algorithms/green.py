@@ -41,7 +41,7 @@ class GreensFunction(SweepAlgorithm):
                 if self.noises[i] == 0:
                     self.cg_thrds.append(1E-10 if tol == 0 else max(tol * 0.1, 1E-10))
                 else:
-                    self.cg_thrds.append(max(self.noises[i] * 0.1, 1E-10))
+                    self.cg_thrds.append(max(self.noises[i], 1E-10))
         self.targets = []
         telp = time.perf_counter()
         for iw in range(n_sweeps):

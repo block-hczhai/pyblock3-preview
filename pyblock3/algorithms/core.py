@@ -4,6 +4,20 @@ import pyblock3.algebra.funcs as pbalg
 from enum import Enum, auto
 
 
+def fmt_size(i, suffix='B'):
+    if i < 1000:
+        return "%d %s" % (i, suffix)
+    else:
+        a = 1024
+        for pf in "KMGTPEZY":
+            p = 2
+            for k in [10, 100, 1000]:
+                if i < k * a:
+                    return "%%.%df %%s%%s" % p % (i / a, pf, suffix)
+                p -= 1
+            a *= 1024
+    return "??? " + suffix
+
 class DecompositionTypes(Enum):
     DensityMatrix = auto()
     SVD = auto()

@@ -413,6 +413,10 @@ class SparseTensor(NDArrayOperatorsMixin):
     def n_blocks(self):
         """Number of (non-zero) blocks."""
         return len(self.blocks)
+    
+    @property
+    def nbytes(self):
+        return sum([b.nbytes for b in self.blocks])
 
     @property
     def T(self):
@@ -1269,6 +1273,10 @@ class FermionTensor(NDArrayOperatorsMixin):
     def ndim(self):
         """Number of dimensions."""
         return self.odd.ndim | self.even.ndim
+    
+    @property
+    def nbytes(self):
+        return self.odd.nbytes + self.even.nbytes
 
     @property
     def n_blocks(self):
