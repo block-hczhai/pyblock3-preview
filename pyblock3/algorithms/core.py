@@ -4,6 +4,20 @@ import pyblock3.algebra.funcs as pbalg
 from enum import Enum, auto
 
 
+def fmt_size(i, suffix='B'):
+    if i < 1000:
+        return "%d %s" % (i, suffix)
+    else:
+        a = 1024
+        for pf in "KMGTPEZY":
+            p = 2
+            for k in [10, 100, 1000]:
+                if i < k * a:
+                    return "%%.%df %%s%%s" % p % (i / a, pf, suffix)
+                p -= 1
+            a *= 1024
+    return "??? " + suffix
+
 class DecompositionTypes(Enum):
     DensityMatrix = auto()
     SVD = auto()
@@ -55,18 +69,17 @@ class SweepAlgorithm:
 
     def decomp_two_site(self, mpo, wfns, forward, noise, bond_dim, weights=None):
         wfn = wfns[0] if isinstance(wfns, list) else wfns
+        if weights is None:
+            weights = [1.0 / len(wfns)] * len(wfns)
         if self.decomp_type == DecompositionTypes.DensityMatrix:
             if forward:
                 dm = np.tensordot(
                     wfn[0], wfn[0], axes=((-3, -2, -1), ) * 2)
                 if isinstance(wfns, list):
-                    if weights is None:
-                        weights = [1.0 / len(wfns)] * len(wfns)
                     dm = dm * weights[0]
                     for ex_wfn, w in zip(wfns[1:], weights[1:]):
                         dm = dm + w * np.tensordot(
                             ex_wfn[0], ex_wfn[0], axes=((-3, -2, -1), ) * 2)
-                    dm = dm * (1.0 / len(wfns))
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
                 lsr = dm.tensor_svd(idx=3, pattern='++++++')
                 l, _, _, error = pbalg.truncate_svd(
@@ -76,6 +89,11 @@ class SweepAlgorithm:
             else:
                 dm = np.tensordot(
                     wfn[0], wfn[0], axes=((0, 1, 2), ) * 2)
+                if isinstance(wfns, list):
+                    dm = dm * weights[0]
+                    for ex_wfn, w in zip(wfns[1:], weights[1:]):
+                        dm = dm + w * np.tensordot(
+                            ex_wfn[0], ex_wfn[0], axes=((0, 1, 2), ) * 2)
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
                 lsr = dm.tensor_svd(idx=3, pattern='-+--+-')
                 _, _, r, error = pbalg.truncate_svd(

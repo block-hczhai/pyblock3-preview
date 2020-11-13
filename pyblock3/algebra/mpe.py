@@ -1,6 +1,8 @@
 
 import numpy as np
+import os
 import time
+import pickle
 from functools import reduce
 from .linalg import davidson, conjugate_gradient
 from ..algorithms.dmrg import DMRG
@@ -41,6 +43,28 @@ class MPE:
         self.t_ctr = 0
         self.t_rot = 0
 
+    @property
+    def nbytes(self):
+        nls = [v.nbytes for v in self.left_envs.values() if v is not None]
+        nrs = [v.nbytes for v in self.right_envs.values() if v is not None]
+        return sum(nls) + sum(nrs)
+
+    def copy_shell(self, bra, mpo, ket):
+        return MPE(bra=bra, mpo=mpo, ket=ket, do_canon=self.do_canon, idents=self.idents)
+
+    def copy(self):
+        bra = self.bra.__class__(
+            tensors=self.bra.tensors[:], opts=self.bra.opts)
+        ket = self.ket.__class__(
+            tensors=self.ket.tensors[:], opts=self.ket.opts)
+        mpo = self.mpo.__class__(
+            tensors=self.mpo.tensors[:], const=self.mpo.const, opts=self.mpo.opts)
+        mpe = self.__class__(bra=bra, mpo=mpo, ket=ket,
+                             do_canon=self.do_canon, idents=self.idents)
+        mpe.left_envs = self.left_envs.copy()
+        mpe.right_envs = self.right_envs.copy()
+        return mpe
+
     def __array_function__(self, func, types, args, kwargs):
         if func not in _me_numpy_func_impls:
             return NotImplemented
@@ -53,7 +77,8 @@ class MPE:
         qbr, qkr, qmr = self.bra[-1].infos[-1], self.ket[-1].infos[-1], self.mpo[-1].infos[-1]
         l_mpo_id = self.mpo[0].ones(
             bond_infos=(qml, qbl, qkl, qml), pattern="++--")
-        r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr, qbr, qkr, qmr), pattern="++--", dq=self.mpo.dq)
+        r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr,
+                                                 qbr, qkr, qmr), pattern="++--", dq=self.mpo.dq)
         l_bra_id = self.bra[0].ones(bond_infos=(qbl, ))
         r_bra_id = self.bra[-1].ones(bond_infos=(qbl, ))
         l_ket_id = self.ket[0].ones(bond_infos=(qkl, ))
@@ -120,7 +145,7 @@ class MPE:
         self.t_rot += time.perf_counter() - t
         return r
 
-    def _initialize(self, l=0, r=2):
+    def build_envs(self, l=0, r=2):
         """Canonicalize bra and ket around sites [l, r). Contract mpo around sites [l, r)."""
         self.left_envs[-2] = None
         self.right_envs[self.n_sites + 1] = None
@@ -175,15 +200,17 @@ class MPE:
 
     def _effective(self, l=0, r=2):
         """Get sub-system with sites [l, r)"""
-        self._initialize(l=l, r=r)
-        eff_ket = self._effective_ket(l=l, r=r)
-        eff_bra = eff_ket if self.bra is self.ket else self._effective_bra(
+        mpe = self.copy()
+        mpe.build_envs(l=l, r=r)
+        eff_ket = mpe._effective_ket(l=l, r=r)
+        eff_bra = eff_ket if mpe.bra is mpe.ket else mpe._effective_bra(
             l=l, r=r)
-        eff_mpo = self._effective_mpo(l=l, r=r)
-        return MPE(bra=eff_bra, mpo=eff_mpo, ket=eff_ket, do_canon=self.do_canon, idents=self.idents)
+        eff_mpo = mpe._effective_mpo(l=l, r=r)
+        return mpe.copy_shell(bra=eff_bra, mpo=eff_mpo, ket=eff_ket)
 
     def _embedded(self, me, l=0, r=2):
         """Modify sub-system with sites [l, r)"""
+        self.build_envs(l=l, r=r)
         self.ket[l:r] = me._embedded_ket().tensors
         if me.ket is me.bra:
             self.bra[l:r] = self.ket[l:r]
@@ -235,17 +262,21 @@ class MPE:
             pattern = '++' + '+' * (x.ket[0].ndim - 4) + '-+'
             fst = FlatSparseFunctor(x.mpo, pattern=pattern)
             w, v, ndav = davidson(
-                fst, [fst.prepare_vector(x.ket[0])], k=1, iprint=iprint)
+                fst, [fst.prepare_vector(x.ket[0])], k=1, iprint=iprint, conv_thrd=conv_thrd)
             v = [x.ket.__class__(
                 tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
+            nflop = fst.nflop
         else:
-            w, v, ndav = davidson(x.mpo, [x.ket], k=1, iprint=iprint, conv_thrd=conv_thrd)
-        return w[0], MPE(bra=v[0], mpo=x.mpo, ket=v[0], do_canon=x.do_canon, idents=x.idents), ndav
+            w, v, ndav = davidson(
+                x.mpo, [x.ket], k=1, iprint=iprint, conv_thrd=conv_thrd)
+            nflop = 0
+        mpe = x.copy_shell(bra=v[0], mpo=x.mpo, ket=v[0])
+        return w[0], mpe, ndav, nflop
 
     def eigs(self, iprint=False, fast=False, conv_thrd=1E-7):
         """Return ground-state energy and ground-state effective MPE."""
         return self._eigs(self, iprint=iprint, fast=fast, conv_thrd=conv_thrd)
-    
+
     def multiply(self, fast=False):
         if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
             from .flat_functor import FlatSparseFunctor
@@ -256,27 +287,33 @@ class MPE:
         else:
             v = self.mpo @ self.ket
         w = np.linalg.norm(v)
-        return w, MPE(bra=v, mpo=self.mpo, ket=self.ket, do_canon=self.do_canon, idents=self.idents), 1
-    
+        mpe = self.copy_shell(bra=v, mpo=self.mpo, ket=self.ket)
+        return w, mpe, 1
+
     def solve_gf(self, ket, omega, eta, iprint=False, fast=False, conv_thrd=1E-7):
         if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
             from .flat_functor import GreensFunctionFunctor
             pattern = '++' + '+' * (self.ket[0].ndim - 4) + '-+'
-            fst = GreensFunctionFunctor(self.mpo, pattern=pattern, omega=omega, eta=eta)
+            fst = GreensFunctionFunctor(
+                self.mpo, pattern=pattern, omega=omega, eta=eta)
             b = (-eta) * fst.prepare_vector(ket)
             x = fst.prepare_vector(self.ket[0])
-            iw, x, ncg = conjugate_gradient(fst, x, b, iprint=iprint, conv_thrd=conv_thrd)
+            iw, x, ncg = conjugate_gradient(
+                fst, x, b, iprint=iprint, conv_thrd=conv_thrd)
             r = fst.real_part(x)
             rw = np.dot(r, b) / (-eta)
             iw /= -eta
-            x = self.ket.__class__(tensors=[fst.finalize_vector(x)], opts=self.ket.opts)
-            r = self.ket.__class__(tensors=[fst.finalize_vector(r)], opts=self.ket.opts)
+            x = self.ket.__class__(
+                tensors=[fst.finalize_vector(x)], opts=self.ket.opts)
+            r = self.ket.__class__(
+                tensors=[fst.finalize_vector(r)], opts=self.ket.opts)
         else:
             assert False
-        return (rw, iw), MPE(bra=r, mpo=self.mpo, ket=x, do_canon=self.do_canon, idents=self.idents), ncg
+        mpe = self.copy_shell(bra=r, mpo=self.mpo, ket=x)
+        return rw + iw * 1j, mpe, ncg
 
-    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
-        return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
+    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2, forward=True):
+        return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot, forward=forward)
 
     def linear(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
         return Linear(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
@@ -287,3 +324,97 @@ class MPE:
     @property
     def n_sites(self):
         return self.ket.n_sites
+
+
+class CachedMPE(MPE):
+    """MPE for large system. Using disk storage to reduce memory usage."""
+
+    def __init__(self, bra, mpo, ket, opts=None, do_canon=True, idents=None, tag='MPE', scratch=None, maxsize=3):
+        super().__init__(bra, mpo, ket, opts=opts, do_canon=do_canon, idents=idents)
+        self.tag = tag
+        self.scratch = scratch if scratch is not None else os.environ['TMPDIR']
+        self.cached = []
+        self.maxsize = maxsize
+
+    @property
+    def nbytes(self):
+        return sum([v[1].nbytes for v in self.cached])
+
+    def copy(self):
+        bra = self.bra.__class__(
+            tensors=self.bra.tensors[:], opts=self.bra.opts)
+        ket = self.ket.__class__(
+            tensors=self.ket.tensors[:], opts=self.ket.opts)
+        mpo = self.mpo.__class__(
+            tensors=self.mpo.tensors[:], const=self.mpo.const, opts=self.mpo.opts)
+        mpe = self.__class__(bra=bra, mpo=mpo, ket=ket, do_canon=self.do_canon,
+                             idents=self.idents, tag=self.tag + '@TMP',
+                             scratch=self.scratch, maxsize=self.maxsize)
+        mpe.cached = self.cached.copy()
+        mpe.left_envs = self.left_envs.copy()
+        mpe.right_envs = self.right_envs.copy()
+        return mpe
+
+    def _get_filename(self, left, i):
+        return "%s.%s.%d" % (self.tag, "L" if left else "R", i)
+
+    def _load_data(self, fn):
+        if fn in [c[0] for c in self.cached]:
+            return [c[1] for c in self.cached if c[0] == fn][0]
+        else:
+            x = pickle.load(open(os.path.join(self.scratch, fn), 'rb'))
+            self.cached.append([fn, x, True])
+            if len(self.cached) > self.maxsize:
+                if not self.cached[0][2]:
+                    pickle.dump(self.cached[0][1], open(
+                        os.path.join(self.scratch, self.cached[0][0]), 'wb'))
+                self.cached = self.cached[1:]
+            return x
+
+    def _save_data(self, fn, x):
+        if fn in [c[0] for c in self.cached]:
+            [c for c in self.cached if c[0] == fn][1:] = [x, False]
+        else:
+            self.cached.append([fn, x, False])
+            if len(self.cached) > self.maxsize:
+                if not self.cached[0][2]:
+                    pickle.dump(self.cached[0][1], open(
+                        os.path.join(self.scratch, self.cached[0][0]), 'wb'))
+                self.cached = self.cached[1:]
+
+    def _left_contract_rotate(self, i, prev=None):
+        """Left canonicalize bra and ket at site i.
+        Contract left-side contracted mpo with mpo at site i."""
+        if i == -1:
+            return self.idents[0]
+        if isinstance(prev, str):
+            prev = self._load_data(prev)
+        x = super()._left_contract_rotate(i, prev)
+        fn = self._get_filename(True, i)
+        self._save_data(fn, x)
+        return fn
+
+    def _right_contract_rotate(self, i, prev=None):
+        """Right canonicalize bra and ket at site i.
+        Contract right-side contracted mpo with mpo at site i."""
+        if i == self.n_sites:
+            return self.idents[1]
+        if isinstance(prev, str):
+            prev = self._load_data(prev)
+        x = super()._right_contract_rotate(i, prev)
+        fn = self._get_filename(False, i)
+        self._save_data(fn, x)
+        return fn
+
+    def _effective_mpo(self, l=0, r=2):
+        """Get mpo in sub-system with sites [l, r)"""
+        fnl = self.left_envs[l - 1]
+        fnr = self.right_envs[r]
+        if isinstance(fnl, str):
+            self.left_envs[l - 1] = self._load_data(fnl)
+        if isinstance(fnr, str):
+            self.right_envs[r] = self._load_data(fnr)
+        mpo = super()._effective_mpo(l=l, r=r)
+        self.left_envs[l - 1] = fnl
+        self.right_envs[r] = fnr
+        return mpo

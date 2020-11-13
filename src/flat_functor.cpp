@@ -2,6 +2,7 @@
 #include "flat_functor.hpp"
 #include <algorithm>
 #include <cstring>
+#include <map>
 
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
@@ -118,30 +119,44 @@ flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
 
-void flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
-                               const py::array_t<double> &adata,
-                               const py::array_t<double> &bdata,
-                               py::array_t<double> &cdata) {
-    int n_blocks_p = (int)plan.shape()[0], ndimp = (int)plan.shape()[1];
+size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
+                                 const py::array_t<double> &adata,
+                                 const py::array_t<double> &bdata,
+                                 py::array_t<double> &cdata) {
+    int nb = (int)plan.shape()[0], ndimp = (int)plan.shape()[1];
     assert(plan.strides()[1] == sizeof(int32_t));
     assert(ndimp == 9);
-    const double alpha = 1.0;
     const double *pa = adata.data(), *pb = bdata.data();
     double *pc = cdata.mutable_data();
-    for (int i = 0; i < n_blocks_p; i++) {
+    size_t nflop = 0;
+    const CBLAS_LAYOUT layout = CblasRowMajor;
+    vector<CBLAS_TRANSPOSE> ta(nb), tb(nb);
+    vector<int> n(nb), m(nb), k(nb), gp(nb, 1), lda(nb), ldb(nb), ldc(nb);
+    vector<double> alpha(nb), beta(nb, 1.0);
+    vector<const double *> a(nb), b(nb);
+    vector<double *> c(nb);
+    for (int i = 0, j = 0; i < nb; i++) {
         const int32_t *pp = plan.data() + ndimp * i;
         const int trans_b = pp[0], trans_a = pp[1];
-        const int m = pp[2], n = pp[3], k = pp[4];
+        const int nn = pp[2], mm = pp[3], kk = pp[4];
         const int pib = pp[5], pia = pp[6], pic = pp[7];
-        const double factor = alpha * pp[8];
-        const auto tra = trans_a == -1 ? "n" : "t";
-        const auto trb = trans_b == 1 ? "n" : "t";
-        int ldb = trans_b == 1 ? m : k;
-        int lda = trans_a == -1 ? k : n;
-        int ldc = m;
-        dgemm(trb, tra, &m, &n, &k, &factor, pb + pib, &ldb, pa + pia, &lda,
-              &alpha, pc + pic, &ldc);
+        alpha[i] = pp[8];
+        ta[i] = trans_a == -1 ? CblasNoTrans : CblasTrans;
+        tb[i] = trans_b == 1 ? CblasNoTrans : CblasTrans;
+        m[i] = mm, n[i] = nn, k[i] = kk;
+        ldb[i] = trans_b == 1 ? nn : kk;
+        lda[i] = trans_a == -1 ? kk : mm;
+        ldc[i] = nn;
+        a[i] = pa + pia, b[i] = pb + pib, c[i] = pc + pic;
+        if (i == nb - 1 || (plan.data() + ndimp * (i + 1))[7] <= pic) {
+            cblas_dgemm_batch(layout, &ta[j], &tb[j], &m[j], &n[j], &k[j],
+                              &alpha[j], &a[j], &lda[j], &b[j], &ldb[j],
+                              &beta[j], &c[j], &ldc[j], i + 1 - j, &gp[j]);
+            j = i + 1;
+        }
+        nflop += (size_t)mm * nn * kk;
     }
+    return nflop;
 }
 
 tuple<int, int, vector<unordered_map<uint32_t, uint32_t>>,
@@ -509,7 +524,8 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
 
     uint32_t *pia = (uint32_t *)aidxs.data(), *pib = (uint32_t *)bidxs.data();
     uint32_t *pic = (uint32_t *)cidxs.data();
-    vector<vector<int>> r;
+    map<int, vector<vector<int>>> mr;
+    int maxz = 0;
     for (int ia = 0; ia < n_blocks_a; ia++) {
         if (map_idx_b.count(ctrqas[ia])) {
             const auto &vb = map_idx_b.at(ctrqas[ia]);
@@ -544,14 +560,20 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
                     ;
                 assert(iq < (int)vq.size());
                 int ic = vq[iq];
-                r.push_back(vector<int>{trans_b, trans_a, b_free_dim[ib],
-                                        a_free_dim[ia], ctr_dim[ia],
-                                        (int)pib[ib], (int)pia[ia],
-                                        (int)pic[ic], xferm ? -1 : 1});
+                mr[ic].push_back(vector<int>{trans_b, trans_a, b_free_dim[ib],
+                                             a_free_dim[ia], ctr_dim[ia],
+                                             (int)pib[ib], (int)pia[ia],
+                                             (int)pic[ic], xferm ? -1 : 1});
+                maxz = max(maxz, (int)mr[ic].size());
             }
         }
     }
-
+    vector<vector<int>> r;
+    for (int i = 0; i < maxz; i++) {
+        for (auto &mmr : mr)
+            if (i < mmr.second.size())
+                r.push_back(mmr.second[i]);
+    }
     assert(r.size() != 0);
     ssize_t rz = (ssize_t)r[0].size();
     vector<ssize_t> sh = {(ssize_t)r.size(), rz};

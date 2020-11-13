@@ -113,6 +113,10 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def size(self):
         return self.data.size
 
+    @property
+    def nbytes(self):
+        return self.q_labels.nbytes + self.shapes.nbytes + self.data.nbytes + self.idxs.nbytes
+
     def item(self):
         return self.data.item()
 
@@ -233,7 +237,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             normsq[q] += np.linalg.norm(self.data[self.idxs[ib]:self.idxs[ib + 1]]) ** 2
         for ib in range(self.n_blocks):
             q = self.q_labels[ib, axis]
-            self.data[self.idxs[ib]:self.idxs[ib + 1]] /= np.sqrt(normsq[q])
+            if normsq[q] > 1E-12:
+                self.data[self.idxs[ib]:self.idxs[ib + 1]] /= np.sqrt(normsq[q])
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if ufunc in _flat_sparse_tensor_numpy_func_impls:

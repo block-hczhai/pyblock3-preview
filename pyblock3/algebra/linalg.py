@@ -72,6 +72,14 @@ def _olsen_precondition(q, c, ld, diag):
     q += (-numerator / denominator) * c
     q[mask] /= ld - diag[mask]
 
+def _precondition(r, diag):
+    """z = r / diag."""
+    z = r.copy()
+    if diag is not None:
+        mask = np.abs(diag) > 1E-12
+        z[mask] /= diag[mask]
+    return z
+
 # E.R. Davidson, J. Comput. Phys. 17 (1), 87-94 (1975).
 def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflation_max_size=30, iprint=False):
     """
@@ -148,7 +156,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
             q = sigma[i].copy()
             q += (-ld[i]) * b[i]
             qq = np.dot(q, q)
-            if qq >= conv_thrd:
+            if np.sqrt(qq) >= conv_thrd:
                 ck = i
                 break
         # q = sigma[ck] - b[ck] * ld[ck]
@@ -161,7 +169,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
         if aa is not None:
             _olsen_precondition(q, b[ck], ld[ck], aa)
 
-        if qq < conv_thrd:
+        if np.sqrt(qq) < conv_thrd:
             ck += 1
             if ck == k:
                 break
@@ -185,15 +193,16 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
     return ld[:ck], b[:ck], xiter
 
 def conjugate_gradient(a, x, b, max_iter=500, conv_thrd=1E-7, iprint=False):
+    aa = a.diag() if hasattr(a, "diag") else None
     r = -(a @ x) + b
-    error = np.dot(r, r)
-    if error < conv_thrd:
+    p = _precondition(r, aa)
+    error = np.dot(p, r)
+    if np.sqrt(error) < conv_thrd:
         func = np.dot(x, b)
         if iprint:
             print("%5d %15.8f %9.2E" % (0, func, error))
         return func, x, 1
     old_error = error
-    p = r.copy()
     xiter = 0
     while xiter < max_iter:
         xiter += 1
@@ -201,16 +210,17 @@ def conjugate_gradient(a, x, b, max_iter=500, conv_thrd=1E-7, iprint=False):
         alpha = old_error / np.dot(p, hp)
         x += alpha * p
         r -= alpha * hp
-        error = np.dot(r, r)
+        z = _precondition(r, aa)
+        error = np.dot(z, r)
         func = np.dot(x, b)
         if iprint:
             print("%5d %15.8f %9.2E" % (xiter, func, error))
-        if error < conv_thrd:
+        if np.sqrt(error) < conv_thrd:
             break
         else:
             beta = error / old_error
             old_error = error
-            p[:] = beta * p + r
+            p[:] = beta * p + z
     if xiter == max_iter:
         raise RuntimeError("Error : linear solver (cg) not converged!")
     return func, x, xiter + 1
