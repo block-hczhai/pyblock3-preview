@@ -29,7 +29,7 @@ flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<int> &idxa,
                                       const py::array_t<int> &idxb);
 
-void flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
+size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
                                const py::array_t<double> &adata,
                                const py::array_t<double> &bdata,
                                py::array_t<double> &cdata);

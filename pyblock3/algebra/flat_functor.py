@@ -84,6 +84,7 @@ class FlatSparseFunctor:
         self.dmat = None
         self.dlr = dl, dr
         self.plan = self._matmul_plan(dl, dr)
+        self.nflop = 0
 
     def diag(self):
         if self.dmat is None:
@@ -147,12 +148,12 @@ class FlatSparseFunctor:
         self.work.data[:] = 0
         self.work2.data[:] = 0
         self.vmat.data = np.zeros_like(self.vmat.data)
-        flat_sparse_matmul(pro, r.odd.data, other, self.work.data)
-        flat_sparse_matmul(pre, r.even.data, other, self.work.data)
+        self.nflop += flat_sparse_matmul(pro, r.odd.data, other, self.work.data)
+        self.nflop += flat_sparse_matmul(pre, r.even.data, other, self.work.data)
         flat_sparse_transpose(self.work.shapes, self.work.data,
                               self.work.idxs, self.axtr, self.work2.data)
-        flat_sparse_matmul(plo, l.odd.data, self.work2.data, self.vmat.data)
-        flat_sparse_matmul(ple, l.even.data, self.work2.data, self.vmat.data)
+        self.nflop += flat_sparse_matmul(plo, l.odd.data, self.work2.data, self.vmat.data)
+        self.nflop += flat_sparse_matmul(ple, l.even.data, self.work2.data, self.vmat.data)
         if self.op.const != 0:
             self.vmat.data += self.op.const * other
         return self.vmat.data

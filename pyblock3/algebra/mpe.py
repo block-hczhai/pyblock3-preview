@@ -52,6 +52,19 @@ class MPE:
     def copy_shell(self, bra, mpo, ket):
         return MPE(bra=bra, mpo=mpo, ket=ket, do_canon=self.do_canon, idents=self.idents)
 
+    def copy(self):
+        bra = self.bra.__class__(
+            tensors=self.bra.tensors[:], opts=self.bra.opts)
+        ket = self.ket.__class__(
+            tensors=self.ket.tensors[:], opts=self.ket.opts)
+        mpo = self.mpo.__class__(
+            tensors=self.mpo.tensors[:], const=self.mpo.const, opts=self.mpo.opts)
+        mpe = self.__class__(bra=bra, mpo=mpo, ket=ket,
+                             do_canon=self.do_canon, idents=self.idents)
+        mpe.left_envs = self.left_envs.copy()
+        mpe.right_envs = self.right_envs.copy()
+        return mpe
+
     def __array_function__(self, func, types, args, kwargs):
         if func not in _me_numpy_func_impls:
             return NotImplemented
@@ -132,7 +145,7 @@ class MPE:
         self.t_rot += time.perf_counter() - t
         return r
 
-    def _initialize(self, l=0, r=2):
+    def build_envs(self, l=0, r=2):
         """Canonicalize bra and ket around sites [l, r). Contract mpo around sites [l, r)."""
         self.left_envs[-2] = None
         self.right_envs[self.n_sites + 1] = None
@@ -187,15 +200,17 @@ class MPE:
 
     def _effective(self, l=0, r=2):
         """Get sub-system with sites [l, r)"""
-        self._initialize(l=l, r=r)
-        eff_ket = self._effective_ket(l=l, r=r)
-        eff_bra = eff_ket if self.bra is self.ket else self._effective_bra(
+        mpe = self.copy()
+        mpe.build_envs(l=l, r=r)
+        eff_ket = mpe._effective_ket(l=l, r=r)
+        eff_bra = eff_ket if mpe.bra is mpe.ket else mpe._effective_bra(
             l=l, r=r)
-        eff_mpo = self._effective_mpo(l=l, r=r)
-        return self.copy_shell(bra=eff_bra, mpo=eff_mpo, ket=eff_ket)
+        eff_mpo = mpe._effective_mpo(l=l, r=r)
+        return mpe.copy_shell(bra=eff_bra, mpo=eff_mpo, ket=eff_ket)
 
     def _embedded(self, me, l=0, r=2):
         """Modify sub-system with sites [l, r)"""
+        self.build_envs(l=l, r=r)
         self.ket[l:r] = me._embedded_ket().tensors
         if me.ket is me.bra:
             self.bra[l:r] = self.ket[l:r]
@@ -250,11 +265,13 @@ class MPE:
                 fst, [fst.prepare_vector(x.ket[0])], k=1, iprint=iprint, conv_thrd=conv_thrd)
             v = [x.ket.__class__(
                 tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
+            nflop = fst.nflop
         else:
             w, v, ndav = davidson(
                 x.mpo, [x.ket], k=1, iprint=iprint, conv_thrd=conv_thrd)
+            nflop = 0
         mpe = x.copy_shell(bra=v[0], mpo=x.mpo, ket=v[0])
-        return w[0], mpe, ndav
+        return w[0], mpe, ndav, nflop
 
     def eigs(self, iprint=False, fast=False, conv_thrd=1E-7):
         """Return ground-state energy and ground-state effective MPE."""
@@ -295,8 +312,8 @@ class MPE:
         mpe = self.copy_shell(bra=r, mpo=self.mpo, ket=x)
         return rw + iw * 1j, mpe, ncg
 
-    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
-        return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
+    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2, forward=True):
+        return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot, forward=forward)
 
     def linear(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
         return Linear(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
@@ -318,10 +335,25 @@ class CachedMPE(MPE):
         self.scratch = scratch if scratch is not None else os.environ['TMPDIR']
         self.cached = []
         self.maxsize = maxsize
-    
+
     @property
     def nbytes(self):
         return sum([v[1].nbytes for v in self.cached])
+
+    def copy(self):
+        bra = self.bra.__class__(
+            tensors=self.bra.tensors[:], opts=self.bra.opts)
+        ket = self.ket.__class__(
+            tensors=self.ket.tensors[:], opts=self.ket.opts)
+        mpo = self.mpo.__class__(
+            tensors=self.mpo.tensors[:], const=self.mpo.const, opts=self.mpo.opts)
+        mpe = self.__class__(bra=bra, mpo=mpo, ket=ket, do_canon=self.do_canon,
+                             idents=self.idents, tag=self.tag + '@TMP',
+                             scratch=self.scratch, maxsize=self.maxsize)
+        mpe.cached = self.cached.copy()
+        mpe.left_envs = self.left_envs.copy()
+        mpe.right_envs = self.right_envs.copy()
+        return mpe
 
     def _get_filename(self, left, i):
         return "%s.%s.%d" % (self.tag, "L" if left else "R", i)

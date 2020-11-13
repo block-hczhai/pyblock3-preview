@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <set>
 #include <vector>
+#include <cassert>
 #ifdef _HAS_INTEL_MKL
 #include "mkl.h"
 #endif
@@ -86,6 +87,34 @@ extern void dgesvd(const char *jobu, const char *jobvt, const int *m,
 // mat [b] = mat [a]
 extern void dlacpy(const char *uplo, const int *m, const int *n,
                    const double *a, const int *lda, double *b, const int *ldb);
+}
+
+typedef enum { CblasRowMajor = 101, CblasColMajor = 102 } CBLAS_LAYOUT;
+typedef enum {
+    CblasNoTrans = 111,
+    CblasTrans = 112,
+    CblasConjTrans = 113
+} CBLAS_TRANSPOSE;
+
+inline void cblas_dgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const double *alpha_Array, const double **A_Array,
+    const int *lda_Array, const double **B_Array, const int *ldb_Array,
+    const double *beta_Array, double **C_Array, const int *ldc_Array,
+    const int group_count, const int *group_size) {
+    assert(Layout == CblasRowMajor);
+    for (int ig = 0, i = 0; ig < group_count; ig++) {
+        const char *tra = TransA_Array[ig] == CblasNoTrans ? "n" : "t";
+        const char *trb = TransB_Array[ig] == CblasNoTrans ? "n" : "t";
+        const int m = M_Array[ig], n = N_Array[ig], k = K_Array[ig];
+        const double alpha = alpha_Array[ig], beta = beta_Array[ig];
+        const int lda = lda_Array[ig], ldb = ldb_Array[ig], ldc = ldc_Array[ig];
+        const int gsize = group_size[ig];
+        for (int j = 0; j < gsize; j++, i++)
+            dgemm(trb, tra, &n, &m, &k, &alpha, B_Array[i], &ldb, A_Array[i],
+                  &lda, &beta, C_Array[i], &ldc);
+    }
 }
 
 #endif
