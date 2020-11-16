@@ -384,3 +384,49 @@ flat_fermion_tensor_tensordot(
 
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
+
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
+flat_fermion_tensor_skeleton(
+    const vector<unordered_map<uint32_t, uint32_t>> &infos,
+    uint32_t fdq) {
+    int ndim = (int)infos.size();
+    size_t nx = 1;
+    for (int i = 0; i < ndim; i++){
+        nx *= infos[i].size();
+    }
+    const string pattern (ndim, '+');
+    vector<uint32_t> qs, shs;
+    vector<uint32_t> idxs(1, 0);
+    vector<vector<pair<SZ, uint32_t>>> infox;
+    bond_info_trans_to_sz(infos, pattern, infox, true);
+    SZ dq = to_sz(fdq);
+    vector<uint32_t> qk(ndim), shk(ndim);
+    for (size_t x = 0; x < nx; x++) {
+        size_t xp = x;
+        SZ xq;
+        for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--)
+            xq = xq + infox[i][xp % infox[i].size()].first;
+
+        if ((xq.n()%2) == (dq.n()%2)) {
+            uint32_t sz = 1;
+            xp = x;
+            for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--) {
+                auto &r = infox[i][xp % infox[i].size()];
+                qk[i] = from_sz(r.first);
+                shk[i] = r.second, sz *= r.second;
+            }
+            qs.insert(qs.end(), qk.begin(), qk.end());
+            shs.insert(shs.end(), shk.begin(), shk.end());
+            idxs.push_back(idxs.back() + sz);
+        }
+    }
+    vector<ssize_t> sh = {(ssize_t)qs.size() / ndim, ndim};
+    py::array_t<uint32_t> cqs(sh), cshs(sh),
+        cidxs(vector<ssize_t>{(ssize_t)idxs.size()});
+    assert(cqs.strides()[1] == sizeof(uint32_t));
+    assert(cshs.strides()[1] == sizeof(uint32_t));
+    memcpy(cqs.mutable_data(), qs.data(), qs.size() * sizeof(uint32_t));
+    memcpy(cshs.mutable_data(), shs.data(), shs.size() * sizeof(uint32_t));
+    memcpy(cidxs.mutable_data(), idxs.data(), idxs.size() * sizeof(uint32_t));
+    return std::make_tuple(cqs, cshs, cidxs);
+}

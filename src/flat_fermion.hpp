@@ -27,3 +27,8 @@ flat_fermion_tensor_tensordot(
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
     const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs,
     const py::array_t<int> &idxa, const py::array_t<int> &idxb);
+
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
+flat_fermion_tensor_skeleton(
+    const vector<unordered_map<uint32_t, uint32_t>> &infos,
+    uint32_t fdq);

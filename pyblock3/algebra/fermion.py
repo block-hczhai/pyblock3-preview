@@ -3,7 +3,13 @@ from .core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
 from .flat import FlatSparseTensor, flat_sparse_skeleton, _flat_sparse_tensor_numpy_func_impls
 from .symmetry import SZ
 import numbers
-from block3 import flat_fermion_tensor, flat_sparse_tensor
+from block3 import flat_fermion_tensor, flat_sparse_tensor, VectorMapUIntUInt
+
+
+def flat_fermion_skeleton(bond_infos, dq=None):
+    fdq = dq.to_flat() if dq is not None else SZ(0).to_flat()
+    return flat_fermion_tensor.skeleton(VectorMapUIntUInt(bond_infos), fdq)
+
 def method_alias(name):
     def ff(f):
         def fff(obj, *args, **kwargs):
@@ -386,23 +392,23 @@ class FlatFermionTensor(FlatSparseTensor):
 
 
     @staticmethod
-    def zeros(bond_infos, pattern=None, dq=None, dtype=float):
+    def zeros(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with zero elements."""
-        qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
+        qs, shs, idxs = flat_fermion_skeleton(bond_infos, dq)
         data = np.zeros((idxs[-1], ), dtype=dtype)
         return FlatFermionTensor(qs, shs, data, idxs)
 
     @staticmethod
-    def ones(bond_infos, pattern=None, dq=None, dtype=float):
+    def ones(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with ones."""
-        qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
+        qs, shs, idxs = flat_fermion_skeleton(bond_infos, dq)
         data = np.ones((idxs[-1], ), dtype=dtype)
         return FlatFermionTensor(qs, shs, data, idxs)
 
     @staticmethod
-    def random(bond_infos, pattern=None, dq=None, dtype=float):
+    def random(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with random elements."""
-        qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
+        qs, shs, idxs = flat_fermion_skeleton(bond_infos, dq)
         if dtype == float:
             data = np.random.random((idxs[-1], ))
         elif dtype == complex:
@@ -410,7 +416,7 @@ class FlatFermionTensor(FlatSparseTensor):
                 (idxs[-1], )) + np.random.random((idxs[-1], )) * 1j
         else:
             return NotImplementedError('dtype %r not supported!' % dtype)
-        return FlatFermionTensor(qs, shs, data, idxs)
+        return FlatSparseTensor(qs, shs, data, idxs)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _flat_fermion_tensor_numpy_func_impls:
@@ -481,7 +487,6 @@ class FlatFermionTensor(FlatSparseTensor):
             out.idxs[...] = r.idxs
 
         return r
-
 
 
     @staticmethod
