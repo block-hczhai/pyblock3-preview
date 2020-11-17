@@ -28,3 +28,8 @@ bond_info_set_bond_dimension_occ(
     vector<unordered_map<uint32_t, uint32_t>> &left_dims,
     vector<unordered_map<uint32_t, uint32_t>> &right_dims, uint32_t vacuum,
     uint32_t target, int m, const vector<double> &occ, double bias);
+
+unordered_map<uint32_t, uint32_t>
+tensor_product_ref(const unordered_map<uint32_t, uint32_t> &ma,
+                   const unordered_map<uint32_t, uint32_t> &mb,
+                   const unordered_map<uint32_t, uint32_t> &mcref);

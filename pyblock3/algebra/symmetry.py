@@ -116,6 +116,10 @@ class BondInfo(Counter):
                 self[k] = int(np.ceil(v * bond_dim / n_total + 0.1))
                 if ref is not None:
                     self[k] = min(self[k], ref[k])
+    
+    def keep_maximal(self):
+        maxk = max(self)
+        return BondInfo({maxk: self[maxk]})
 
     def __repr__(self):
         return " ".join(["%r = %d" % (k, v) for k, v in sorted(self.items(), key=lambda x: x[0])])

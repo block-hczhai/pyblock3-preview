@@ -108,6 +108,16 @@ PYBIND11_MODULE(block3, m) {
                      }
                  }
              })
+        .def("keep_maximal",
+             [](unordered_map<uint32_t, uint32_t> *self) {
+                 vector<SZ> qs;
+                 unordered_map<uint32_t, uint32_t> r;
+                 for (auto &a : *self)
+                     qs.push_back(to_sz(a.first));
+                 SZ q = *max_element(qs.begin(), qs.end());
+                 r[from_sz(q)] = (*self)[from_sz(q)];
+                 return r;
+             })
         .def_static(
             "set_bond_dimension_occ",
             [](const vector<unordered_map<uint32_t, uint32_t>> &basis,
@@ -119,7 +129,9 @@ PYBIND11_MODULE(block3, m) {
                 return bond_info_set_bond_dimension_occ(basis, left_dims,
                                                         right_dims, vacuum,
                                                         target, m, vocc, bias);
-            });
+            })
+        .def_static("tensor_product", &tensor_product_ref, py::arg("a"),
+                    py::arg("b"), py::arg("ref"));
 
     py::bind_vector<vector<unordered_map<uint32_t, uint32_t>>>(
         m, "VectorMapUIntUInt");

@@ -413,7 +413,7 @@ class SparseTensor(NDArrayOperatorsMixin):
     def n_blocks(self):
         """Number of (non-zero) blocks."""
         return len(self.blocks)
-    
+
     @property
     def nbytes(self):
         return sum([b.nbytes for b in self.blocks])
@@ -441,7 +441,9 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     @staticmethod
     def _skeleton(bond_infos, pattern=None, dq=None):
-        """Create tensor skeleton from tuple of BondInfo."""
+        """Create tensor skeleton from tuple of BondInfo.
+        dq will not have effects if ndim == 1
+            (blocks with different dq will be allowed)."""
         it = np.zeros(tuple(len(i) for i in bond_infos), dtype=int)
         qsh = [sorted(i.items(), key=lambda x: x[0]) for i in bond_infos]
         q = [[k for k, v in i] for i in qsh]
@@ -1273,7 +1275,7 @@ class FermionTensor(NDArrayOperatorsMixin):
     def ndim(self):
         """Number of dimensions."""
         return self.odd.ndim | self.even.ndim
-    
+
     @property
     def nbytes(self):
         return self.odd.nbytes + self.even.nbytes

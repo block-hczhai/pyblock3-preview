@@ -69,6 +69,17 @@ class Hamiltonian:
             assert len(occ) == len(self.basis)
             mps_info.set_bond_dimension_occ(bond_dim, occ, bias)
         return MPS.random(mps_info)
+    
+    def build_ancilla_mps(self, target=None):
+        if target is None:
+            target = SZ(self.n_sites * 2, 0, 0)
+            if self.flat:
+                target = target.to_flat()
+        basis = [self.basis[i // 2] for i in range(self.n_sites * 2)]
+        mps_info = MPSInfo(self.n_sites * 2, self.vacuum, target, basis)
+        mps_info.set_bond_dimension_thermal_limit()
+        mps = MPS.ones(mps_info)
+        return mps / np.linalg.norm(mps)
 
     def build_identity_mpo(self):
         from .symbolic.symbolic_mpo import IdentityMPO
@@ -83,6 +94,16 @@ class Hamiltonian:
         if self.flat:
             impo = impo.to_flat()
         return impo
+    
+    def build_ancilla_mpo(self, mpo):
+        tensors = []
+        for m in range(self.n_sites):
+            tensors.append(mpo.tensors[m])
+            infos = mpo.tensors[m].infos
+            a = np.diag(mpo.tensors[m].__class__.ones((infos[-1], )))
+            b = np.diag(mpo.tensors[m].__class__.ones((self.basis[m], )))
+            tensors.append(np.transpose(np.tensordot(a, b, axes=0), axes=(0, 2, 3, 1)))
+        return MPS(tensors=tensors, const=mpo.const, opts=mpo.opts)
 
     def build_qc_mpo(self):
         if self.flat:

@@ -898,13 +898,13 @@ class FlatFermionTensor(FermionTensor):
             even_b = np.tensordot(a.even, b.even, (idxa, idxb))
             def r(): return FlatFermionTensor(odd=odd_a + odd_b, even=even_a + even_b)
             # symbolic horizontal
-            if idxa == [] and idxb == []:
+            if len(idxa) == 0 and len(idxb) == 0:
                 assert a.ndim % 2 == 0
                 d = a.ndim // 2
                 idx = range(d, d + d) if d != 1 else d
                 blocks = [odd_b, even_a]
             # horizontal
-            elif idxa == [a.ndim - 1] and idxb == [0]:
+            elif list(idxa) == [a.ndim - 1] and list(idxb) == [0]:
                 assert a.ndim % 2 == 0
                 d = (a.ndim - 2) // 2
                 idx = range(d + 1, d + d + 1) if d != 1 else d + 1

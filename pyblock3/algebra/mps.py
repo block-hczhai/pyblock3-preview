@@ -96,6 +96,24 @@ class MPSInfo:
             ref = (-self.basis[d]) * self.right_dims[d + 1]
             self.right_dims[d].truncate(bond_dim, ref)
 
+    def set_bond_dimension_thermal_limit(self):
+        """Set bond dimension for MPS at thermal-limit state in ancilla approach."""
+
+        if self.left_dims is None:
+            self.set_bond_dimension_fci(call_back=None)
+
+        for d in range(0, self.n_sites):
+            if d % 2 == 0:
+                self.left_dims[d + 1] = self.left_dims[d] * self.basis[d]
+            else:
+                self.left_dims[d + 1] = self.left_dims[d].keep_maximal()
+
+        for d in range(self.n_sites - 1, -1, -1):
+            if d % 2 != 0:
+                self.right_dims[d] = (-self.basis[d]) * self.right_dims[d + 1]
+            else:
+                self.right_dims[d] = self.right_dims[d + 1].keep_maximal()
+
 
 _mps_numpy_func_impls = {}
 _numpy_func_impls = _mps_numpy_func_impls
@@ -147,6 +165,19 @@ class MPS(NDArrayOperatorsMixin):
                   *tuple(range(1, d + 1)), d + d + 1)
             tensors[i] = self.tensors[i].transpose(tr)
         return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
+
+    @staticmethod
+    def ones(info, opts=None):
+        """Construct unfused MPS from MPSInfo, with identity matrix elements."""
+        tensors = [None] * info.n_sites
+        for i in range(info.n_sites):
+            if isinstance(info.basis[i], BondInfo):
+                tensors[i] = SparseTensor.ones(
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+            else:
+                tensors[i] = FlatSparseTensor.ones(
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+        return MPS(tensors=tensors, opts=opts)
 
     @staticmethod
     def zeros(info, opts=None):

@@ -4,28 +4,28 @@ sys.path[:0] = ['..', "../../block2-old/build"]
 
 from pyblock3.aux.hamil import HamilTools
 from pyblock3.algebra.integrate import rk4_apply
+from pyblock3.hamiltonian import Hamiltonian
+from pyblock3.fcidump import FCIDUMP
 import numpy as np
 import time
 from functools import reduce
 
-flat = True
+flat = False
 cutoff = 1E-12
 
 # ancilla
 
-with HamilTools.from_fcidump('../data/H8.STO6G.R1.8.FCIDUMP') as hamil:
-    mps = hamil.get_thermal_limit_mps()
-    mpo = hamil.get_mpo(mu=-1.0, ancilla=True)
-    mpo.const = 0.0
+fd = '../data/H8.STO6G.R1.8.FCIDUMP'
+hamil = Hamiltonian(FCIDUMP(pg='d2h', mu=-1.0).read(fd), flat=flat)
+
+mps = hamil.build_ancilla_mps()
+mpo = hamil.build_ancilla_mpo(hamil.build_qc_mpo())
+mpo.const = 0.0
 
 print('MPS = ', mps.show_bond_dims())
 print('MPO = ', mpo.show_bond_dims())
 mpo, error = mpo.compress(cutoff=cutoff)
 print('MPO = ', mpo.show_bond_dims(), error)
-
-if flat:
-    mps = mps.to_flat()
-    mpo = mpo.to_flat()
 
 init_e = np.dot(mps, mpo @ mps) / np.dot(mps, mps)
 print('Initial Energy = ', init_e)
@@ -42,12 +42,10 @@ print('Error  = ', ener - 0.2408363230374028)
 
 # mpdo
 
-with HamilTools.from_fcidump('../data/H8.STO6G.R1.8.FCIDUMP') as hamil:
-    mps = hamil.get_thermal_limit_mps()
-    mpo = hamil.get_mpo(mu=-1.0, ancilla=False)
-    mpo.const = 0.0
-
+mps = hamil.build_ancilla_mps()
 mps.tensors = [a.hdot(b) for a, b in zip(mps.tensors[0::2], mps.tensors[1::2])]
+mpo = hamil.build_qc_mpo()
+mpo.const = 0.0
 
 print('MPS = ', mps.show_bond_dims())
 print('MPO = ', mpo.show_bond_dims())

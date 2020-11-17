@@ -68,7 +68,7 @@ tensor_product_no_collect(const unordered_map<uint32_t, double> &ma,
     return mc;
 }
 
-inline unordered_map<uint32_t, uint32_t>
+unordered_map<uint32_t, uint32_t>
 tensor_product_ref(const unordered_map<uint32_t, uint32_t> &ma,
                    const unordered_map<uint32_t, uint32_t> &mb,
                    const unordered_map<uint32_t, uint32_t> &mcref) {

@@ -744,7 +744,7 @@ flat_sparse_tensor_skeleton(
         SZ xq;
         for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--)
             xq = xq + infox[i][xp % infox[i].size()].first;
-        if (xq == dq) {
+        if (xq == dq || ndim == 1) {
             uint32_t sz = 1;
             xp = x;
             for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--) {
