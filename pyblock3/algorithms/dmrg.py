@@ -52,7 +52,6 @@ class DMRG(SweepAlgorithm):
                 tt = time.perf_counter()
                 mpe.build_envs(i, i + dot)
                 eff = mpe[i:i + dot]
-                # mem = mpe.nbytes
                 mem = psutil.Process(os.getpid()).memory_info().rss
                 peak_mem = max(mem, peak_mem)
                 if self.contract:

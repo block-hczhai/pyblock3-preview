@@ -169,7 +169,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
         if aa is not None:
             _olsen_precondition(q, b[ck], ld[ck], aa)
 
-        if np.sqrt(qq) < conv_thrd:
+        if qq < 0 or np.sqrt(qq) < conv_thrd:
             ck += 1
             if ck == k:
                 break

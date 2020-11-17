@@ -574,6 +574,8 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
             if (i < mmr.second.size())
                 r.push_back(mmr.second[i]);
     }
+    if (r.size() == 0)
+        return py::array_t<int32_t>(vector<ssize_t>{0, 9});
     assert(r.size() != 0);
     ssize_t rz = (ssize_t)r[0].size();
     vector<ssize_t> sh = {(ssize_t)r.size(), rz};
