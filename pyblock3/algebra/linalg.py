@@ -192,7 +192,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
     
     return ld[:ck], b[:ck], xiter
 
-def conjugate_gradient(a, x, b, max_iter=500, conv_thrd=1E-7, iprint=False):
+def conjugate_gradient(a, x, b, max_iter=5000, conv_thrd=1E-7, iprint=False):
     aa = a.diag() if hasattr(a, "diag") else None
     r = -(a @ x) + b
     p = _precondition(r, aa)

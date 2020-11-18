@@ -555,16 +555,15 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             l, s, r : tuple(FlatSparseTensor)
         """
         assert full_matrices == False
-        # lsr = self.to_sparse().tensor_svd(idx, linfo, rinfo, pattern, full_matrices)
-        # return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
         assert idx >= 1 and idx <= self.ndim - 1
         if pattern is None:
             pattern = '+' * self.ndim
         if linfo is None:
             linfo = self.kron_sum_info(*range(0, idx), pattern=pattern[:idx])
         if rinfo is None:
+            rpat = ''.join(['-' if x == '+' else '+' for x in pattern[idx:]])
             rinfo = self.kron_sum_info(
-                *range(idx, self.ndim), pattern=pattern[idx:])
+                *range(idx, self.ndim), pattern=rpat)
         lsr = flat_sparse_tensor_svd(
             self.q_labels, self.shapes, self.data, self.idxs, idx, linfo, rinfo, pattern)
         return self.__class__(*lsr[:4]), self.__class__(*lsr[4:8]), self.__class__(*lsr[8:])

@@ -1208,7 +1208,7 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
         }
         for (int j = idx; j < ndima; j++) {
             ufqsr[ia][j - idx] = pqs[ia * asi + j * asj];
-            xqr = xqr + (pattern[j] == '+' ? to_sz(ufqsr[ia][j - idx])
+            xqr = xqr + (pattern[j] == '-' ? to_sz(ufqsr[ia][j - idx])
                                            : -to_sz(ufqsr[ia][j - idx]));
         }
         assert(xql == xqr);

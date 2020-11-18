@@ -81,7 +81,7 @@ class SweepAlgorithm:
                         dm = dm + w * np.tensordot(
                             ex_wfn[0], ex_wfn[0], axes=((-3, -2, -1), ) * 2)
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
-                lsr = dm.tensor_svd(idx=3, pattern='++++++')
+                lsr = dm.tensor_svd(idx=3, pattern='+++---')
                 l, _, _, error = pbalg.truncate_svd(
                     *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
                 wfn[:] = [l, np.tensordot(
@@ -95,7 +95,7 @@ class SweepAlgorithm:
                         dm = dm + w * np.tensordot(
                             ex_wfn[0], ex_wfn[0], axes=((0, 1, 2), ) * 2)
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
-                lsr = dm.tensor_svd(idx=3, pattern='-+--+-')
+                lsr = dm.tensor_svd(idx=3, pattern='-+-+-+')
                 _, _, r, error = pbalg.truncate_svd(
                     *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
                 wfn[:] = [np.tensordot(
@@ -104,7 +104,7 @@ class SweepAlgorithm:
             assert not isinstance(wfns, list)
             wfn = self.add_wfn_noise(
                 wfn[0], noise, forward)
-            lsr = wfn.tensor_svd(idx=3, pattern='+++-+-')
+            lsr = wfn.tensor_svd(idx=3, pattern='++++-+')
             l, s, r, error = pbalg.truncate_svd(
                 *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim)
             if noise == 0:

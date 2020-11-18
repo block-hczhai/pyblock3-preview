@@ -52,10 +52,10 @@ def dmrg(n_sweeps=10, tol=1E-6, dot=2):
             tt = time.perf_counter()
             eff = me[i:i + dot]
             eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
-            eners[iw], eff, ndav = eff.eigs(iprint=True)
+            eners[iw], eff, ndav, _ = eff.eigs(iprint=True)
             if dot == 2:
                 l, s, r = eff.ket[0].tensor_svd(
-                    idx=3, pattern='+++-++', full_matrices=False)
+                    idx=3, pattern='++++--', full_matrices=False)
                 eff.ket[:] = [np.tensordot(l, s.diag(), axes=1), r]
             me[i:i + dot] = eff
             print(" %3s Site = %4d-%4d .. Ndav = %4d E = %20.12f T = %8.3f" % (

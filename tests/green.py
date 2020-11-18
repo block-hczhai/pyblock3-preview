@@ -50,23 +50,23 @@ dmrg = MPE(mps, mpo, mps).dmrg(bdims=bdims, noises=noises,
 ener = dmrg.energies[-1]
 print("Energy = %20.12f" % ener)
 
-isite = 2
+isite = 4
 mpo.const -= ener
 omega, eta = -0.17, 0.05
 
 dop = OpElement(OpNames.D, (isite, 0), q_label=SZ(-1, -1, hamil.orb_sym[isite]))
 bra = hamil.build_mps(bra_bond_dim, target=SZ.to_flat(
     dop.q_label + SZ.from_flat(hamil.target)))
-impo = hamil.build_site_mpo(dop)
-print('DMPO =         ', impo.show_bond_dims())
-MPE(bra, impo, mps).linear(bdims=[bra_bond_dim], noises=noises,
-                                 dav_thrds=davthrds, iprint=2, n_sweeps=20, tol=1E-12)
+dmpo = hamil.build_site_mpo(dop)
+print('DMPO =         ', dmpo.show_bond_dims())
+MPE(bra, dmpo, mps).linear(bdims=[bra_bond_dim], noises=noises,
+                                 cg_thrds=davthrds, iprint=2, n_sweeps=20, tol=1E-12)
 
 np.random.seed(0)
 
 gbra = hamil.build_mps(bra_bond_dim, target=SZ.to_flat(
     dop.q_label + SZ.from_flat(hamil.target)))
 print('GFMPO =         ', mpo.show_bond_dims())
-impo = hamil.build_identity_mpo()
-print(MPE(gbra, impo, bra).greens_function(mpo, omega, eta, bdims=[bra_bond_dim], noises=noises,
-                                 cg_thrds=[1E-8] * 10, iprint=2, n_sweeps=10, tol=0))
+# impo = hamil.build_identity_mpo()
+print(MPE(bra, dmpo, mps).greens_function(mpo, omega, eta, bdims=[bra_bond_dim], noises=noises,
+                                 cg_thrds=[1E-4] * 10, iprint=2, n_sweeps=10, tol=0))

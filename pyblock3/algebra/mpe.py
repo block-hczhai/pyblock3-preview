@@ -342,8 +342,8 @@ class MPE:
     def tddmrg(self, bdims, dt, n_sweeps=10, n_sub_sweeps=2, dot=2, iprint=2, forward=True):
         return TDDMRG(self, bdims, iprint=iprint).solve(dt, n_sweeps, n_sub_sweeps, dot, forward=forward)
 
-    def linear(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
-        return Linear(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
+    def linear(self, bdims, noises=None, cg_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
+        return Linear(self, bdims, noises, cg_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
 
     def greens_function(self, mpo, omega, eta, bdims, noises=None, cg_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
         return GreensFunction(self, mpo, omega, eta, bdims, noises, cg_thrds, iprint=iprint).solve(n_sweeps, tol, dot)

@@ -106,7 +106,7 @@ if "PY" in mode:
         # # ener, eff, ndav = eff.eigs(iprint=True)
         # if dot == 2:
         #     l, s, r = eff.ket[0].tensor_svd(
-        #         idx=3, pattern='+++-++', full_matrices=False)
+        #         idx=3, pattern='++++--', full_matrices=False)
         #     eff.ket[:] = [np.tensordot(l, s.diag(), axes=1), r]
         # me[i:i + dot] = eff
         # print(ener)

@@ -1011,19 +1011,21 @@ class SparseTensor(NDArrayOperatorsMixin):
             items = []
             for block in self.blocks:
                 items.append((block.q_labels[idx:], block.shape[idx:]))
-            rinfo = BondFusingInfo.kron_sum(items, pattern=pattern[idx:])
+                rpat = ''.join(['-' if x == '+' else '+' for x in pattern[idx:]])
+            rinfo = BondFusingInfo.kron_sum(items, pattern=rpat)
         info = linfo & rinfo
         mats = {}
         for q in info:
             mats[q] = np.zeros((linfo[q], rinfo[q]))
-        pattern = linfo.pattern + rinfo.pattern
+        rpat = ''.join(['-' if x == '+' else '+' for x in rinfo.pattern])
+        pattern = linfo.pattern + rpat
         items = {}
         for block in self.blocks:
             qls, qrs = block.q_labels[:idx], block.q_labels[idx:]
             ql = np.add.reduce(
                 [iq if ip == '+' else -iq for iq, ip in zip(qls, pattern[:idx])])
             qr = np.add.reduce(
-                [iq if ip == '+' else -iq for iq, ip in zip(qrs, pattern[idx:])])
+                [iq if ip == '-' else -iq for iq, ip in zip(qrs, pattern[idx:])])
             assert ql == qr
             q = ql
             if q not in mats:

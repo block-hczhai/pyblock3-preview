@@ -86,17 +86,17 @@ print(h2.show_bond_dims())
 
 print(np.sqrt(mps @ (h2 @ mps)))
 
-h2, cps_error = h2.compress(cutoff=1E-12)
+h2, cps_error = h2.compress(cutoff=1E-16)
 print('error = ', cps_error)
 print(h2.show_bond_dims())
 print(np.sqrt((h2 @ mps) @ mps))
 
-h2, cps_error = h2.compress(max_bond_dim=15, cutoff=1E-12)
+h2, cps_error = h2.compress(max_bond_dim=15, cutoff=1E-16)
 print('error = ', cps_error)
 print(h2.show_bond_dims())
 print(np.sqrt((h2 @ mps) @ mps))
 
-h2, cps_error = h2.compress(max_bond_dim=12, cutoff=1E-12)
+h2, cps_error = h2.compress(max_bond_dim=12, cutoff=1E-16)
 print('error = ', cps_error)
 print(h2.show_bond_dims())
 print(np.sqrt((h2 @ mps) @ mps))

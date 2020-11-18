@@ -48,7 +48,7 @@ mex = me[0:2]
 # print(mex.ket[-1])
 mex.ket[:] = [reduce(pbalg.hdot, mex.ket[:])]
 print(mex.expectation)
-# l, s, r = mex.ket[0].tensor_svd(idx=3, pattern='+++-++', full_matrices=False)
+# l, s, r = mex.ket[0].tensor_svd(idx=3, pattern='++++--', full_matrices=False)
 # ls = np.tensordot(l, s.diag(), axes=1)
 # mex.ket[:] = [ls, r]
 # # print(mex.ket[-2])

@@ -89,7 +89,7 @@ def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
         qls, qrs = xqls[iq], xqrs[iq]
         ql = np.add.reduce([iq if ip == "+" else -iq for iq,
                             ip in zip(qls, pattern[:idx])])
-        qr = np.add.reduce([iq if ip == "+" else -iq for iq,
+        qr = np.add.reduce([iq if ip == "-" else -iq for iq,
                             ip in zip(qrs, pattern[idx:])])
         assert ql == qr
         q = ql
