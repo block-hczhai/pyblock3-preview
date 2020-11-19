@@ -1,6 +1,6 @@
 
-#  block2: Efficient MPO implementation of quantum chemistry DMRG
-#  Copyright (C) 2020 Huanchen Zhai <hczhai@caltech.edu>
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@
 #
 
 """
+Tools for translating block2 objects.
 MPS/MPO format transform between block2 and pyblock2.
 """
 

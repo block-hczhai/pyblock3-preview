@@ -1,4 +1,30 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
+"""
+High performance version for block-sparse tensors
+and block-sparse tensors with fermion factors.
+
+Flat classes have the same interface as their counterparts in
+core.py, but with C++ optimized implementations.
+"""
+
 import numpy as np
 from numpy.lib.mixins import NDArrayOperatorsMixin
 import numbers
@@ -590,6 +616,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
 
         Returns:
             l, s, r : tuple(FlatSparseTensor)
+                SVD decomposition.
             error : float
                 Truncation error (same unit as singular value squared).
         """
@@ -1310,6 +1337,7 @@ class FlatFermionTensor(FermionTensor):
 
         Returns:
             l, s, r : tuple(FlatSparseTensor/FlatFermionTensor)
+                SVD decomposition.
             error : float
                 Truncation error (same unit as singular value squared).
         """

@@ -1,4 +1,25 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
+"""
+1D tensor network for MPS/MPO.
+"""
 
 import numpy as np
 from numpy.lib.mixins import NDArrayOperatorsMixin
@@ -24,6 +45,7 @@ class MPSInfo:
     BondInfo in every site in MPS
     (a) For constrution of initial MPS.
     (b) For tracking basis info in construction of SliceableTensor.
+
     Attributes:
         n_sites : int
             Number of sites
@@ -122,6 +144,7 @@ _numpy_func_impls = _mps_numpy_func_impls
 class MPS(NDArrayOperatorsMixin):
     """
     Matrix Product State / Matrix Product Operator.
+
     Attributes:
         tensors : list(SparseTensor/FermionTensor)
             A list of block-sparse tensors.
@@ -293,6 +316,7 @@ class MPS(NDArrayOperatorsMixin):
     def compress(self, **opts):
         """
         MPS bond dimension compression.
+
         Args:
             max_bond_dim : int
                 Maximal total bond dimension.
