@@ -8,7 +8,7 @@ The following example calculate the Green's function for H10 (STO6G):
 
     G_{ij}(\omega) = \langle \Psi_0 | a_j^\dagger \frac{1}{\omega + \hat{H}_0 - E_0 + i \eta} a_i |\Psi_0\rangle
 
-where :math:`|\Psi_0\rangle` is the ground-state, :math:`i = j = 4` (``isite``), :math:`omega = -0.17, eta = 0.05`.
+where :math:`|\Psi_0\rangle` is the ground-state, :math:`i = j = 4` (``isite``), :math:`\omega = -0.17, \eta = 0.05`.
 
 .. code:: python
 

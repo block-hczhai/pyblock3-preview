@@ -1,4 +1,6 @@
 
+[![Documentation Status](https://readthedocs.org/projects/pyblock3/badge/?version=latest)](https://pyblock3.readthedocs.io/en/latest/?badge=latest)
+
 pyblock3
 ========
 
@@ -8,10 +10,12 @@ Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
 
 Authors: Huanchen Zhai (MPS/MPO/DMRG); Yang Gao (general fermionic tensor)
 
+Documentation: https://pyblock3.readthedocs.io/en/latest
+
 Features
 --------
 
-* Block-Sparse tensor algebra with quantum number symmetries:
+* Block-sparse tensor algebra with quantum number symmetries:
     * U(1) particle number
     * U(1) spin
     * Abelian point group symmetry

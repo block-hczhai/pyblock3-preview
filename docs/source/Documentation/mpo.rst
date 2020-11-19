@@ -196,7 +196,7 @@ to make sure that number of openMP threads is correct.
 
 .. code:: python3
 
-   from pyscf import gto, scf, lo, symm, ao2mo
+    from pyscf import gto, scf, lo, symm, ao2mo
     # H chain
     N = 10
     BOHR = 0.52917721092  # Angstroms

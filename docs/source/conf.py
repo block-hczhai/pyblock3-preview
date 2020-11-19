@@ -51,7 +51,7 @@ exclude_patterns = []
 on_rtd = os.environ.get('READTHEDOCS') == 'True'
 if on_rtd:
     html_theme = 'default'
-    autodoc_mock_imports = ['block3']
+    autodoc_mock_imports = ['block3', 'numpy']
 else:
     html_theme = 'bizstyle'
     sys.path.insert(0, os.path.abspath('../../build'))
