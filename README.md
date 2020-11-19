@@ -6,7 +6,7 @@ An Efficient python MPS/DMRG Library
 
 Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
 
-Authors: Huanchen Zhai (MPS/MPO/DMRG); Yand Gao (general fermionic tensor)
+Authors: Huanchen Zhai (MPS/MPO/DMRG); Yang Gao (general fermionic tensor)
 
 Features
 --------
@@ -83,7 +83,8 @@ Ground-state DMRG (H8 STO6G) in pure python (52 seconds):
     mpo, _ = mpo.compress(cutoff=1E-9, norm_cutoff=1E-9)
     mps = hamil.build_mps(bond_dim)
 
-    dmrg = MPE(mps, mpo, mps).dmrg(bdims=[bond_dim], noises=[1E-6, 0], dav_thrds=[1E-3], iprint=2, n_sweeps=10)
+    dmrg = MPE(mps, mpo, mps).dmrg(bdims=[bond_dim], noises=[1E-6, 0],
+        dav_thrds=[1E-3], iprint=2, n_sweeps=10)
     ener = dmrg.energies[-1]
     print("Energy = %20.12f" % ener)
 
@@ -101,7 +102,8 @@ Ground-state DMRG (H8 STO6G) with C++ optimized core functions (0.87 seconds):
     mpo, _ = mpo.compress(cutoff=1E-9, norm_cutoff=1E-9)
     mps = hamil.build_mps(bond_dim)
 
-    dmrg = MPE(mps, mpo, mps).dmrg(bdims=[bond_dim], noises=[1E-6, 0], dav_thrds=[1E-3], iprint=2, n_sweeps=10)
+    dmrg = MPE(mps, mpo, mps).dmrg(bdims=[bond_dim], noises=[1E-6, 0],
+        dav_thrds=[1E-3], iprint=2, n_sweeps=10)
     ener = dmrg.energies[-1]
     print("Energy = %20.12f" % ener)
 
