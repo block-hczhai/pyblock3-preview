@@ -141,10 +141,131 @@ def _pack_flat_tensor(tsr, s_label, ax):
         data[ist:ied,jst:jed] = np.asarray(tsr.data[blkst:blked]).reshape(ied-ist, jed-jst)
     return data, u_map, v_map
 
+def _trim_singular_vals(s, cutoff, cutoff_mode):
+    """Find the number of singular values to keep of ``s`` given ``cutoff`` and
+    ``cutoff_mode``.
+
+    Parameters
+    ----------
+    s : array
+        Singular values.
+    cutoff : float
+        Cutoff.
+    cutoff_mode : {1, 2, 3, 4, 5, 6}
+        How to perform the trim:
+
+            - 1: ['abs'], trim values below ``cutoff``
+            - 2: ['rel'], trim values below ``s[0] * cutoff``
+            - 3: ['sum2'], trim s.t. ``sum(s_trim**2) < cutoff``.
+            - 4: ['rsum2'], trim s.t. ``sum(s_trim**2) < sum(s**2) * cutoff``.
+            - 5: ['sum1'], trim s.t. ``sum(s_trim**1) < cutoff``.
+            - 6: ['rsum1'], trim s.t. ``sum(s_trim**1) < sum(s**1) * cutoff``.
+    """
+    if cutoff_mode == 1:
+        n_chi = np.sum(s > cutoff)
+
+    elif cutoff_mode == 2:
+        n_chi = np.sum(s > cutoff * s[0])
+
+    elif cutoff_mode in (3, 4, 5, 6):
+        if cutoff_mode in (3, 4):
+            p = 2
+        else:
+            p = 1
+
+        target = cutoff
+        if cutoff_mode in (4, 6):
+            target *= np.sum(s**p)
+
+        n_chi = s.size
+        ssum = 0.0
+        for i in range(s.size - 1, -1, -1):
+            s2 = s[i]**p
+            if not np.isnan(s2):
+                ssum += s2
+            if ssum > target:
+                break
+            n_chi -= 1
+
+    return max(n_chi, 1)
+
+def _renorm_singular_vals(s, n_chi, renorm_power):
+    """Find the normalization constant for ``s`` such that the new sum squared
+    of the ``n_chi`` largest values equals the sum squared of all the old ones.
+    """
+    s_tot_keep = 0.0
+    s_tot_lose = 0.0
+    for i in range(s.size):
+        s2 = s[i]**renorm_power
+        if not np.isnan(s2):
+            if i < n_chi:
+                s_tot_keep += s2
+            else:
+                s_tot_lose += s2
+    return ((s_tot_keep + s_tot_lose) / s_tot_keep)**(1 / renorm_power)
+
+def _trim_and_renorm_SVD(U, s, VH, **svdopts):
+    cutoff = svdopts.pop("cutoff", -1.0)
+    cutoff_mode = svdopts.pop("cutoff_mode", 3)
+    max_bond = svdopts.pop("max_bond", -1)
+    renorm_power = svdopts.pop("renorm_power", 0)
+
+    if cutoff > 0.0:
+        n_chi = _trim_singular_vals(s, cutoff, cutoff_mode)
+
+        if max_bond > 0:
+            n_chi = min(n_chi, max_bond)
+
+        if n_chi < s.size:
+            if renorm_power > 0:
+                s = s[:n_chi] * _renorm_singular_vals(s, n_chi, renorm_power)
+            else:
+                s = s[:n_chi]
+
+            U = U[..., :n_chi]
+            VH = VH[:n_chi, ...]
+
+    elif max_bond != -1:
+        U = U[..., :max_bond]
+        s = s[:max_bond]
+        VH = VH[:max_bond, ...]
+
+    s = np.ascontiguousarray(s)
+    return U, s, VH
+
+def _absorb_svd(u, s, v, absorb, s_label, umap, vmap):
+    flip_parity = (s_label[0]!=s_label[1])
+    if absorb == -1:
+        u = u * s.reshape((1, -1))
+        if flip_parity:
+            qlst = list(umap.keys())
+            for qlab in qlst:
+                val = umap.pop(qlab)
+                newqlab = qlab[:-1] + (s_label[-1], )
+                umap[newqlab] = val
+    elif absorb == 1:
+        v = v * s.reshape((-1, 1))
+        if flip_parity:
+            qlst = list(vmap.keys())
+            for qlab in qlst:
+                val = vmap.pop(qlab)
+                newqlab = (s_label[0], ) + qlab[1:]
+                vmap[newqlab] = val
+    else:
+        s **= 0.5
+        u = u * s.reshape((1, -1))
+        v = v * s.reshape((-1, 1))
+        if flip_parity:
+            qlst = list(umap.keys())
+            for qlab in qlst:
+                val = umap.pop(qlab)
+                newqlab = qlab[:-1] + (s_label[-1], )
+                umap[newqlab] = val
+    return u, s, v, umap, vmap
+
 def _run_sparse_fermion_svd(tsr, ax=2, **svd_opts):
-    cutoff = svd_opts.pop("cutoff", None)
     full_matrices = svd_opts.pop("full_matrices", False)
-    max_bond = svd_opts.pop("max_bond", None)
+    absorb = svd_opts.pop("absorb", 0)
 
     s_labels = {0: [(SZ(0), SZ(0)), (SZ(1), SZ(1))],
                 1: [(SZ(0), SZ(1)), (SZ(1), SZ(0))]}[tsr.parity]
@@ -152,24 +273,24 @@ def _run_sparse_fermion_svd(tsr, ax=2, **svd_opts):
     for s_label in s_labels:
         data, umap, vmap = _pack_sparse_tensor(tsr, s_label, ax)
         u, s, v = np.linalg.svd(data, full_matrices=full_matrices)
-        if cutoff is None:
-            _unpack_sparse_tensor(u, umap, 0, ublk)
-            _unpack_sparse_tensor(v, vmap, 1, vblk)
+        u, s, v = _trim_and_renorm_SVD(u, s, v, **svd_opts)
+        if absorb is None:
             sblk.append(SubTensor(np.diag(s), q_labels=s_label))
         else:
-            idx = s > cutoff
-            _unpack_sparse_tensor(u[:,idx], umap, 0, ublk)
-            _unpack_sparse_tensor(v[idx], vmap, 1, vblk)
-            sblk.append(SubTensor(np.diag(s[idx]), q_labels=s_label))
+            u, s, v, umap, vmap = _absorb_svd(u, s, v, absorb, s_label, umap, vmap)
+
+        _unpack_sparse_tensor(u, umap, 0, ublk)
+        _unpack_sparse_tensor(v, vmap, 1, vblk)
+
     u = SparseFermionTensor(blocks=ublk)
-    s = SparseFermionTensor(blocks=sblk)
+    if absorb is None:
+        s = SparseFermionTensor(blocks=sblk)
     v = SparseFermionTensor(blocks=vblk)
     return u, s, v
 
 def _run_flat_fermion_svd(tsr, ax=2, **svd_opts):
-    cutoff = svd_opts.pop("cutoff", None)
     full_matrices = svd_opts.pop("full_matrices", False)
-    max_bond = svd_opts.pop("max_bond", None)
+    absorb = svd_opts.pop("absorb", 0)
     nblk, ndim = tsr.q_labels.shape
     s_labels = {0: [(SZ(0), SZ(0)), (SZ(1), SZ(1))],
                 1: [(SZ(0), SZ(1)), (SZ(1), SZ(0))]}[tsr.parity]
@@ -179,22 +300,22 @@ def _run_flat_fermion_svd(tsr, ax=2, **svd_opts):
     for s_label in s_labels:
         data, umap, vmap = _pack_flat_tensor(tsr, s_label, ax)
         u, s, v = np.linalg.svd(data, full_matrices=full_matrices)
-        if cutoff is not None:
-            idx = s > cutoff
-            u = u[:,idx]
-            v = v[idx]
-            s = s[idx]
-
-        s = np.diag(s)
-        sq.append([SZ.to_flat(iq) for iq in s_label])
-        sshapes.append(s.shape)
-        sdata.append(s.ravel())
+        u, s, v = _trim_and_renorm_SVD(u, s, v, **svd_opts)
+        if absorb is None:
+            s = np.diag(s)
+            sq.append([SZ.to_flat(iq) for iq in s_label])
+            sshapes.append(s.shape)
+            sdata.append(s.ravel())
+        else:
+            u, s, v, umap, vmap = _absorb_svd(u, s, v, absorb, s_label, umap, vmap)
         _unpack_flat_tensor(u, umap, 0, udata, uq, ushapes)
         _unpack_flat_tensor(v, vmap, 1, vdata, vq, vshapes)
 
-    sq = np.asarray(sq, dtype=int)
-    sshapes = np.asarray(sshapes, dtype=int)
-    sdata = np.concatenate(sdata)
+    if absorb is None:
+        sq = np.asarray(sq, dtype=int)
+        sshapes = np.asarray(sshapes, dtype=int)
+        sdata = np.concatenate(sdata)
+        s = FlatFermionTensor(sq, sshapes, sdata)
 
     uq = np.asarray(uq, dtype=int)
     ushapes = np.asarray(ushapes, dtype=int)
@@ -204,7 +325,6 @@ def _run_flat_fermion_svd(tsr, ax=2, **svd_opts):
     vshapes = np.asarray(vshapes, dtype=int)
     vdata = np.concatenate(vdata)
     u = FlatFermionTensor(uq, ushapes, udata)
-    s = FlatFermionTensor(sq, sshapes, sdata)
     v = FlatFermionTensor(vq, vshapes, vdata)
     return u, s ,v
 
