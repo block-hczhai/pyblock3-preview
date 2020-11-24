@@ -261,7 +261,7 @@ def _absorb_svd(u, s, v, absorb, s_label, umap, vmap):
                 val = umap.pop(qlab)
                 newqlab = qlab[:-1] + (s_label[-1], )
                 umap[newqlab] = val
-    return u, s, v, umap, vmap
+    return u, None, v, umap, vmap
 
 def _run_sparse_fermion_svd(tsr, ax=2, **svd_opts):
     full_matrices = svd_opts.pop("full_matrices", False)
@@ -328,8 +328,9 @@ def _run_flat_fermion_svd(tsr, ax=2, **svd_opts):
     v = FlatFermionTensor(vq, vshapes, vdata)
     return u, s ,v
 
-def fermion_tensor_svd(tsr, left_idx, **opts):
-    right_idx = [idim for idim in range(tsr.ndim) if idim not in left_idx]
+def fermion_tensor_svd(tsr, left_idx, right_idx=None, **opts):
+    if right_idx is None:
+        right_idx = [idim for idim in range(tsr.ndim) if idim not in left_idx]
     neworder = tuple(left_idx) + tuple(right_idx)
     split_ax = len(left_idx)
     newtsr = tsr.transpose(neworder)
@@ -406,8 +407,8 @@ class SparseFermionTensor(SparseTensor):
                 xsh = tuple(ish[ix] for ish, ix in zip(sh, x))
                 yield xsh, xqs
 
-    def tensor_svd(self, left_idx, **svd_opts):
-        return fermion_tensor_svd(self, left_idx, **svd_opts)
+    def tensor_svd(self, left_idx, right_idx=None, **svd_opts):
+        return fermion_tensor_svd(self, left_idx, right_idx=right_idx, **svd_opts)
 
     @staticmethod
     def zeros(bond_infos, dq=None, dtype=float):
