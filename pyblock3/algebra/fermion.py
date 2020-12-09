@@ -398,7 +398,6 @@ class SparseFermionTensor(SparseTensor):
             parity_list.append(int(pval)%2)
         return parity_list
 
-    @property
     def conj(self):
         blks = [iblk.conj() for iblk in self.blocks]
         return self.__class__(blocks=blks)
@@ -685,7 +684,6 @@ class FlatFermionTensor(FlatSparseTensor):
             parity_list.append(int(pval)%2)
         return parity_list
 
-    @property
     def conj(self):
         return self.__class__(self.q_labels, self.shapes, self.data.conj(), idxs=self.idxs)
 
