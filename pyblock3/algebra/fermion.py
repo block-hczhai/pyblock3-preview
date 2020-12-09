@@ -342,6 +342,36 @@ def fermion_tensor_svd(tsr, left_idx, right_idx=None, **opts):
         raise TypeError("Tensor class not Sparse/FlatFermionTensor")
     return u, s, v
 
+def matricize(tsr, row_idx):
+    col_idx = tuple(i for i in range(tsr.ndim) if i not in row_idx)
+    col_dic = {}
+    row_dic = {}
+    col_off = 0
+    row_off = 0
+    for iblk in tsr:
+        row_q = tuple(iblk.q_labels[i] for i in row_idx)
+        col_q = tuple(iblk.q_labels[i] for i in col_idx)
+        row_sp = tuple(iblk.shape[i] for i in row_idx)
+        col_sp = tuple(iblk.shape[i] for i in col_idx)
+        if row_q not in row_dic:
+            row_dic[row_q] = (row_off, row_off+np.prod(row_sp), row_sp)
+            row_off += np.prod(row_sp)
+        if col_q not in col_dic:
+            col_dic[col_q] = (col_off, col_off+np.prod(col_sp), col_sp)
+            col_off += np.prod(col_sp)
+    row_size = max([val[1] for val in row_dic.values()])
+    col_size = max([val[1] for val in col_dic.values()])
+    mat = np.zeros([row_size, col_size], dtype=tsr.dtype)
+    for iblk in tsr:
+        row_q = tuple(iblk.q_labels[i] for i in row_idx)
+        col_q = tuple(iblk.q_labels[i] for i in col_idx)
+        row_sp = tuple(iblk.shape[i] for i in row_idx)
+        col_sp = tuple(iblk.shape[i] for i in col_idx)
+        ist, ied = row_dic[row_q][:2]
+        jst, jed = col_dic[col_q][:2]
+        mat[ist:ied, jst:jed] = iblk.reshape(ied-ist, jed-jst)
+    return mat, row_dic, col_dic
+
 NEW_METHODS = [np.transpose, np.tensordot]
 
 _sparse_fermion_tensor_numpy_func_impls = _sparse_tensor_numpy_func_impls.copy()
@@ -368,6 +398,11 @@ class SparseFermionTensor(SparseTensor):
             parity_list.append(int(pval)%2)
         return parity_list
 
+    @property
+    def conj(self):
+        blks = [iblk.conj() for iblk in self.blocks]
+        return self.__class__(blocks=blks)
+
     def check_sanity(self):
         parity_uniq = np.unique(self.parity_per_block)
         if len(parity_uniq) >1:
@@ -387,6 +422,15 @@ class SparseFermionTensor(SparseTensor):
     def _global_flip(self):
         for i in range(self.n_blocks):
             self.blocks[i] *= -1
+
+    def to_matrix(self, row_idx, return_dic=False):
+        if return_dic:
+            return matricize(self, row_idx)
+        else:
+            return matricize(self, row_idx)[0]
+
+    def to_flat(self):
+        return FlatFermionTensor.from_sparse(self)
 
     def _skeleton(bond_infos, dq=None):
         if dq is None:
@@ -642,6 +686,10 @@ class FlatFermionTensor(FlatSparseTensor):
         return parity_list
 
     @property
+    def conj(self):
+        return self.__class__(self.q_labels, self.shapes, self.data.conj(), idxs=self.idxs)
+
+    @property
     def shape(self):
         return np.amax(self.shapes, axis=1)
 
@@ -664,6 +712,13 @@ class FlatFermionTensor(FlatSparseTensor):
 
     def _global_flip(self):
         self.data *= -1
+
+    def to_matrix(self, row_idx, return_dic=False):
+        tsr = self.to_sparse()
+        if return_dic:
+            return matricize(tsr, row_idx)
+        else:
+            return matricize(tsr, row_idx)[0]
 
     def to_sparse(self):
         blocks = [None] * self.n_blocks
