@@ -257,6 +257,8 @@ PYBIND11_MODULE(block3, m) {
                            py::arg("cidxs"), py::arg("ferm_op"));
 
     py::module flat_fermion_tensor = m.def_submodule("flat_fermion_tensor");
+    flat_fermion_tensor.def("skeleton", &flat_fermion_tensor_skeleton,
+                           py::arg("infos"), py::arg("dq"));
     flat_fermion_tensor.def("transpose", &flat_fermion_tensor_transpose,
                             py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                             py::arg("aidxs"), py::arg("perm"),

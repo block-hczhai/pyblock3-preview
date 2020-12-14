@@ -138,6 +138,9 @@ class SubTensor(np.ndarray):
     def copy(self):
         return np.copy(self)
 
+    def conj(self):
+        return SubTensor(reduced=np.asarray(self).conj(), q_labels=self.q_labels)
+
     @staticmethod
     @implements(np.linalg.norm)
     def _norm(x):

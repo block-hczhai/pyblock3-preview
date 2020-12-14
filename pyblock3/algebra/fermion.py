@@ -26,7 +26,11 @@ from .core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
 from .flat import FlatSparseTensor, flat_sparse_skeleton, _flat_sparse_tensor_numpy_func_impls
 from .symmetry import SZ
 import numbers
-from block3 import flat_fermion_tensor
+from block3 import flat_fermion_tensor, flat_sparse_tensor, VectorMapUIntUInt
+
+def flat_fermion_skeleton(bond_infos, dq=None):
+    fdq = dq.to_flat() if dq is not None else SZ(0).to_flat()
+    return flat_fermion_tensor.skeleton(VectorMapUIntUInt(bond_infos), fdq)
 
 def method_alias(name):
     def ff(f):
@@ -57,6 +61,338 @@ def compute_phase(q_labels, axes):
         counted.append(x)
     return phase
 
+def _unpack_sparse_tensor(data, imap, ax, blklist):
+    for q_label, (isec, ishape) in imap.items():
+        ist, ied = isec
+        if ax==0:
+            tmp = data[ist:ied].reshape(ishape+(-1,))
+        else:
+            tmp = data[:,ist:ied].reshape((-1,)+ishape)
+        blklist.append(SubTensor(tmp, q_labels=q_label))
+
+def _unpack_flat_tensor(data, imap, ax, adata, qlst, shapelst):
+    for q_label, (isec, ishape) in imap.items():
+        qlst.append([SZ.to_flat(iq) for iq in q_label])
+        ist, ied = isec
+        if ax==0:
+            tmp = data[ist:ied]
+            shape = tuple(ishape) + (tmp.size//np.prod(ishape), )
+        else:
+            tmp = data[:,ist:ied]
+            shape = (tmp.size//np.prod(ishape), ) + tuple(ishape)
+        adata.append(tmp.ravel())
+        shapelst.append(shape)
+
+def _pack_sparse_tensor(tsr, s_label, ax):
+    u_map = {}
+    v_map = {}
+    left_offset = 0
+    right_offset = 0
+    for iblk in tsr.blocks:
+        q_label_left = iblk.q_labels[:ax]
+        q_label_right = iblk.q_labels[ax:]
+        left_parity = np.mod(sum([iq.n for iq in q_label_left]) ,2)
+        right_parity = np.mod(sum([iq.n for iq in q_label_right]) ,2)
+        q_label_left += (SZ(left_parity), )
+        q_label_right = (SZ(right_parity), ) + q_label_right
+        q_label_mid = (SZ(left_parity), SZ(right_parity))
+        if q_label_mid != s_label: continue
+        len_left = np.prod(iblk.shape[:ax])
+        len_right = np.prod(iblk.shape[ax:])
+        if q_label_left not in u_map.keys():
+            u_map[q_label_left] = ((left_offset, left_offset+len_left), iblk.shape[:ax])
+            left_offset += len_left
+        if q_label_right not in v_map.keys():
+            v_map[q_label_right] = ((right_offset, right_offset+len_right), iblk.shape[ax:])
+            right_offset += len_right
+
+    data = np.zeros((left_offset, right_offset), dtype=tsr.dtype)
+    for iblk in tsr.blocks:
+        q_label_left = iblk.q_labels[:ax]
+        q_label_right = iblk.q_labels[ax:]
+        left_parity = np.mod(sum([iq.n for iq in q_label_left]) ,2)
+        right_parity = np.mod(sum([iq.n for iq in q_label_right]) ,2)
+        q_label_left += (SZ(left_parity), )
+        q_label_right = (SZ(right_parity), ) + q_label_right
+        q_label_mid = (SZ(left_parity), SZ(right_parity))
+        if q_label_mid != s_label: continue
+        ist, ied = u_map[q_label_left][0]
+        jst, jed = v_map[q_label_right][0]
+        data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jed-jst)
+    return data, u_map, v_map
+
+def _pack_flat_tensor(tsr, s_label, ax):
+    nblks, ndim = tsr.q_labels.shape
+    u_map = {}
+    v_map = {}
+    left_offset = 0
+    right_offset = 0
+    for iblk in range(nblks):
+        q_label_left = tuple(SZ.from_flat(iq) for iq in tsr.q_labels[iblk][:ax])
+        q_label_right = tuple(SZ.from_flat(iq) for iq in tsr.q_labels[iblk][ax:])
+        left_parity = np.mod(sum([iq.n for iq in q_label_left]) ,2)
+        right_parity = np.mod(sum([iq.n for iq in q_label_right]) ,2)
+        q_label_left += (SZ(left_parity), )
+        q_label_right = (SZ(right_parity), ) + q_label_right
+        q_label_mid = (SZ(left_parity), SZ(right_parity))
+        if q_label_mid != s_label: continue
+        if q_label_mid != s_label: continue
+        len_left = int(np.prod(tsr.shapes[iblk][:ax]))
+        len_right = int(np.prod(tsr.shapes[iblk][ax:]))
+        if q_label_left not in u_map.keys():
+            u_map[q_label_left] = ((left_offset, left_offset+len_left), tsr.shapes[iblk][:ax])
+            left_offset += len_left
+        if q_label_right not in v_map.keys():
+            v_map[q_label_right] = ((right_offset, right_offset+len_right), tsr.shapes[iblk][ax:])
+            right_offset += len_right
+
+    data = np.zeros((left_offset, right_offset), dtype=tsr.dtype)
+    for iblk in range(nblks):
+        q_label_left = tuple(SZ.from_flat(iq) for iq in tsr.q_labels[iblk][:ax])
+        q_label_right = tuple(SZ.from_flat(iq) for iq in tsr.q_labels[iblk][ax:])
+        left_parity = np.mod(sum([iq.n for iq in q_label_left]) ,2)
+        right_parity = np.mod(sum([iq.n for iq in q_label_right]) ,2)
+        q_label_left += (SZ(left_parity), )
+        q_label_right = (SZ(right_parity), ) + q_label_right
+        q_label_mid = (SZ(left_parity), SZ(right_parity))
+        if q_label_mid != s_label: continue
+        ist, ied = u_map[q_label_left][0]
+        jst, jed = v_map[q_label_right][0]
+        blkst, blked = tsr.idxs[iblk], tsr.idxs[iblk+1]
+        data[ist:ied,jst:jed] = np.asarray(tsr.data[blkst:blked]).reshape(ied-ist, jed-jst)
+    return data, u_map, v_map
+
+def _trim_singular_vals(s, cutoff, cutoff_mode):
+    """Find the number of singular values to keep of ``s`` given ``cutoff`` and
+    ``cutoff_mode``.
+
+    Parameters
+    ----------
+    s : array
+        Singular values.
+    cutoff : float
+        Cutoff.
+    cutoff_mode : {1, 2, 3, 4, 5, 6}
+        How to perform the trim:
+
+            - 1: ['abs'], trim values below ``cutoff``
+            - 2: ['rel'], trim values below ``s[0] * cutoff``
+            - 3: ['sum2'], trim s.t. ``sum(s_trim**2) < cutoff``.
+            - 4: ['rsum2'], trim s.t. ``sum(s_trim**2) < sum(s**2) * cutoff``.
+            - 5: ['sum1'], trim s.t. ``sum(s_trim**1) < cutoff``.
+            - 6: ['rsum1'], trim s.t. ``sum(s_trim**1) < sum(s**1) * cutoff``.
+    """
+    if cutoff_mode == 1:
+        n_chi = np.sum(s > cutoff)
+
+    elif cutoff_mode == 2:
+        n_chi = np.sum(s > cutoff * s[0])
+
+    elif cutoff_mode in (3, 4, 5, 6):
+        if cutoff_mode in (3, 4):
+            p = 2
+        else:
+            p = 1
+
+        target = cutoff
+        if cutoff_mode in (4, 6):
+            target *= np.sum(s**p)
+
+        n_chi = s.size
+        ssum = 0.0
+        for i in range(s.size - 1, -1, -1):
+            s2 = s[i]**p
+            if not np.isnan(s2):
+                ssum += s2
+            if ssum > target:
+                break
+            n_chi -= 1
+
+    return max(n_chi, 1)
+
+def _renorm_singular_vals(s, n_chi, renorm_power):
+    """Find the normalization constant for ``s`` such that the new sum squared
+    of the ``n_chi`` largest values equals the sum squared of all the old ones.
+    """
+    s_tot_keep = 0.0
+    s_tot_lose = 0.0
+    for i in range(s.size):
+        s2 = s[i]**renorm_power
+        if not np.isnan(s2):
+            if i < n_chi:
+                s_tot_keep += s2
+            else:
+                s_tot_lose += s2
+    return ((s_tot_keep + s_tot_lose) / s_tot_keep)**(1 / renorm_power)
+
+def _trim_and_renorm_SVD(U, s, VH, **svdopts):
+    cutoff = svdopts.pop("cutoff", -1.0)
+    cutoff_mode = svdopts.pop("cutoff_mode", 3)
+    max_bond = svdopts.pop("max_bond", -1)
+    renorm_power = svdopts.pop("renorm_power", 0)
+
+    if cutoff > 0.0:
+        n_chi = _trim_singular_vals(s, cutoff, cutoff_mode)
+
+        if max_bond > 0:
+            n_chi = min(n_chi, max_bond)
+
+        if n_chi < s.size:
+            if renorm_power > 0:
+                s = s[:n_chi] * _renorm_singular_vals(s, n_chi, renorm_power)
+            else:
+                s = s[:n_chi]
+
+            U = U[..., :n_chi]
+            VH = VH[:n_chi, ...]
+
+    elif max_bond != -1:
+        U = U[..., :max_bond]
+        s = s[:max_bond]
+        VH = VH[:max_bond, ...]
+
+    s = np.ascontiguousarray(s)
+    return U, s, VH
+
+def _absorb_svd(u, s, v, absorb, s_label, umap, vmap):
+    flip_parity = (s_label[0]!=s_label[1])
+    if absorb == -1:
+        u = u * s.reshape((1, -1))
+        if flip_parity:
+            qlst = list(umap.keys())
+            for qlab in qlst:
+                val = umap.pop(qlab)
+                newqlab = qlab[:-1] + (s_label[-1], )
+                umap[newqlab] = val
+    elif absorb == 1:
+        v = v * s.reshape((-1, 1))
+        if flip_parity:
+            qlst = list(vmap.keys())
+            for qlab in qlst:
+                val = vmap.pop(qlab)
+                newqlab = (s_label[0], ) + qlab[1:]
+                vmap[newqlab] = val
+    else:
+        s **= 0.5
+        u = u * s.reshape((1, -1))
+        v = v * s.reshape((-1, 1))
+        if flip_parity:
+            qlst = list(umap.keys())
+            for qlab in qlst:
+                val = umap.pop(qlab)
+                newqlab = qlab[:-1] + (s_label[-1], )
+                umap[newqlab] = val
+    return u, None, v, umap, vmap
+
+def _run_sparse_fermion_svd(tsr, ax=2, **svd_opts):
+    full_matrices = svd_opts.pop("full_matrices", False)
+    absorb = svd_opts.pop("absorb", 0)
+
+    s_labels = {0: [(SZ(0), SZ(0)), (SZ(1), SZ(1))],
+                1: [(SZ(0), SZ(1)), (SZ(1), SZ(0))]}[tsr.parity]
+    ublk, sblk, vblk = [],[],[]
+    for s_label in s_labels:
+        data, umap, vmap = _pack_sparse_tensor(tsr, s_label, ax)
+        u, s, v = np.linalg.svd(data, full_matrices=full_matrices)
+        u, s, v = _trim_and_renorm_SVD(u, s, v, **svd_opts)
+        if absorb is None:
+            sblk.append(SubTensor(np.diag(s), q_labels=s_label))
+        else:
+            u, s, v, umap, vmap = _absorb_svd(u, s, v, absorb, s_label, umap, vmap)
+
+        _unpack_sparse_tensor(u, umap, 0, ublk)
+        _unpack_sparse_tensor(v, vmap, 1, vblk)
+
+    u = SparseFermionTensor(blocks=ublk)
+    if absorb is None:
+        s = SparseFermionTensor(blocks=sblk)
+    v = SparseFermionTensor(blocks=vblk)
+    return u, s, v
+
+def _run_flat_fermion_svd(tsr, ax=2, **svd_opts):
+    full_matrices = svd_opts.pop("full_matrices", False)
+    absorb = svd_opts.pop("absorb", 0)
+    nblk, ndim = tsr.q_labels.shape
+    s_labels = {0: [(SZ(0), SZ(0)), (SZ(1), SZ(1))],
+                1: [(SZ(0), SZ(1)), (SZ(1), SZ(0))]}[tsr.parity]
+    udata, sdata, vdata = [],[],[]
+    uq, sq, vq = [],[],[]
+    ushapes, sshapes, vshapes = [],[],[]
+    for s_label in s_labels:
+        data, umap, vmap = _pack_flat_tensor(tsr, s_label, ax)
+        u, s, v = np.linalg.svd(data, full_matrices=full_matrices)
+        u, s, v = _trim_and_renorm_SVD(u, s, v, **svd_opts)
+        if absorb is None:
+            s = np.diag(s)
+            sq.append([SZ.to_flat(iq) for iq in s_label])
+            sshapes.append(s.shape)
+            sdata.append(s.ravel())
+        else:
+            u, s, v, umap, vmap = _absorb_svd(u, s, v, absorb, s_label, umap, vmap)
+        _unpack_flat_tensor(u, umap, 0, udata, uq, ushapes)
+        _unpack_flat_tensor(v, vmap, 1, vdata, vq, vshapes)
+
+    if absorb is None:
+        sq = np.asarray(sq, dtype=int)
+        sshapes = np.asarray(sshapes, dtype=int)
+        sdata = np.concatenate(sdata)
+        s = FlatFermionTensor(sq, sshapes, sdata)
+
+    uq = np.asarray(uq, dtype=int)
+    ushapes = np.asarray(ushapes, dtype=int)
+    udata = np.concatenate(udata)
+
+    vq = np.asarray(vq, dtype=int)
+    vshapes = np.asarray(vshapes, dtype=int)
+    vdata = np.concatenate(vdata)
+    u = FlatFermionTensor(uq, ushapes, udata)
+    v = FlatFermionTensor(vq, vshapes, vdata)
+    return u, s ,v
+
+def fermion_tensor_svd(tsr, left_idx, right_idx=None, **opts):
+    if right_idx is None:
+        right_idx = [idim for idim in range(tsr.ndim) if idim not in left_idx]
+    neworder = tuple(left_idx) + tuple(right_idx)
+    split_ax = len(left_idx)
+    newtsr = tsr.transpose(neworder)
+    if isinstance(tsr, SparseFermionTensor):
+        u, s, v = _run_sparse_fermion_svd(newtsr, split_ax, **opts)
+    elif isinstance(tsr, FlatFermionTensor):
+        u, s, v = _run_flat_fermion_svd(newtsr, split_ax, **opts)
+    else:
+        raise TypeError("Tensor class not Sparse/FlatFermionTensor")
+    return u, s, v
+
+def matricize(tsr, row_idx):
+    col_idx = tuple(i for i in range(tsr.ndim) if i not in row_idx)
+    col_dic = {}
+    row_dic = {}
+    col_off = 0
+    row_off = 0
+    for iblk in tsr:
+        row_q = tuple(iblk.q_labels[i] for i in row_idx)
+        col_q = tuple(iblk.q_labels[i] for i in col_idx)
+        row_sp = tuple(iblk.shape[i] for i in row_idx)
+        col_sp = tuple(iblk.shape[i] for i in col_idx)
+        if row_q not in row_dic:
+            row_dic[row_q] = (row_off, row_off+np.prod(row_sp), row_sp)
+            row_off += np.prod(row_sp)
+        if col_q not in col_dic:
+            col_dic[col_q] = (col_off, col_off+np.prod(col_sp), col_sp)
+            col_off += np.prod(col_sp)
+    row_size = max([val[1] for val in row_dic.values()])
+    col_size = max([val[1] for val in col_dic.values()])
+    mat = np.zeros([row_size, col_size], dtype=tsr.dtype)
+    for iblk in tsr:
+        row_q = tuple(iblk.q_labels[i] for i in row_idx)
+        col_q = tuple(iblk.q_labels[i] for i in col_idx)
+        row_sp = tuple(iblk.shape[i] for i in row_idx)
+        col_sp = tuple(iblk.shape[i] for i in col_idx)
+        ist, ied = row_dic[row_q][:2]
+        jst, jed = col_dic[col_q][:2]
+        mat[ist:ied, jst:jed] = iblk.reshape(ied-ist, jed-jst)
+    return mat, row_dic, col_dic
+
 NEW_METHODS = [np.transpose, np.tensordot]
 
 _sparse_fermion_tensor_numpy_func_impls = _sparse_tensor_numpy_func_impls.copy()
@@ -70,9 +406,9 @@ class SparseFermionTensor(SparseTensor):
         self.check_sanity()
 
     @property
-    def pairty(self):
+    def parity(self):
         self.check_sanity()
-        parity_uniq = np.unique(self.parity_list)
+        parity_uniq = np.unique(self.parity_per_block)
         return parity_uniq[0]
 
     @property
@@ -82,6 +418,10 @@ class SparseFermionTensor(SparseTensor):
             pval = sum([q_label.n for q_label in block.q_labels])
             parity_list.append(int(pval)%2)
         return parity_list
+
+    def conj(self):
+        blks = [iblk.conj() for iblk in self.blocks]
+        return self.__class__(blocks=blks)
 
     def check_sanity(self):
         parity_uniq = np.unique(self.parity_per_block)
@@ -103,27 +443,58 @@ class SparseFermionTensor(SparseTensor):
         for i in range(self.n_blocks):
             self.blocks[i] *= -1
 
+    def to_matrix(self, row_idx, return_dic=False):
+        if return_dic:
+            return matricize(self, row_idx)
+        else:
+            return matricize(self, row_idx)[0]
+
+    def to_flat(self):
+        return FlatFermionTensor.from_sparse(self)
+
+    def _skeleton(bond_infos, dq=None):
+        if dq is None:
+            dq = SZ(0,0,0)
+        if not isinstance(dq, SZ):
+            raise TypeError("dq is not an instance of SZ class")
+        it = np.zeros(tuple(len(i) for i in bond_infos), dtype=int)
+        qsh = [sorted(i.items(), key=lambda x: x[0]) for i in bond_infos]
+        q = [[k for k, v in i] for i in qsh]
+        sh = [[v for k, v in i] for i in qsh]
+        nit = np.nditer(it, flags=['multi_index'])
+        for _ in nit:
+            x = nit.multi_index
+            ps = [iq[ix] for iq, ix in zip(q, x)]
+            parity = np.mod(sum([iq[ix].n for iq, ix in zip(q, x)]), 2)
+            if parity == dq.n:
+                xqs = tuple(iq[ix] for iq, ix in zip(q, x))
+                xsh = tuple(ish[ix] for ish, ix in zip(sh, x))
+                yield xsh, xqs
+
+    def tensor_svd(self, left_idx, right_idx=None, **svd_opts):
+        return fermion_tensor_svd(self, left_idx, right_idx=right_idx, **svd_opts)
+
     @staticmethod
-    def zeros(bond_infos, pattern=None, dq=None, dtype=float):
+    def zeros(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with zero elements."""
         blocks = []
-        for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
+        for sh, qs in SparseFermionTensor._skeleton(bond_infos, dq=dq):
             blocks.append(SubTensor.zeros(shape=sh, q_labels=qs, dtype=dtype))
         return SparseFermionTensor(blocks=blocks)
 
     @staticmethod
-    def ones(bond_infos, pattern=None, dq=None, dtype=float):
+    def ones(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with ones."""
         blocks = []
-        for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
+        for sh, qs in SparseFermionTensor._skeleton(bond_infos, dq=dq):
             blocks.append(SubTensor.ones(shape=sh, q_labels=qs, dtype=dtype))
         return SparseFermionTensor(blocks=blocks)
 
     @staticmethod
-    def random(bond_infos, pattern=None, dq=None, dtype=float):
+    def random(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with random elements."""
         blocks = []
-        for sh, qs in SparseTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
+        for sh, qs in SparseFermionTensor._skeleton(bond_infos, dq=dq):
             blocks.append(SubTensor.random(shape=sh, q_labels=qs, dtype=dtype))
         return SparseFermionTensor(blocks=blocks)
 
@@ -321,9 +692,9 @@ class FlatFermionTensor(FlatSparseTensor):
         self.check_sanity()
 
     @property
-    def pairty(self):
+    def parity(self):
         self.check_sanity()
-        parity_uniq = np.unique(self.parity_list)
+        parity_uniq = np.unique(self.parity_per_block)
         return parity_uniq[0]
 
     @property
@@ -333,6 +704,13 @@ class FlatFermionTensor(FlatSparseTensor):
             pval = sum([SZ.from_flat(qlab).n for qlab in q_label])
             parity_list.append(int(pval)%2)
         return parity_list
+
+    def conj(self):
+        return self.__class__(self.q_labels, self.shapes, self.data.conj(), idxs=self.idxs)
+
+    @property
+    def shape(self):
+        return np.amax(self.shapes, axis=1)
 
     def check_sanity(self):
         parity_uniq = np.unique(self.parity_per_block)
@@ -354,6 +732,13 @@ class FlatFermionTensor(FlatSparseTensor):
     def _global_flip(self):
         self.data *= -1
 
+    def to_matrix(self, row_idx, return_dic=False):
+        tsr = self.to_sparse()
+        if return_dic:
+            return matricize(tsr, row_idx)
+        else:
+            return matricize(tsr, row_idx)[0]
+
     def to_sparse(self):
         blocks = [None] * self.n_blocks
         for i in range(self.n_blocks):
@@ -361,6 +746,9 @@ class FlatFermionTensor(FlatSparseTensor):
             blocks[i] = SubTensor(
                 self.data[self.idxs[i]:self.idxs[i + 1]].reshape(self.shapes[i]), q_labels=qs)
         return SparseFermionTensor(blocks=blocks)
+
+    def tensor_svd(self, left_idx, **svd_opts):
+        return fermion_tensor_svd(self, left_idx, **svd_opts)
 
     @staticmethod
     def get_zero():
@@ -380,30 +768,30 @@ class FlatFermionTensor(FlatSparseTensor):
             q_labels[i] = list(map(SZ.to_flat, spt.blocks[i].q_labels))
         idxs = np.zeros((n_blocks + 1, ), dtype=np.uint32)
         idxs[1:] = np.cumsum(shapes.prod(axis=1))
-        data = np.zeros((idxs[-1], ), dtype=np.float64)
+        data = np.zeros((idxs[-1], ), dtype=spt.dtype)
         for i in range(n_blocks):
             data[idxs[i]:idxs[i + 1]] = spt.blocks[i].flatten()
         return FlatFermionTensor(q_labels, shapes, data, idxs)
 
 
     @staticmethod
-    def zeros(bond_infos, pattern=None, dq=None, dtype=float):
+    def zeros(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with zero elements."""
-        qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
+        qs, shs, idxs = flat_fermion_skeleton(bond_infos, dq)
         data = np.zeros((idxs[-1], ), dtype=dtype)
         return FlatFermionTensor(qs, shs, data, idxs)
 
     @staticmethod
-    def ones(bond_infos, pattern=None, dq=None, dtype=float):
+    def ones(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with ones."""
-        qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
+        qs, shs, idxs = flat_fermion_skeleton(bond_infos, dq)
         data = np.ones((idxs[-1], ), dtype=dtype)
         return FlatFermionTensor(qs, shs, data, idxs)
 
     @staticmethod
-    def random(bond_infos, pattern=None, dq=None, dtype=float):
+    def random(bond_infos, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with random elements."""
-        qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
+        qs, shs, idxs = flat_fermion_skeleton(bond_infos, dq)
         if dtype == float:
             data = np.random.random((idxs[-1], ))
         elif dtype == complex:
@@ -411,7 +799,7 @@ class FlatFermionTensor(FlatSparseTensor):
                 (idxs[-1], )) + np.random.random((idxs[-1], )) * 1j
         else:
             return NotImplementedError('dtype %r not supported!' % dtype)
-        return FlatFermionTensor(qs, shs, data, idxs)
+        return FlatSparseTensor(qs, shs, data, idxs)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _flat_fermion_tensor_numpy_func_impls:
@@ -484,7 +872,6 @@ class FlatFermionTensor(FlatSparseTensor):
         return r
 
 
-
     @staticmethod
     def _pdot(a, b, out=None):
         """Vertical contraction (all middle/physical dims)."""
@@ -524,6 +911,18 @@ class FlatFermionTensor(FlatSparseTensor):
             return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, a.idxs)
 
+    def permute(self, axes=None):
+        if axes is None:
+            axes = np.arange(a.ndim)[::-1]
+        if self.n_blocks == 0:
+            return self
+        else:
+            axes = np.array(axes, dtype=np.int32)
+            data = np.zeros_like(self.data)
+            flat_sparse_tensor.transpose(self.shapes, self.data, self.idxs, axes, data)
+            return self.__class__(self.q_labels[:, axes], self.shapes[:, axes], data, self.idxs)
+
+
     @staticmethod
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
@@ -539,3 +938,21 @@ class FlatFermionTensor(FlatSparseTensor):
             a.q_labels, a.shapes, a.data, a.idxs,
             b.q_labels, b.shapes, b.data, b.idxs,
             idxa, idxb))
+
+    @staticmethod
+    @implements(np.linalg.norm)
+    def _norm(a):
+        return np.linalg.norm(a.data)
+
+    @staticmethod
+    @implements(np.reshape)
+    def _reshape(a, newshape, *args, **kwargs):
+        return np.reshape(a.data, newshape, *args, **kwargs)
+
+    def reshape(self, newshape, *args, **kwargs):
+        return np.reshape(self, newshape, *args, **kwargs)
+
+    def astype(self, dtype, *args, **kwargs):
+        return self.__class__(self.q_labels, self.shapes, \
+                              self.data.astype(dtype, *args, **kwargs), \
+                              self.idxs)
