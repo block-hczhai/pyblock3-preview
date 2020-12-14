@@ -747,7 +747,7 @@ class FlatFermionTensor(FlatSparseTensor):
             q_labels[i] = list(map(SZ.to_flat, spt.blocks[i].q_labels))
         idxs = np.zeros((n_blocks + 1, ), dtype=np.uint32)
         idxs[1:] = np.cumsum(shapes.prod(axis=1))
-        data = np.zeros((idxs[-1], ), dtype=np.float64)
+        data = np.zeros((idxs[-1], ), dtype=spt.dtype)
         for i in range(n_blocks):
             data[idxs[i]:idxs[i + 1]] = spt.blocks[i].flatten()
         return FlatFermionTensor(q_labels, shapes, data, idxs)
