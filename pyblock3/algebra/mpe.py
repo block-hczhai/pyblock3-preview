@@ -1,4 +1,30 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
+"""
+Partially contracted tensor network (MPE) with
+methods for DMRG-like sweep algorithm.
+
+CachedMPE enables swapping with disk storage
+to reduce memory requirement.
+"""
+
 import numpy as np
 import os
 import time
@@ -6,6 +32,7 @@ import pickle
 from functools import reduce
 from .linalg import davidson, conjugate_gradient
 from ..algorithms.dmrg import DMRG
+from ..algorithms.tddmrg import TDDMRG
 from ..algorithms.linear import Linear
 from ..algorithms.green import GreensFunction
 
@@ -289,6 +316,29 @@ class MPE:
         w = np.linalg.norm(v)
         mpe = self.copy_shell(bra=v, mpo=self.mpo, ket=self.ket)
         return w, mpe, 1
+    
+    def rk4(self, dt, fast=False, eval_ener=True):
+        if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
+            from .flat_functor import FlatSparseFunctor
+            pattern = '++' + '+' * (self.ket[0].ndim - 4) + '-+'
+            fst = FlatSparseFunctor(self.mpo, pattern=pattern, symmetric=False)
+            b = fst.prepare_vector(self.ket[0])
+            k1 = dt * (fst @ b)
+            k2 = dt * (fst @ (0.5 * k1 + b))
+            k3 = dt * (fst @ (0.5 * k2 + b))
+            k4 = dt * (fst @ (k3 + b))
+            r1 = b + (31.0 / 162) * k1 + (14.0 / 162) * k2 + (14.0 / 162) * k3 + (-5.0 / 162) * k4
+            r2 = b + (16.0 / 81) * k1 + (20.0 / 81) * k2 + (20.0 / 81) * k3 + (-2.0 / 81) * k4
+            r3 = b + k1 / 6 + k2 / 3 + k3 / 3 + k4 / 6
+            g = np.linalg.norm(r3)
+            w = np.dot(r3, fst @ r3) / g ** 2 if eval_ener else 0
+            kets = [self.ket.__class__(tensors=[fst.finalize_vector(x)],
+                        opts=self.ket.opts) for x in [b, r1, r2, r3]]
+            nflop = fst.nflop
+        else:
+            raise NotImplementedError
+        mpe = self.copy_shell(bra=kets[0], mpo=self.mpo, ket=kets[0])
+        return w, g, kets, mpe, 4 + eval_ener, nflop
 
     def solve_gf(self, ket, omega, eta, iprint=False, fast=False, conv_thrd=1E-7):
         if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
@@ -308,15 +358,18 @@ class MPE:
             r = self.ket.__class__(
                 tensors=[fst.finalize_vector(r)], opts=self.ket.opts)
         else:
-            assert False
+            raise NotImplementedError
         mpe = self.copy_shell(bra=r, mpo=self.mpo, ket=x)
         return rw + iw * 1j, mpe, ncg
 
     def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2, forward=True):
         return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot, forward=forward)
+    
+    def tddmrg(self, bdims, dt, n_sweeps=10, n_sub_sweeps=2, dot=2, iprint=2, forward=True):
+        return TDDMRG(self, bdims, iprint=iprint).solve(dt, n_sweeps, n_sub_sweeps, dot, forward=forward)
 
-    def linear(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
-        return Linear(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
+    def linear(self, bdims, noises=None, cg_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
+        return Linear(self, bdims, noises, cg_thrds, iprint=iprint).solve(n_sweeps, tol, dot)
 
     def greens_function(self, mpo, omega, eta, bdims, noises=None, cg_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
         return GreensFunction(self, mpo, omega, eta, bdims, noises, cg_thrds, iprint=iprint).solve(n_sweeps, tol, dot)

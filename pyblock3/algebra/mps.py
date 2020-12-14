@@ -1,4 +1,25 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
+"""
+1D tensor network for MPS/MPO.
+"""
 
 import numpy as np
 from numpy.lib.mixins import NDArrayOperatorsMixin
@@ -24,6 +45,7 @@ class MPSInfo:
     BondInfo in every site in MPS
     (a) For constrution of initial MPS.
     (b) For tracking basis info in construction of SliceableTensor.
+
     Attributes:
         n_sites : int
             Number of sites
@@ -96,6 +118,24 @@ class MPSInfo:
             ref = (-self.basis[d]) * self.right_dims[d + 1]
             self.right_dims[d].truncate(bond_dim, ref)
 
+    def set_bond_dimension_thermal_limit(self):
+        """Set bond dimension for MPS at thermal-limit state in ancilla approach."""
+
+        if self.left_dims is None:
+            self.set_bond_dimension_fci(call_back=None)
+
+        for d in range(0, self.n_sites):
+            if d % 2 == 0:
+                self.left_dims[d + 1] = self.left_dims[d] * self.basis[d]
+            else:
+                self.left_dims[d + 1] = self.left_dims[d].keep_maximal()
+
+        for d in range(self.n_sites - 1, -1, -1):
+            if d % 2 != 0:
+                self.right_dims[d] = (-self.basis[d]) * self.right_dims[d + 1]
+            else:
+                self.right_dims[d] = self.right_dims[d + 1].keep_maximal()
+
 
 _mps_numpy_func_impls = {}
 _numpy_func_impls = _mps_numpy_func_impls
@@ -104,6 +144,7 @@ _numpy_func_impls = _mps_numpy_func_impls
 class MPS(NDArrayOperatorsMixin):
     """
     Matrix Product State / Matrix Product Operator.
+
     Attributes:
         tensors : list(SparseTensor/FermionTensor)
             A list of block-sparse tensors.
@@ -147,6 +188,19 @@ class MPS(NDArrayOperatorsMixin):
                   *tuple(range(1, d + 1)), d + d + 1)
             tensors[i] = self.tensors[i].transpose(tr)
         return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
+
+    @staticmethod
+    def ones(info, opts=None):
+        """Construct unfused MPS from MPSInfo, with identity matrix elements."""
+        tensors = [None] * info.n_sites
+        for i in range(info.n_sites):
+            if isinstance(info.basis[i], BondInfo):
+                tensors[i] = SparseTensor.ones(
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+            else:
+                tensors[i] = FlatSparseTensor.ones(
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+        return MPS(tensors=tensors, opts=opts)
 
     @staticmethod
     def zeros(info, opts=None):
@@ -262,6 +316,7 @@ class MPS(NDArrayOperatorsMixin):
     def compress(self, **opts):
         """
         MPS bond dimension compression.
+
         Args:
             max_bond_dim : int
                 Maximal total bond dimension.

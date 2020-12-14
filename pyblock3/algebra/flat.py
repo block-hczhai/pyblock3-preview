@@ -1,4 +1,30 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
+"""
+High performance version for block-sparse tensors
+and block-sparse tensors with fermion factors.
+
+Flat classes have the same interface as their counterparts in
+core.py, but with C++ optimized implementations.
+"""
+
 import numpy as np
 from numpy.lib.mixins import NDArrayOperatorsMixin
 import numbers
@@ -555,16 +581,15 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             l, s, r : tuple(FlatSparseTensor)
         """
         assert full_matrices == False
-        # lsr = self.to_sparse().tensor_svd(idx, linfo, rinfo, pattern, full_matrices)
-        # return tuple(FlatSparseTensor.from_sparse(x) for x in lsr)
         assert idx >= 1 and idx <= self.ndim - 1
         if pattern is None:
             pattern = '+' * self.ndim
         if linfo is None:
             linfo = self.kron_sum_info(*range(0, idx), pattern=pattern[:idx])
         if rinfo is None:
+            rpat = ''.join(['-' if x == '+' else '+' for x in pattern[idx:]])
             rinfo = self.kron_sum_info(
-                *range(idx, self.ndim), pattern=pattern[idx:])
+                *range(idx, self.ndim), pattern=rpat)
         lsr = flat_sparse_tensor_svd(
             self.q_labels, self.shapes, self.data, self.idxs, idx, linfo, rinfo, pattern)
         return self.__class__(*lsr[:4]), self.__class__(*lsr[4:8]), self.__class__(*lsr[8:])
@@ -591,6 +616,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
 
         Returns:
             l, s, r : tuple(FlatSparseTensor)
+                SVD decomposition.
             error : float
                 Truncation error (same unit as singular value squared).
         """
@@ -898,13 +924,13 @@ class FlatFermionTensor(FermionTensor):
             even_b = np.tensordot(a.even, b.even, (idxa, idxb))
             def r(): return FlatFermionTensor(odd=odd_a + odd_b, even=even_a + even_b)
             # symbolic horizontal
-            if idxa == [] and idxb == []:
+            if len(idxa) == 0 and len(idxb) == 0:
                 assert a.ndim % 2 == 0
                 d = a.ndim // 2
                 idx = range(d, d + d) if d != 1 else d
                 blocks = [odd_b, even_a]
             # horizontal
-            elif idxa == [a.ndim - 1] and idxb == [0]:
+            elif list(idxa) == [a.ndim - 1] and list(idxb) == [0]:
                 assert a.ndim % 2 == 0
                 d = (a.ndim - 2) // 2
                 idx = range(d + 1, d + d + 1) if d != 1 else d + 1
@@ -1311,6 +1337,7 @@ class FlatFermionTensor(FermionTensor):
 
         Returns:
             l, s, r : tuple(FlatSparseTensor/FlatFermionTensor)
+                SVD decomposition.
             error : float
                 Truncation error (same unit as singular value squared).
         """

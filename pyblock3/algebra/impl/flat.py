@@ -1,4 +1,28 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+
+"""
+python implementation for Flat version of block-sparse tensors
+and block-sparse tensors with fermion factors.
+
+This should only be used for debugging C++ code purpose.
+"""
+
 import numpy as np
 from itertools import accumulate, groupby
 from collections import Counter
@@ -89,7 +113,7 @@ def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
         qls, qrs = xqls[iq], xqrs[iq]
         ql = np.add.reduce([iq if ip == "+" else -iq for iq,
                             ip in zip(qls, pattern[:idx])])
-        qr = np.add.reduce([iq if ip == "+" else -iq for iq,
+        qr = np.add.reduce([iq if ip == "-" else -iq for iq,
                             ip in zip(qrs, pattern[idx:])])
         assert ql == qr
         q = ql
@@ -351,7 +375,9 @@ def flat_sparse_get_infos(aqs, ashs):
 
 
 def flat_sparse_skeleton(bond_infos, pattern=None, dq=None):
-    """Create tensor skeleton from tuple of BondInfo."""
+    """Create tensor skeleton from tuple of BondInfo.
+    dq will not have effects if ndim == 1
+        (blocks with different dq will be allowed)."""
     it = np.zeros(tuple(len(i) for i in bond_infos), dtype=int)
     qsh = [sorted(i.items(), key=lambda x: x[0]) for i in bond_infos]
     nl, nd = it.ndim, np.max(it.shape)

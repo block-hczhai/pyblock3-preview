@@ -1,4 +1,24 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
+"""One-body/two-body integral object."""
+
 import numpy as np
 
 PointGroup = {
@@ -16,7 +36,7 @@ PointGroup = {
 class FCIDUMP:
 
     def __init__(self, pg='c1', n_sites=0, n_elec=0, twos=0, ipg=0, uhf=False,
-                 h1e=None, g2e=None, orb_sym=None, const_e=0):
+                 h1e=None, g2e=None, orb_sym=None, const_e=0, mu=0):
         self.pg = pg
         self.n_sites = n_sites
         self.n_elec = n_elec
@@ -28,6 +48,7 @@ class FCIDUMP:
         self.uhf = uhf
         self.general = False
         self.orb_sym = [0] * self.n_sites if orb_sym is None else orb_sym
+        self.mu = mu
 
     def t(self, s, i, j):
         return self.h1e[s][i, j] if self.uhf else self.h1e[i, j]
@@ -112,6 +133,8 @@ class FCIDUMP:
                         self.g2e[k - 1, l - 1, j - 1, i - 1] = d
                         self.g2e[l - 1, k - 1, j - 1, i - 1] = d
                         self.g2e[l - 1, k - 1, i - 1, j - 1] = d
+            if self.mu != 0:
+                self.h1e -= self.mu * np.identity(self.n_sites)
         else:
             self.h1e = (None, None)
             self.h1e[0] = np.zeros((self.n_sites, self.n_sites))
@@ -149,4 +172,7 @@ class FCIDUMP:
                         self.g2e[ig][k - 1, l - 1, j - 1, i - 1] = d
                         self.g2e[ig][l - 1, k - 1, j - 1, i - 1] = d
                         self.g2e[ig][l - 1, k - 1, i - 1, j - 1] = d
+            if self.mu != 0:
+                self.h1e[0] -= self.mu * np.identity(self.n_sites)
+                self.h1e[1] -= self.mu * np.identity(self.n_sites)
         return self

@@ -1,4 +1,23 @@
 
+/*
+ * pyblock3: An Efficient python MPS/DMRG Library
+ * Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ *
+ */
+
 #include "bond_info.hpp"
 #include <cassert>
 #include <cmath>
@@ -68,7 +87,7 @@ tensor_product_no_collect(const unordered_map<uint32_t, double> &ma,
     return mc;
 }
 
-inline unordered_map<uint32_t, uint32_t>
+unordered_map<uint32_t, uint32_t>
 tensor_product_ref(const unordered_map<uint32_t, uint32_t> &ma,
                    const unordered_map<uint32_t, uint32_t> &mb,
                    const unordered_map<uint32_t, uint32_t> &mcref) {

@@ -1,4 +1,22 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
 """
 Linear algebra functions at module level.
 Including some functions not available from numpy.linalg.
@@ -169,7 +187,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
         if aa is not None:
             _olsen_precondition(q, b[ck], ld[ck], aa)
 
-        if np.sqrt(qq) < conv_thrd:
+        if qq < 0 or np.sqrt(qq) < conv_thrd:
             ck += 1
             if ck == k:
                 break
@@ -192,7 +210,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
     
     return ld[:ck], b[:ck], xiter
 
-def conjugate_gradient(a, x, b, max_iter=500, conv_thrd=1E-7, iprint=False):
+def conjugate_gradient(a, x, b, max_iter=5000, conv_thrd=1E-7, iprint=False):
     aa = a.diag() if hasattr(a, "diag") else None
     r = -(a @ x) + b
     p = _precondition(r, aa)

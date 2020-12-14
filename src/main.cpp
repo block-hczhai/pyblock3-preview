@@ -1,4 +1,23 @@
 
+/*
+ * pyblock3: An Efficient python MPS/DMRG Library
+ * Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ *
+ */
+
 #include "flat_fermion.hpp"
 #include "flat_functor.hpp"
 #include "flat_sparse.hpp"
@@ -108,6 +127,16 @@ PYBIND11_MODULE(block3, m) {
                      }
                  }
              })
+        .def("keep_maximal",
+             [](unordered_map<uint32_t, uint32_t> *self) {
+                 vector<SZ> qs;
+                 unordered_map<uint32_t, uint32_t> r;
+                 for (auto &a : *self)
+                     qs.push_back(to_sz(a.first));
+                 SZ q = *max_element(qs.begin(), qs.end());
+                 r[from_sz(q)] = (*self)[from_sz(q)];
+                 return r;
+             })
         .def_static(
             "set_bond_dimension_occ",
             [](const vector<unordered_map<uint32_t, uint32_t>> &basis,
@@ -119,7 +148,9 @@ PYBIND11_MODULE(block3, m) {
                 return bond_info_set_bond_dimension_occ(basis, left_dims,
                                                         right_dims, vacuum,
                                                         target, m, vocc, bias);
-            });
+            })
+        .def_static("tensor_product", &tensor_product_ref, py::arg("a"),
+                    py::arg("b"), py::arg("ref"));
 
     py::bind_vector<vector<unordered_map<uint32_t, uint32_t>>>(
         m, "VectorMapUIntUInt");

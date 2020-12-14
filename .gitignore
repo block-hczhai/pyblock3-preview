@@ -1,5 +1,7 @@
 my_test/
 build/
+docs/build/
 .vscode/
 __pycache__/
 *.py[cod]
+.clang-format

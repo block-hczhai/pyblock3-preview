@@ -1,4 +1,26 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+
+"""
+Basic definitions for block-sparse tensors
+and block-sparse tensors with fermion factors.
+"""
+
 import numpy as np
 from numpy.lib.mixins import NDArrayOperatorsMixin
 import numbers
@@ -16,6 +38,7 @@ if ENABLE_FAST_SZ:
 
 
 def method_alias(name):
+    """Make method callable from algebra.funcs."""
     def ff(f):
         def fff(obj, *args, **kwargs):
             if hasattr(obj, name):
@@ -30,6 +53,7 @@ def method_alias(name):
 
 
 def implements(np_func):
+    """Wrapper for overwritting numpy methods."""
     global _numpy_func_impls
     return lambda f: (_numpy_func_impls.update({np_func: f})
                       if np_func not in _numpy_func_impls else None,
@@ -48,15 +72,6 @@ class SubTensor(np.ndarray):
         q_labels : tuple(SZ..)
             Quantum labels for this sub-tensor block.
             Each element in the tuple corresponds one leg of the tensor.
-
-    Examples:
-
-    >>> x = SubTensor(reduced=np.zeros((2, 2)), q_labels=(SZ(0, 0, 0), SZ(1, 1, 0)))
-    >>> x[:] = np.random.random(x.shape)
-    >>> x[:] = 0
-    >>> x *= 15
-    >>> assert abs(x).__class__ == SubTensor
-    >>> (x * 15).__class__ == SubTensor
     """
     def __new__(cls, reduced, q_labels=None):
         obj = np.asarray(reduced).view(cls)
@@ -212,7 +227,7 @@ class SubTensor(np.ndarray):
                 If not specified, defaults to ``range(a.ndim)[::-1]``, which reverses the order of the axes.
 
         Returns
-            p : SparseTensor
+            p : SubTensor
                 a with its axes permuted. A view is returned whenever possible.
         """
         if axes is None:
@@ -333,6 +348,7 @@ class SliceableTensor(np.ndarray):
     @staticmethod
     @implements(np.dot)
     def _dot(a, b, out=None):
+        """Contract the last dim of a and the first dim of b."""
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
             return np.multiply(a, b, out=out)
 
@@ -377,6 +393,7 @@ class SliceableTensor(np.ndarray):
         return a.to_dense()
 
     def to_dense(self):
+        """Convert to dense numpy.ndarray."""
         sh = tuple(info.n_bonds for info in self.infos)
         aw = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
         r = np.zeros(sh, dtype=self.dtype)
@@ -401,7 +418,8 @@ _numpy_func_impls = _sparse_tensor_numpy_func_impls
 
 class SparseTensor(NDArrayOperatorsMixin):
     """
-    block-sparse tensor
+    block-sparse tensor.
+    Represented as a list of :class:`SubTesnor`.
     """
 
     def __init__(self, blocks=None):
@@ -414,11 +432,12 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     @property
     def n_blocks(self):
-        """Number of (non-zero) blocks."""
+        """Number of blocks."""
         return len(self.blocks)
 
     @property
     def nbytes(self):
+        """Number bytes in memory."""
         return sum([b.nbytes for b in self.blocks])
 
     @property
@@ -428,9 +447,11 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     @property
     def dtype(self):
+        """Element datatype."""
         return self.blocks[0].dtype if self.n_blocks != 0 else float
 
     def item(self):
+        """Return scalar element."""
         if self.n_blocks == 0:
             return 0
         assert self.n_blocks == 1 and self.blocks[0].q_labels == ()
@@ -444,7 +465,9 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     @staticmethod
     def _skeleton(bond_infos, pattern=None, dq=None):
-        """Create tensor skeleton from tuple of BondInfo."""
+        """Create tensor skeleton from tuple of BondInfo.
+        dq will not have effects if ndim == 1
+            (blocks with different dq will be allowed)."""
         it = np.zeros(tuple(len(i) for i in bond_infos), dtype=int)
         qsh = [sorted(i.items(), key=lambda x: x[0]) for i in bond_infos]
         q = [[k for k, v in i] for i in qsh]
@@ -487,6 +510,7 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     @property
     def infos(self):
+        """Return the quantum number layout of the SparseTensor, similar to numpy.ndarray.shape."""
         bond_infos = tuple(BondInfo() for _ in range(self.ndim))
         for block in self.blocks:
             for iq, q in enumerate(block.q_labels):
@@ -504,6 +528,20 @@ class SparseTensor(NDArrayOperatorsMixin):
         blocks = [
             b for b in self.blocks if b is not None and np.linalg.norm(b) > cutoff]
         return self.__class__(blocks=blocks)
+
+    def normalize_along_axis(self, axis):
+        if axis < 0:
+            axis += self.ndim
+        normsq = {}
+        for b in self.blocks:
+            q = b.q_labels[axis]
+            if q not in normsq:
+                normsq[q] = 0.0
+            normsq[q] += np.linalg.norm(b) ** 2
+        for ib, b in enumerate(self.blocks):
+            q = b.q_labels[axis]
+            if normsq[q] > 1E-12:
+                self.blocks[ib] = b / np.sqrt(normsq[q])
 
     def __getitem__(self, i, idx=-1):
         if isinstance(i, tuple):
@@ -581,6 +619,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         return np.linalg.norm(self)
 
     def kron_sum_info(self, *idxs, pattern=None):
+        """Kron sum of quantum numbers along selected indices, for fusing purpose."""
         idxs = [i if i >= 0 else self.ndim + i for i in idxs]
         items = []
         for block in self.blocks:
@@ -591,6 +630,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         return BondFusingInfo.kron_sum(items, pattern=pattern)
 
     def kron_product_info(self, *idxs, pattern=None):
+        """Kron product of quantum numbers along selected indices, for fusing purpose."""
         idxs = np.array([i if i >= 0 else self.ndim +
                          i for i in idxs], dtype=np.int32)
         return BondFusingInfo.tensor_product(*np.array(self.infos)[idxs], pattern=pattern)
@@ -645,6 +685,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             pattern : str (optional)
                 A str of '+'/'-'. Only required when info is not specified.
                 Indicating how quantum numbers are linearly combined.
+                len(pattern) == len(idxs)
         """
         blocks_map = {}
         idxs = [i if i >= 0 else self.ndim + i for i in idxs]
@@ -1012,19 +1053,21 @@ class SparseTensor(NDArrayOperatorsMixin):
             items = []
             for block in self.blocks:
                 items.append((block.q_labels[idx:], block.shape[idx:]))
-            rinfo = BondFusingInfo.kron_sum(items, pattern=pattern[idx:])
+                rpat = ''.join(['-' if x == '+' else '+' for x in pattern[idx:]])
+            rinfo = BondFusingInfo.kron_sum(items, pattern=rpat)
         info = linfo & rinfo
         mats = {}
         for q in info:
             mats[q] = np.zeros((linfo[q], rinfo[q]))
-        pattern = linfo.pattern + rinfo.pattern
+        rpat = ''.join(['-' if x == '+' else '+' for x in rinfo.pattern])
+        pattern = linfo.pattern + rpat
         items = {}
         for block in self.blocks:
             qls, qrs = block.q_labels[:idx], block.q_labels[idx:]
             ql = np.add.reduce(
                 [iq if ip == '+' else -iq for iq, ip in zip(qls, pattern[:idx])])
             qr = np.add.reduce(
-                [iq if ip == '+' else -iq for iq, ip in zip(qrs, pattern[idx:])])
+                [iq if ip == '-' else -iq for iq, ip in zip(qrs, pattern[idx:])])
             assert ql == qr
             q = ql
             if q not in mats:
@@ -1087,6 +1130,7 @@ class SparseTensor(NDArrayOperatorsMixin):
 
         Returns:
             l, s, r : tuple(SparseTensor)
+                SVD decomposition.
             error : float
                 Truncation error (same unit as singular value squared).
         """
@@ -1279,6 +1323,7 @@ class FermionTensor(NDArrayOperatorsMixin):
 
     @property
     def nbytes(self):
+        """Number bytes in memory."""
         return self.odd.nbytes + self.even.nbytes
 
     @property
@@ -1288,6 +1333,7 @@ class FermionTensor(NDArrayOperatorsMixin):
 
     @property
     def dtype(self):
+        """Element datatype."""
         return self.odd.dtype if self.odd.n_blocks != 0 else self.even.dtype
 
     def item(self):
@@ -1401,6 +1447,7 @@ class FermionTensor(NDArrayOperatorsMixin):
 
     @property
     def infos(self):
+        """Return the quantum number layout of the FermionTensor, similar to numpy.ndarray.shape."""
         if self.odd.ndim == 0:
             return self.even.infos
         elif self.even.ndim == 0:
@@ -1482,6 +1529,7 @@ class FermionTensor(NDArrayOperatorsMixin):
     def _tensordot(a, b, axes=2):
         """
         Contract two FermionTensor/SparseTensor to form a new FermionTensor/SparseTensor.
+        Fermion factor will be handled in a case-by-case way.
 
         Args:
             a : FermionTensor/SparseTensor
@@ -1902,6 +1950,7 @@ class FermionTensor(NDArrayOperatorsMixin):
 
         Returns:
             l, s, r : tuple(SparseTensor/FermionTensor)
+                SVD decomposition.
             error : float
                 Truncation error (same unit as singular value squared).
         """

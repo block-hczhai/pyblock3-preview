@@ -1,4 +1,26 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
+"""
+Common methods for sweep algorithms.
+"""
+
 import numpy as np
 import pyblock3.algebra.funcs as pbalg
 from enum import Enum, auto
@@ -81,7 +103,7 @@ class SweepAlgorithm:
                         dm = dm + w * np.tensordot(
                             ex_wfn[0], ex_wfn[0], axes=((-3, -2, -1), ) * 2)
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
-                lsr = dm.tensor_svd(idx=3, pattern='++++++')
+                lsr = dm.tensor_svd(idx=3, pattern='+++---')
                 l, _, _, error = pbalg.truncate_svd(
                     *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
                 wfn[:] = [l, np.tensordot(
@@ -95,7 +117,7 @@ class SweepAlgorithm:
                         dm = dm + w * np.tensordot(
                             ex_wfn[0], ex_wfn[0], axes=((0, 1, 2), ) * 2)
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
-                lsr = dm.tensor_svd(idx=3, pattern='-+--+-')
+                lsr = dm.tensor_svd(idx=3, pattern='-+-+-+')
                 _, _, r, error = pbalg.truncate_svd(
                     *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
                 wfn[:] = [np.tensordot(
@@ -104,7 +126,7 @@ class SweepAlgorithm:
             assert not isinstance(wfns, list)
             wfn = self.add_wfn_noise(
                 wfn[0], noise, forward)
-            lsr = wfn.tensor_svd(idx=3, pattern='+++-+-')
+            lsr = wfn.tensor_svd(idx=3, pattern='++++-+')
             l, s, r, error = pbalg.truncate_svd(
                 *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim)
             if noise == 0:

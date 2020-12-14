@@ -1,4 +1,22 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
 import time
 import numpy as np
 from functools import reduce
@@ -8,10 +26,15 @@ from .core import SweepAlgorithm
 
 
 class GreensFunction(SweepAlgorithm):
+    """DDMRG++ for solving Green's function."""
     def __init__(self, mpe, mpo, omega, eta, bdims, noises=None, cg_thrds=None, iprint=2):
         self.mpe = mpe
         assert mpe.bra is not mpe.ket
-        self.impe = mpe.__class__(mpe.bra, mpo, mpe.bra, do_canon=False)
+        if hasattr(mpe, "tag"):
+            self.impe = mpe.__class__(mpe.bra, mpo, mpe.bra, do_canon=False,
+                tag=mpe.tag + "@GF", scratch=mpe.scratch, maxsize=mpe.maxsize)
+        else:
+            self.impe = mpe.__class__(mpe.bra, mpo, mpe.bra, do_canon=False)
         self.bdims = bdims
         self.noises = noises
         self.cg_thrds = cg_thrds
@@ -52,6 +75,8 @@ class GreensFunction(SweepAlgorithm):
                     iw, "forward" if forward else "backward", self.bdims[iw], self.noises[iw], self.cg_thrds[iw]))
             for i in range(0, mpe.n_sites - dot + 1)[::(-1) ** iw]:
                 tt = time.perf_counter()
+                mpe.build_envs(i, i + dot)
+                impe.build_envs(i, i + dot)
                 eff = mpe[i:i + dot]
                 ieff = impe[i:i + dot]
                 if self.contract:

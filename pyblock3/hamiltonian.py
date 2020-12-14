@@ -1,4 +1,27 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
+"""
+Quantum chemistry/general Hamiltonian object.
+For construction of MPS/MPO.
+"""
+
 from .algebra.symmetry import SZ, BondInfo
 from .algebra.core import FermionTensor
 from .symbolic.expr import OpNames, OpElement, OpString, OpSum
@@ -11,7 +34,8 @@ import numpy as np
 class Hamiltonian:
     """
     Quantum chemistry/general Hamiltonian.
-    For construction of MPO
+    For construction of MPS/MPO
+
     Attributes:
         basis : list(BondInfo)
             BondInfo in each site
@@ -69,6 +93,17 @@ class Hamiltonian:
             assert len(occ) == len(self.basis)
             mps_info.set_bond_dimension_occ(bond_dim, occ, bias)
         return MPS.random(mps_info)
+    
+    def build_ancilla_mps(self, target=None):
+        if target is None:
+            target = SZ(self.n_sites * 2, 0, 0)
+            if self.flat:
+                target = target.to_flat()
+        basis = [self.basis[i // 2] for i in range(self.n_sites * 2)]
+        mps_info = MPSInfo(self.n_sites * 2, self.vacuum, target, basis)
+        mps_info.set_bond_dimension_thermal_limit()
+        mps = MPS.ones(mps_info)
+        return mps / np.linalg.norm(mps)
 
     def build_identity_mpo(self):
         from .symbolic.symbolic_mpo import IdentityMPO
@@ -83,6 +118,16 @@ class Hamiltonian:
         if self.flat:
             impo = impo.to_flat()
         return impo
+    
+    def build_ancilla_mpo(self, mpo):
+        tensors = []
+        for m in range(self.n_sites):
+            tensors.append(mpo.tensors[m])
+            infos = mpo.tensors[m].infos
+            a = np.diag(mpo.tensors[m].__class__.ones((infos[-1], )))
+            b = np.diag(mpo.tensors[m].__class__.ones((self.basis[m], )))
+            tensors.append(np.transpose(np.tensordot(a, b, axes=0), axes=(0, 2, 3, 1)))
+        return MPS(tensors=tensors, const=mpo.const, opts=mpo.opts)
 
     def build_qc_mpo(self):
         if self.flat:

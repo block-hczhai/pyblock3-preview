@@ -1,4 +1,26 @@
 
+#  pyblock3: An Efficient python MPS/DMRG Library
+#  Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
+#
+
+"""
+Definition of quantum numbers.
+"""
+
 from collections import Counter
 import numpy as np
 
@@ -116,6 +138,10 @@ class BondInfo(Counter):
                 self[k] = int(np.ceil(v * bond_dim / n_total + 0.1))
                 if ref is not None:
                     self[k] = min(self[k], ref[k])
+    
+    def keep_maximal(self):
+        maxk = max(self)
+        return BondInfo({maxk: self[maxk]})
 
     def __repr__(self):
         return " ".join(["%r = %d" % (k, v) for k, v in sorted(self.items(), key=lambda x: x[0])])

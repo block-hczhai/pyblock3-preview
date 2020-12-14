@@ -1,4 +1,23 @@
 
+/*
+ * pyblock3: An Efficient python MPS/DMRG Library
+ * Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ *
+ */
+
 #include "flat_sparse.hpp"
 #include <algorithm>
 #include <cstring>
@@ -744,7 +763,7 @@ flat_sparse_tensor_skeleton(
         SZ xq;
         for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--)
             xq = xq + infox[i][xp % infox[i].size()].first;
-        if (xq == dq) {
+        if (xq == dq || ndim == 1) {
             uint32_t sz = 1;
             xp = x;
             for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--) {
@@ -1208,7 +1227,7 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
         }
         for (int j = idx; j < ndima; j++) {
             ufqsr[ia][j - idx] = pqs[ia * asi + j * asj];
-            xqr = xqr + (pattern[j] == '+' ? to_sz(ufqsr[ia][j - idx])
+            xqr = xqr + (pattern[j] == '-' ? to_sz(ufqsr[ia][j - idx])
                                            : -to_sz(ufqsr[ia][j - idx]));
         }
         assert(xql == xqr);
