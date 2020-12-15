@@ -333,17 +333,17 @@ def _run_flat_fermion_svd(tsr, ax=2, **svd_opts):
         _unpack_flat_tensor(v, vmap, 1, vdata, vq, vshapes)
 
     if absorb is None:
-        sq = np.asarray(sq, dtype=int)
-        sshapes = np.asarray(sshapes, dtype=int)
+        sq = np.asarray(sq, dtype=np.uint32)
+        sshapes = np.asarray(sshapes, dtype=np.uint32)
         sdata = np.concatenate(sdata)
         s = FlatFermionTensor(sq, sshapes, sdata)
 
-    uq = np.asarray(uq, dtype=int)
-    ushapes = np.asarray(ushapes, dtype=int)
+    uq = np.asarray(uq, dtype=np.uint32)
+    ushapes = np.asarray(ushapes, dtype=np.uint32)
     udata = np.concatenate(udata)
 
-    vq = np.asarray(vq, dtype=int)
-    vshapes = np.asarray(vshapes, dtype=int)
+    vq = np.asarray(vq, dtype=np.uint32)
+    vshapes = np.asarray(vshapes, dtype=np.uint32)
     vdata = np.concatenate(vdata)
     u = FlatFermionTensor(uq, ushapes, udata)
     v = FlatFermionTensor(vq, vshapes, vdata)
@@ -457,7 +457,7 @@ class SparseFermionTensor(SparseTensor):
             dq = SZ(0,0,0)
         if not isinstance(dq, SZ):
             raise TypeError("dq is not an instance of SZ class")
-        it = np.zeros(tuple(len(i) for i in bond_infos), dtype=int)
+        it = np.zeros(tuple(len(i) for i in bond_infos), dtype=np.uint32)
         qsh = [sorted(i.items(), key=lambda x: x[0]) for i in bond_infos]
         q = [[k for k, v in i] for i in qsh]
         sh = [[v for k, v in i] for i in qsh]
