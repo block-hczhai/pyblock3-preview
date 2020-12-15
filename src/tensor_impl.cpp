@@ -18,16 +18,50 @@
  *
  */
 
+// Dense tensor api with raw pointer interface
+
 #include "tensor_impl.hpp"
 
 int hptt_num_threads = 1;
 
-void tensor_transpose_impl(int ndim, size_t size, const int *perm,
-                           const int *shape, const double *a, double *c,
-                           const double alpha, const double beta) {
+template <typename FL>
+void x_tensor_transpose(const int *perm, const int dim, const FL alpha,
+                        const FL *A, const int *sizeA, const int *outerSizeA,
+                        const FL beta, FL *B, const int *outerSizeB,
+                        const int numThreads, const int useRowMajor);
+
+template <>
+void x_tensor_transpose<double>(const int *perm, const int dim,
+                                const double alpha, const double *A,
+                                const int *sizeA, const int *outerSizeA,
+                                const double beta, double *B,
+                                const int *outerSizeB, const int numThreads,
+                                const int useRowMajor) {
 #ifdef _HAS_HPTT
-    dTensorTranspose(perm, ndim, alpha, a, shape, nullptr, beta, c, nullptr,
-                     hptt_num_threads, 1);
+    dTensorTranspose(perm, dim, alpha, A, sizeA, outerSizeA, beta, B,
+                     outerSizeB, numThreads, useRowMajor);
+#endif
+}
+
+template <>
+void x_tensor_transpose<complex<double>>(
+    const int *perm, const int dim, const complex<double> alpha,
+    const complex<double> *A, const int *sizeA, const int *outerSizeA,
+    const complex<double> beta, complex<double> *B, const int *outerSizeB,
+    const int numThreads, const int useRowMajor) {
+#ifdef _HAS_HPTT
+    zTensorTranspose(perm, dim, alpha, false, A, sizeA, outerSizeA, beta, B,
+                     outerSizeB, numThreads, useRowMajor);
+#endif
+}
+
+template <typename FL>
+void tensor_transpose_impl(int ndim, size_t size, const int *perm,
+                           const int *shape, const FL *a, FL *c, const FL alpha,
+                           const FL beta) {
+#ifdef _HAS_HPTT
+    x_tensor_transpose(perm, ndim, alpha, a, shape, nullptr, beta, c, nullptr,
+                       hptt_num_threads, 1);
 #else
     size_t oldacc[ndim], newacc[ndim];
     oldacc[ndim - 1] = 1;
@@ -35,7 +69,7 @@ void tensor_transpose_impl(int ndim, size_t size, const int *perm,
         oldacc[i - 1] = oldacc[i] * shape[perm[i]];
     for (int i = 0; i < ndim; i++)
         newacc[perm[i]] = oldacc[i];
-    if (beta == 0)
+    if (beta == 0.0)
         for (size_t i = 0; i < size; i++) {
             size_t j = 0, ii = i;
             for (int k = ndim - 1; k >= 0; k--)
@@ -52,10 +86,11 @@ void tensor_transpose_impl(int ndim, size_t size, const int *perm,
 #endif
 }
 
-void tensordot_impl(const double *a, const int ndima, const ssize_t *na,
-                    const double *b, const int ndimb, const ssize_t *nb,
-                    const int nctr, const int *idxa, const int *idxb, double *c,
-                    const double alpha, const double beta) {
+template <typename FL>
+void tensordot_impl(const FL *a, const int ndima, const ssize_t *na,
+                    const FL *b, const int ndimb, const ssize_t *nb,
+                    const int nctr, const int *idxa, const int *idxb, FL *c,
+                    const FL alpha, const FL beta) {
     int outa[ndima - nctr], outb[ndimb - nctr];
     int a_free_dim = 1, b_free_dim = 1, ctr_dim = 1;
     set<int> idxa_set(idxa, idxa + nctr);
@@ -88,7 +123,7 @@ void tensordot_impl(const double *a, const int ndima, const ssize_t *na,
         trans_b = -1;
 
     // permute or reshape
-    double *new_a = (double *)a, *new_b = (double *)b;
+    FL *new_a = (FL *)a, *new_b = (FL *)b;
     if (trans_a == 0) {
         vector<int> perm_a(ndima), shape_a(ndima);
         size_t size_a = 1;
@@ -98,8 +133,8 @@ void tensordot_impl(const double *a, const int ndima, const ssize_t *na,
             perm_a[i] = idxa[ctr_idx[i]];
         for (int i = nctr; i < ndima; i++)
             perm_a[i] = outa[i - nctr];
-        new_a = new double[size_a];
-        tensor_transpose_impl(ndima, size_a, perm_a.data(), shape_a.data(), a,
+        new_a = new FL[size_a];
+        tensor_transpose_impl<FL>(ndima, size_a, perm_a.data(), shape_a.data(), a,
                               new_a, 1.0, 0.0);
         trans_a = 1;
     }
@@ -113,8 +148,8 @@ void tensordot_impl(const double *a, const int ndima, const ssize_t *na,
             perm_b[i] = idxb[ctr_idx[i]];
         for (int i = nctr; i < ndimb; i++)
             perm_b[i] = outb[i - nctr];
-        new_b = new double[size_b];
-        tensor_transpose_impl(ndimb, size_b, perm_b.data(), shape_b.data(), b,
+        new_b = new FL[size_b];
+        tensor_transpose_impl<FL>(ndimb, size_b, perm_b.data(), shape_b.data(), b,
                               new_b, 1.0, 0.0);
         trans_b = 1;
     }
@@ -128,12 +163,33 @@ void tensordot_impl(const double *a, const int ndima, const ssize_t *na,
     int ldb = trans_b == 1 ? b_free_dim : ctr_dim;
     int lda = trans_a == -1 ? ctr_dim : a_free_dim;
     int ldc = b_free_dim;
-    dgemm(trans_b == 1 ? "n" : "t", trans_a == -1 ? "n" : "t", &b_free_dim,
-          &a_free_dim, &ctr_dim, &alpha, new_b, &ldb, new_a, &lda, &beta, c,
-          &ldc);
+    xgemm<FL>(trans_b == 1 ? "n" : "t", trans_a == -1 ? "n" : "t", &b_free_dim,
+              &a_free_dim, &ctr_dim, &alpha, new_b, &ldb, new_a, &lda, &beta, c,
+              &ldc);
 
     if (new_a != a)
         delete[] new_a;
     if (new_b != b)
         delete[] new_b;
 }
+
+// explicit template instantiation
+template void tensor_transpose_impl<double>(
+    int ndim, size_t size, const int *perm, const int *shape, const double *a,
+    double *c, const double alpha = 1.0, const double beta = 0.0);
+template void tensor_transpose_impl<complex<double>>(
+    int ndim, size_t size, const int *perm, const int *shape,
+    const complex<double> *a, complex<double> *c,
+    const complex<double> alpha = 1.0, const complex<double> beta = 0.0);
+template void tensordot_impl<double>(const double *a, const int ndima,
+                                            const ssize_t *na, const double *b,
+                                            const int ndimb, const ssize_t *nb,
+                                            const int nctr, const int *idxa,
+                                            const int *idxb, double *c,
+                                            const double alpha = 1.0,
+                                            const double beta = 0.0);
+template void tensordot_impl<complex<double>>(
+    const complex<double> *a, const int ndima, const ssize_t *na,
+    const complex<double> *b, const int ndimb, const ssize_t *nb,
+    const int nctr, const int *idxa, const int *idxb, complex<double> *c,
+    const complex<double> alpha = 1.0, const complex<double> beta = 0.0);

@@ -18,14 +18,18 @@
  *
  */
 
+// Dense tensor api with raw pointer interface
+
 #pragma once
 
 #include <algorithm>
+#include <cassert>
+#include <complex>
 #include <cstdint>
 #include <set>
 #include <vector>
-#include <cassert>
 #ifdef _HAS_INTEL_MKL
+#define MKL_Complex16 std::complex<double>
 #include "mkl.h"
 #endif
 #ifdef _HAS_HPTT
@@ -46,10 +50,17 @@ extern void dscal(const int *n, const double *sa, double *sx,
 extern void dcopy(const int *n, const double *dx, const int *incx, double *dy,
                   const int *incy) noexcept;
 
+extern void zcopy(const int *n, const complex<double> *dx, const int *incx,
+                  complex<double> *dy, const int *incy) noexcept;
+
 // vector addition
 // vector [sy] = vector [sy] + double [sa] * vector [sx]
 extern void daxpy(const int *n, const double *sa, const double *sx,
                   const int *incx, double *sy, const int *incy) noexcept;
+
+extern void zaxpy(const int *n, const complex<double> *sa,
+                  const complex<double> *sx, const int *incx,
+                  complex<double> *sy, const int *incy) noexcept;
 
 // vector dot product
 extern double ddot(const int *n, const double *dx, const int *incx,
@@ -64,6 +75,15 @@ extern void dgemm(const char *transa, const char *transb, const int *m,
                   const int *n, const int *k, const double *alpha,
                   const double *a, const int *lda, const double *b,
                   const int *ldb, const double *beta, double *c,
+                  const int *ldc) noexcept;
+
+// matrix multiplication
+// mat [c] = double [alpha] * mat [a] * mat [b] + double [beta] * mat [c]
+extern void zgemm(const char *transa, const char *transb, const int *m,
+                  const int *n, const int *k, const complex<double> *alpha,
+                  const complex<double> *a, const int *lda,
+                  const complex<double> *b, const int *ldb,
+                  const complex<double> *beta, complex<double> *c,
                   const int *ldc) noexcept;
 
 // matrix-vector multiplication
@@ -106,6 +126,9 @@ extern void dgesvd(const char *jobu, const char *jobvt, const int *m,
 // mat [b] = mat [a]
 extern void dlacpy(const char *uplo, const int *m, const int *n,
                    const double *a, const int *lda, double *b, const int *ldb);
+extern void zlacpy(const char *uplo, const int *m, const int *n,
+                   const complex<double> *a, const int *lda, complex<double> *b,
+                   const int *ldb);
 }
 
 typedef enum { CblasRowMajor = 101, CblasColMajor = 102 } CBLAS_LAYOUT;
@@ -142,11 +165,110 @@ using namespace std;
 
 extern int hptt_num_threads;
 
-void tensor_transpose_impl(int ndim, size_t size, const int *perm,
-                           const int *shape, const double *a, double *c,
-                           const double alpha = 1.0, const double beta = 0.0);
+template <typename FL>
+inline void xgemm(const char *transa, const char *transb, const int *m,
+                  const int *n, const int *k, const FL *alpha, const FL *a,
+                  const int *lda, const FL *b, const int *ldb, const FL *beta,
+                  FL *c, const int *ldc) noexcept;
 
-void tensordot_impl(const double *a, const int ndima, const ssize_t *na,
-                    const double *b, const int ndimb, const ssize_t *nb,
-                    const int nctr, const int *idxa, const int *idxb, double *c,
-                    const double alpha = 1.0, const double beta = 0.0);
+template <>
+inline void xgemm<double>(const char *transa, const char *transb, const int *m,
+                          const int *n, const int *k, const double *alpha,
+                          const double *a, const int *lda, const double *b,
+                          const int *ldb, const double *beta, double *c,
+                          const int *ldc) noexcept {
+    return dgemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc);
+}
+
+template <>
+inline void xgemm<complex<double>>(
+    const char *transa, const char *transb, const int *m, const int *n,
+    const int *k, const complex<double> *alpha, const complex<double> *a,
+    const int *lda, const complex<double> *b, const int *ldb,
+    const complex<double> *beta, complex<double> *c, const int *ldc) noexcept {
+    return zgemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc);
+}
+
+template <typename FL>
+inline void xcopy(const int *n, const FL *dx, const int *incx, FL *dy,
+                  const int *incy) noexcept;
+
+template <>
+inline void xcopy<double>(const int *n, const double *dx, const int *incx,
+                          double *dy, const int *incy) noexcept {
+    dcopy(n, dx, incx, dy, incy);
+}
+
+template <>
+inline void xcopy<complex<double>>(const int *n, const complex<double> *dx,
+                                   const int *incx, complex<double> *dy,
+                                   const int *incy) noexcept {
+    zcopy(n, dx, incx, dy, incy);
+}
+
+template <typename FL>
+inline void xaxpy(const int *n, const FL *sa, const FL *sx, const int *incx,
+                  FL *sy, const int *incy) noexcept;
+
+template <>
+inline void xaxpy<double>(const int *n, const double *sa, const double *sx,
+                          const int *incx, double *sy,
+                          const int *incy) noexcept {
+    daxpy(n, sa, sx, incx, sy, incy);
+}
+
+template <>
+inline void xaxpy<complex<double>>(const int *n, const complex<double> *sa,
+                                   const complex<double> *sx, const int *incx,
+                                   complex<double> *sy,
+                                   const int *incy) noexcept {
+    zaxpy(n, sa, sx, incx, sy, incy);
+}
+
+template <typename FL>
+inline void xlacpy(const char *uplo, const int *m, const int *n, const FL *a,
+                   const int *lda, FL *b, const int *ldb);
+
+template <>
+inline void xlacpy(const char *uplo, const int *m, const int *n,
+                   const double *a, const int *lda, double *b, const int *ldb) {
+    dlacpy(uplo, m, n, a, lda, b, ldb);
+}
+template <>
+inline void xlacpy(const char *uplo, const int *m, const int *n,
+                   const complex<double> *a, const int *lda, complex<double> *b,
+                   const int *ldb) {
+    zlacpy(uplo, m, n, a, lda, b, ldb);
+}
+
+template <typename FL>
+void tensor_transpose_impl(int ndim, size_t size, const int *perm,
+                           const int *shape, const FL *a, FL *c,
+                           const FL alpha = 1.0, const FL beta = 0.0);
+
+template <typename FL>
+void tensordot_impl(const FL *a, const int ndima, const ssize_t *na,
+                    const FL *b, const int ndimb, const ssize_t *nb,
+                    const int nctr, const int *idxa, const int *idxb, FL *c,
+                    const FL alpha = 1.0, const FL beta = 0.0);
+
+// explicit template instantiation
+extern template void tensor_transpose_impl<double>(
+    int ndim, size_t size, const int *perm, const int *shape, const double *a,
+    double *c, const double alpha = 1.0, const double beta = 0.0);
+extern template void tensor_transpose_impl<complex<double>>(
+    int ndim, size_t size, const int *perm, const int *shape,
+    const complex<double> *a, complex<double> *c,
+    const complex<double> alpha = 1.0, const complex<double> beta = 0.0);
+extern template void tensordot_impl<double>(const double *a, const int ndima,
+                                            const ssize_t *na, const double *b,
+                                            const int ndimb, const ssize_t *nb,
+                                            const int nctr, const int *idxa,
+                                            const int *idxb, double *c,
+                                            const double alpha = 1.0,
+                                            const double beta = 0.0);
+extern template void tensordot_impl<complex<double>>(
+    const complex<double> *a, const int ndima, const ssize_t *na,
+    const complex<double> *b, const int ndimb, const ssize_t *nb,
+    const int nctr, const int *idxa, const int *idxb, complex<double> *c,
+    const complex<double> alpha = 1.0, const complex<double> beta = 0.0);

@@ -23,36 +23,39 @@
 #include <cstring>
 #include <numeric>
 
+template <typename FL>
 void flat_sparse_tensor_transpose(const py::array_t<uint32_t> &ashs,
-                                  const py::array_t<double> &adata,
+                                  const py::array_t<FL> &adata,
                                   const py::array_t<uint32_t> &aidxs,
                                   const py::array_t<int32_t> &perm,
-                                  py::array_t<double> &cdata) {
+                                  py::array_t<FL> &cdata) {
     int n_blocks_a = (int)ashs.shape()[0], ndima = (int)ashs.shape()[1];
     const ssize_t asi = ashs.strides()[0] / sizeof(uint32_t),
                   asj = ashs.strides()[1] / sizeof(uint32_t);
     const int *perma = (const int *)perm.data();
-    const double *pa = adata.data();
+    const FL *pa = adata.data();
     const uint32_t *pia = aidxs.data(), *psha = ashs.data();
-    double *pc = cdata.mutable_data();
+    FL *pc = cdata.mutable_data();
     for (int ia = 0; ia < n_blocks_a; ia++) {
-        const double *a = pa + pia[ia];
-        double *c = pc + pia[ia];
+        const FL *a = pa + pia[ia];
+        FL *c = pc + pia[ia];
         int shape_a[ndima];
         for (int i = 0; i < ndima; i++)
             shape_a[i] = psha[ia * asi + i * asj];
         uint32_t size_a = pia[ia + 1] - pia[ia];
-        tensor_transpose_impl(ndima, size_a, perma, shape_a, a, c, 1.0, 0.0);
+        tensor_transpose_impl<FL>(ndima, size_a, perma, shape_a, a, c, 1.0,
+                                  0.0);
     }
 }
 
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>>
 flat_sparse_tensor_tensordot(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<FL> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
-    const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs,
+    const py::array_t<FL> &bdata, const py::array_t<uint32_t> &bidxs,
     const py::array_t<int> &idxa, const py::array_t<int> &idxb) {
     if (aqs.shape()[0] == 0)
         return std::make_tuple(aqs, ashs, adata, aidxs);
@@ -235,7 +238,7 @@ flat_sparse_tensor_tensordot(
         cidxs(vector<ssize_t>{n_blocks_c + 1});
     assert(cqs.strides()[1] == sizeof(uint32_t));
     assert(cshs.strides()[1] == sizeof(uint32_t));
-    py::array_t<double> cdata(vector<ssize_t>{csize});
+    py::array_t<FL> cdata(vector<ssize_t>{csize});
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data(),
              *pcidxs = cidxs.mutable_data();
     vector<uint32_t> psha(n_blocks_a * ndima), pshb(n_blocks_b * ndimb);
@@ -263,22 +266,22 @@ flat_sparse_tensor_tensordot(
     }
 
     // transpose
-    double *pa = (double *)adata.data(), *pb = (double *)bdata.data();
+    FL *pa = (FL *)adata.data(), *pb = (FL *)bdata.data();
     uint32_t *pia = (uint32_t *)aidxs.data(), *pib = (uint32_t *)bidxs.data();
     if (trans_a == 0) {
         int iatr = 0;
         for (int ia = 0; ia < n_blocks_a; ia++)
             if (piatr[ia] != -1)
                 piatr[ia] = iatr, iatr += pia[ia + 1] - pia[ia];
-        double *new_pa = new double[iatr];
+        FL *new_pa = new FL[iatr];
         int *new_pia = (int *)piatr;
         for (int ia = 0; ia < n_blocks_a; ia++)
             if (piatr[ia] != -1) {
-                double *a = pa + pia[ia], *new_a = new_pa + new_pia[ia];
+                FL *a = pa + pia[ia], *new_a = new_pa + new_pia[ia];
                 const int *shape_a = (const int *)(psha.data() + ia * ndima);
                 uint32_t size_a = pia[ia + 1] - pia[ia];
-                tensor_transpose_impl(ndima, size_a, perma.data(), shape_a, a,
-                                      new_a, 1.0, 0.0);
+                tensor_transpose_impl<FL>(ndima, size_a, perma.data(), shape_a,
+                                          a, new_a, 1.0, 0.0);
             }
         trans_a = 1;
         pa = new_pa;
@@ -290,15 +293,15 @@ flat_sparse_tensor_tensordot(
         for (int ib = 0; ib < n_blocks_b; ib++)
             if (pibtr[ib] != -1)
                 pibtr[ib] = ibtr, ibtr += pib[ib + 1] - pib[ib];
-        double *new_pb = new double[ibtr];
+        FL *new_pb = new FL[ibtr];
         int *new_pib = (int *)pibtr;
         for (int ib = 0; ib < n_blocks_b; ib++)
             if (pibtr[ib] != -1) {
-                double *b = pb + pib[ib], *new_b = new_pb + new_pib[ib];
+                FL *b = pb + pib[ib], *new_b = new_pb + new_pib[ib];
                 const int *shape_b = (const int *)(pshb.data() + ib * ndimb);
                 uint32_t size_b = pib[ib + 1] - pib[ib];
-                tensor_transpose_impl(ndimb, size_b, permb.data(), shape_b, b,
-                                      new_b, 1.0, 0.0);
+                tensor_transpose_impl<FL>(ndimb, size_b, permb.data(), shape_b,
+                                          b, new_b, 1.0, 0.0);
             }
         trans_b = 1;
         pb = new_pb;
@@ -307,9 +310,9 @@ flat_sparse_tensor_tensordot(
 
     auto tra = trans_a == -1 ? "n" : "t";
     auto trb = trans_b == 1 ? "n" : "t";
-    const double alpha = 1.0, beta = 0.0;
+    const FL alpha = 1.0, beta = 0.0;
 
-    double *pc = cdata.mutable_data();
+    FL *pc = cdata.mutable_data();
     for (auto &mq : map_out_q) {
         for (auto &mmq : mq.second) {
             int xia = 0, xib = 0;
@@ -318,9 +321,10 @@ flat_sparse_tensor_tensordot(
                 int ldb = trans_b == 1 ? b_free_dim[xib] : ctr_dim[xia];
                 int lda = trans_a == -1 ? ctr_dim[xia] : a_free_dim[xia];
                 int ldc = b_free_dim[xib];
-                dgemm(trb, tra, &b_free_dim[xib], &a_free_dim[xia],
-                      &ctr_dim[xia], &alpha, pb + pib[xib], &ldb, pa + pia[xia],
-                      &lda, i == 0 ? &beta : &alpha, pc, &ldc);
+                xgemm<FL>(trb, tra, &b_free_dim[xib], &a_free_dim[xia],
+                          &ctr_dim[xia], &alpha, pb + pib[xib], &ldb,
+                          pa + pia[xia], &lda, i == 0 ? &beta : &alpha, pc,
+                          &ldc);
             }
             pc += (uint32_t)a_free_dim[xia] * b_free_dim[xib];
         }
@@ -390,13 +394,14 @@ inline void add_blocks(const int n_blocks_a, const int n_blocks_b,
         }
 }
 
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>>
 flat_sparse_tensor_add(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<FL> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
-    const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs) {
+    const py::array_t<FL> &bdata, const py::array_t<uint32_t> &bidxs) {
 
     const int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
     const int n_blocks_b = (int)bqs.shape()[0], ndimb = (int)bqs.shape()[1];
@@ -450,38 +455,39 @@ flat_sparse_tensor_add(
         }
     }
 
-    py::array_t<double> cdata(vector<ssize_t>{csize});
-    const double *pa = adata.data(), *pb = bdata.data();
-    double *pc = cdata.mutable_data();
+    py::array_t<FL> cdata(vector<ssize_t>{csize});
+    const FL *pa = adata.data(), *pb = bdata.data();
+    FL *pc = cdata.mutable_data();
     const int inc = 1;
-    const double alpha = 1.0;
+    const FL alpha = 1.0;
     for (int i = 0; i < n_blocks_a; i++) {
         int iab = iab_mp[i], ic = pic[iab];
         int n = pcidxs[ic + 1] - pcidxs[ic];
         if (iab == i)
-            dcopy(&n, pa + pia[i], &inc, pc + pcidxs[ic], &inc);
+            xcopy<FL>(&n, pa + pia[i], &inc, pc + pcidxs[ic], &inc);
         else
-            daxpy(&n, &alpha, pa + pia[i], &inc, pc + pcidxs[ic], &inc);
+            xaxpy<FL>(&n, &alpha, pa + pia[i], &inc, pc + pcidxs[ic], &inc);
     }
     for (int i = 0; i < n_blocks_b; i++) {
         int iab = iab_mp[i + n_blocks_a], ic = pic[iab];
         int n = pcidxs[ic + 1] - pcidxs[ic];
         if (iab == i + n_blocks_a)
-            dcopy(&n, pb + pib[i], &inc, pc + pcidxs[ic], &inc);
+            xcopy<FL>(&n, pb + pib[i], &inc, pc + pcidxs[ic], &inc);
         else
-            daxpy(&n, &alpha, pb + pib[i], &inc, pc + pcidxs[ic], &inc);
+            xaxpy<FL>(&n, &alpha, pb + pib[i], &inc, pc + pcidxs[ic], &inc);
     }
 
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
 
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>>
 flat_sparse_tensor_kron_add(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<FL> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
-    const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs,
+    const py::array_t<FL> &bdata, const py::array_t<uint32_t> &bidxs,
     const unordered_map<uint32_t, uint32_t> &infol,
     const unordered_map<uint32_t, uint32_t> &infor) {
     if (aqs.shape()[0] == 0)
@@ -554,34 +560,35 @@ flat_sparse_tensor_kron_add(
         }
     }
 
-    py::array_t<double> cdata(vector<ssize_t>{pcidxs[n_blocks_c]});
-    const double *pa = adata.data(), *pb = bdata.data();
-    double *pc = cdata.mutable_data();
-    memset(pc, 0, sizeof(double) * cdata.size());
+    py::array_t<FL> cdata(vector<ssize_t>{pcidxs[n_blocks_c]});
+    const FL *pa = adata.data(), *pb = bdata.data();
+    FL *pc = cdata.mutable_data();
+    memset(pc, 0, sizeof(FL) * cdata.size());
     for (int i = 0; i < n_blocks_a; i++) {
         int ic = pic[iab_mp[i]];
         const int lc = (int)dimlc[ic], la = (int)dimla[i];
         const int rc = (int)pcshs[ic * ndima + ndima - 1],
                   ra = (int)ashs.data()[i * asi + (ndima - 1) * asj];
-        dlacpy("N", &ra, &la, pa + pia[i], &ra, pc + pcidxs[ic], &rc);
+        xlacpy<FL>("N", &ra, &la, pa + pia[i], &ra, pc + pcidxs[ic], &rc);
     }
     for (int i = 0; i < n_blocks_b; i++) {
         int ic = pic[iab_mp[i + n_blocks_a]];
         const int lc = (int)dimlc[ic], lb = (int)dimlb[i];
         const int rc = (int)pcshs[ic * ndima + ndima - 1],
                   rb = (int)bshs.data()[i * bsi + (ndimb - 1) * bsj];
-        dlacpy("N", &rb, &lb, pb + pib[i], &rb,
-               pc + pcidxs[ic] + (rc - rb) + (lc - lb) * rc, &rc);
+        xlacpy<FL>("N", &rb, &lb, pb + pib[i], &rb,
+                   pc + pcidxs[ic] + (rc - rb) + (lc - lb) * rc, &rc);
     }
 
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
 
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>>
 flat_sparse_tensor_fuse(const py::array_t<uint32_t> &aqs,
                         const py::array_t<uint32_t> &ashs,
-                        const py::array_t<double> &adata,
+                        const py::array_t<FL> &adata,
                         const py::array_t<uint32_t> &aidxs,
                         const py::array_t<int32_t> &idxs,
                         const map_fusing &info, const string &pattern) {
@@ -649,14 +656,14 @@ flat_sparse_tensor_fuse(const py::array_t<uint32_t> &aqs,
         cidxs(vector<ssize_t>{n_blocks_c + 1});
     assert(cqs.strides()[1] == sizeof(uint32_t));
     assert(cshs.strides()[1] == sizeof(uint32_t));
-    py::array_t<double> cdata(vector<ssize_t>{csize});
+    py::array_t<FL> cdata(vector<ssize_t>{csize});
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data(),
              *pcidxs = cidxs.mutable_data();
 
     pcidxs[0] = 0;
-    const double *pa = adata.data();
-    double *pc = cdata.mutable_data();
-    memset(pc, 0, sizeof(double) * csize);
+    const FL *pa = adata.data();
+    FL *pc = cdata.mutable_data();
+    memset(pc, 0, sizeof(FL) * csize);
     int ic = 0;
     for (auto &mq : map_out_q) {
         for (auto &mmq : mq.second) {
@@ -679,8 +686,8 @@ flat_sparse_tensor_fuse(const py::array_t<uint32_t> &aqs,
                 int nk = (size_t)(pia[ia + 1] - pia[ia]) * x / sz;
                 const int lc = diml, la = diml;
                 const int rc = x * dimr, ra = nk * dimr;
-                dlacpy("N", &ra, &la, pa + pia[ia], &ra,
-                       pc + pcidxs[0] + k * dimr, &rc);
+                xlacpy<FL>("N", &ra, &la, pa + pia[ia], &ra,
+                           pc + pcidxs[0] + k * dimr, &rc);
             }
             pcqs += ndimc;
             pcshs += ndimc;
@@ -1581,3 +1588,87 @@ flat_sparse_truncate_svd(
     return std::make_tuple(nlqs, nlshs, nldata, nlidxs, nsqs, nsshs, nsdata,
                            nsidxs, nrqs, nrshs, nrdata, nridxs, error);
 }
+
+// explicit template instantiation
+template void flat_sparse_tensor_transpose<double>(
+    const py::array_t<uint32_t> &ashs, const py::array_t<double> &adata,
+    const py::array_t<uint32_t> &aidxs, const py::array_t<int32_t> &perm,
+    py::array_t<double> &cdata);
+template void flat_sparse_tensor_transpose<complex<double>>(
+    const py::array_t<uint32_t> &ashs,
+    const py::array_t<complex<double>> &adata,
+    const py::array_t<uint32_t> &aidxs, const py::array_t<int32_t> &perm,
+    py::array_t<complex<double>> &cdata);
+
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_tensor_tensordot<double>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
+    const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs,
+    const py::array_t<int> &idxa, const py::array_t<int> &idxb);
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<complex<double>>, py::array_t<uint32_t>>
+flat_sparse_tensor_tensordot<complex<double>>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<complex<double>> &adata,
+    const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,
+    const py::array_t<uint32_t> &bshs,
+    const py::array_t<complex<double>> &bdata,
+    const py::array_t<uint32_t> &bidxs, const py::array_t<int> &idxa,
+    const py::array_t<int> &idxb);
+
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_tensor_add<double>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
+    const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs);
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<complex<double>>, py::array_t<uint32_t>>
+flat_sparse_tensor_add<complex<double>>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<complex<double>> &adata,
+    const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,
+    const py::array_t<uint32_t> &bshs,
+    const py::array_t<complex<double>> &bdata,
+    const py::array_t<uint32_t> &bidxs);
+
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_tensor_kron_add<double>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
+    const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs,
+    const unordered_map<uint32_t, uint32_t> &infol,
+    const unordered_map<uint32_t, uint32_t> &infor);
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<complex<double>>, py::array_t<uint32_t>>
+flat_sparse_tensor_kron_add<complex<double>>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<complex<double>> &adata,
+    const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,
+    const py::array_t<uint32_t> &bshs,
+    const py::array_t<complex<double>> &bdata,
+    const py::array_t<uint32_t> &bidxs,
+    const unordered_map<uint32_t, uint32_t> &infol,
+    const unordered_map<uint32_t, uint32_t> &infor);
+
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<double>, py::array_t<uint32_t>>
+flat_sparse_tensor_fuse<double>(const py::array_t<uint32_t> &aqs,
+                                const py::array_t<uint32_t> &ashs,
+                                const py::array_t<double> &adata,
+                                const py::array_t<uint32_t> &aidxs,
+                                const py::array_t<int32_t> &idxs,
+                                const map_fusing &info, const string &pattern);
+template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+               py::array_t<complex<double>>, py::array_t<uint32_t>>
+flat_sparse_tensor_fuse<complex<double>>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<complex<double>> &adata,
+    const py::array_t<uint32_t> &aidxs, const py::array_t<int32_t> &idxs,
+    const map_fusing &info, const string &pattern);

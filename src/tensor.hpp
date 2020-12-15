@@ -18,20 +18,41 @@
  *
  */
 
+// Dense tensor api with py::array_t interface
+
 #pragma once
 
-#include <pybind11/numpy.h>
 #include "tensor_impl.hpp"
+#include <pybind11/numpy.h>
 
 namespace py = pybind11;
 using namespace std;
 
-py::array_t<double> tensor_transpose(const py::array_t<double> &x,
-                                     const py::array_t<int> &perm,
-                                     const double alpha, const double beta);
+template <typename FL>
+py::array_t<FL> tensor_transpose(const py::array_t<FL> &x,
+                                 const py::array_t<int> &perm, const FL alpha,
+                                 const FL beta);
 
-py::array_t<double> tensor_tensordot(const py::array_t<double> &a,
-                                     const py::array_t<double> &b,
-                                     const py::array_t<int> &idxa,
-                                     const py::array_t<int> &idxb, double alpha,
-                                     double beta);
+template <typename FL>
+py::array_t<FL>
+tensor_tensordot(const py::array_t<FL> &a, const py::array_t<FL> &b,
+                 const py::array_t<int> &idxa, const py::array_t<int> &idxb,
+                 FL alpha, FL beta);
+
+// explicit template instantiation
+extern template py::array_t<double>
+tensor_transpose<double>(const py::array_t<double> &x,
+                         const py::array_t<int> &perm, const double alpha,
+                         const double beta);
+extern template py::array_t<complex<double>> tensor_transpose<complex<double>>(
+    const py::array_t<complex<double>> &x, const py::array_t<int> &perm,
+    const complex<double> alpha, const complex<double> beta);
+extern template py::array_t<double>
+tensor_tensordot(const py::array_t<double> &a, const py::array_t<double> &b,
+                 const py::array_t<int> &idxa, const py::array_t<int> &idxb,
+                 double alpha, double beta);
+extern template py::array_t<complex<double>>
+tensor_tensordot(const py::array_t<complex<double>> &a,
+                 const py::array_t<complex<double>> &b,
+                 const py::array_t<int> &idxa, const py::array_t<int> &idxb,
+                 complex<double> alpha, complex<double> beta);

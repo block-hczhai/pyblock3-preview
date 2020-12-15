@@ -18,11 +18,14 @@
  *
  */
 
+// Dense tensor api with py::array_t interface
+
 #include "tensor.hpp"
 
-py::array_t<double> tensor_transpose(const py::array_t<double> &x,
-                                     const py::array_t<int> &perm,
-                                     const double alpha, const double beta) {
+template <typename FL>
+py::array_t<FL> tensor_transpose(const py::array_t<FL> &x,
+                                 const py::array_t<int> &perm, const FL alpha,
+                                 const FL beta) {
     int ndim = (int)x.ndim();
     vector<int> shape(ndim);
     for (int i = 0; i < ndim; i++)
@@ -30,17 +33,17 @@ py::array_t<double> tensor_transpose(const py::array_t<double> &x,
     vector<ssize_t> shape_y(ndim);
     for (int i = 0; i < ndim; i++)
         shape_y[i] = x.shape()[perm.data()[i]];
-    py::array_t<double> c(shape_y);
-    tensor_transpose_impl(ndim, x.size(), perm.data(), shape.data(), x.data(),
-                          c.mutable_data(), alpha, beta);
+    py::array_t<FL> c(shape_y);
+    tensor_transpose_impl<FL>(ndim, x.size(), perm.data(), shape.data(),
+                              x.data(), c.mutable_data(), alpha, beta);
     return c;
 }
 
-py::array_t<double> tensor_tensordot(const py::array_t<double> &a,
-                                     const py::array_t<double> &b,
-                                     const py::array_t<int> &idxa,
-                                     const py::array_t<int> &idxb, double alpha,
-                                     double beta) {
+template <typename FL>
+py::array_t<FL>
+tensor_tensordot(const py::array_t<FL> &a, const py::array_t<FL> &b,
+                 const py::array_t<int> &idxa, const py::array_t<int> &idxb,
+                 FL alpha, FL beta) {
     int ndima = (int)a.ndim(), ndimb = (int)b.ndim(), nctr = (int)idxa.size();
     vector<ssize_t> shapec;
     shapec.reserve(ndima + ndimb);
@@ -50,8 +53,27 @@ py::array_t<double> tensor_tensordot(const py::array_t<double> &a,
         shapec[idxa.data()[i]] = -1, shapec[idxb.data()[i] + ndima] = -1;
     shapec.resize(
         distance(shapec.begin(), remove(shapec.begin(), shapec.end(), -1)));
-    py::array_t<double> c(shapec);
-    tensordot_impl(a.data(), ndima, a.shape(), b.data(), ndimb, b.shape(), nctr,
-              idxa.data(), idxb.data(), c.mutable_data(), alpha, beta);
+    py::array_t<FL> c(shapec);
+    tensordot_impl<FL>(a.data(), ndima, a.shape(), b.data(), ndimb, b.shape(),
+                       nctr, idxa.data(), idxb.data(), c.mutable_data(), alpha,
+                       beta);
     return c;
 }
+
+// explicit template instantiation
+template py::array_t<double>
+tensor_transpose<double>(const py::array_t<double> &x,
+                         const py::array_t<int> &perm, const double alpha,
+                         const double beta);
+template py::array_t<complex<double>> tensor_transpose<complex<double>>(
+    const py::array_t<complex<double>> &x, const py::array_t<int> &perm,
+    const complex<double> alpha, const complex<double> beta);
+template py::array_t<double>
+tensor_tensordot(const py::array_t<double> &a, const py::array_t<double> &b,
+                 const py::array_t<int> &idxa, const py::array_t<int> &idxb,
+                 double alpha, double beta);
+template py::array_t<complex<double>>
+tensor_tensordot(const py::array_t<complex<double>> &a,
+                 const py::array_t<complex<double>> &b,
+                 const py::array_t<int> &idxa, const py::array_t<int> &idxb,
+                 complex<double> alpha, complex<double> beta);

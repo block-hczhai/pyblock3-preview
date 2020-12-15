@@ -70,7 +70,7 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
         for (int i = 0; i < ndima; i++)
             shape_a[i] = psha[ia * asi + i * asj];
         uint32_t size_a = pia[ia + 1] - pia[ia];
-        tensor_transpose_impl(ndima, size_a, perma, shape_a, a, c, phase_a[ia], 0.0);
+        tensor_transpose_impl(ndima, size_a, perma, shape_a, a, c, (double) phase_a[ia], 0.0);
     }
 }
 
