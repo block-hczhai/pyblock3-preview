@@ -31,23 +31,53 @@
 namespace py = pybind11;
 using namespace std;
 
+template <typename FL>
 void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
-                                  const py::array_t<uint32_t> &ashs,
-                                  const py::array_t<double> &adata,
-                                  const py::array_t<uint32_t> &aidxs,
-                                  const py::array_t<int32_t> &perm,
-                                  py::array_t<double> &cdata);
+                                   const py::array_t<uint32_t> &ashs,
+                                   const py::array_t<FL> &adata,
+                                   const py::array_t<uint32_t> &aidxs,
+                                   const py::array_t<int32_t> &perm,
+                                   py::array_t<FL> &cdata);
 
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>>
 flat_fermion_tensor_tensordot(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<FL> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
+    const py::array_t<FL> &bdata, const py::array_t<uint32_t> &bidxs,
+    const py::array_t<int> &idxa, const py::array_t<int> &idxb);
+
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
+flat_fermion_tensor_skeleton(
+    const vector<unordered_map<uint32_t, uint32_t>> &infos, uint32_t fdq);
+
+// explicit template instantiation
+extern template void flat_fermion_tensor_transpose<double>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<int32_t> &perm, py::array_t<double> &cdata);
+extern template void flat_fermion_tensor_transpose<complex<double>>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<complex<double>> &adata,
+    const py::array_t<uint32_t> &aidxs, const py::array_t<int32_t> &perm,
+    py::array_t<complex<double>> &cdata);
+extern template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                      py::array_t<double>, py::array_t<uint32_t>>
+flat_fermion_tensor_tensordot<double>(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
     const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
     const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs,
     const py::array_t<int> &idxa, const py::array_t<int> &idxb);
-
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
-flat_fermion_tensor_skeleton(
-    const vector<unordered_map<uint32_t, uint32_t>> &infos,
-    uint32_t fdq);
+extern template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                      py::array_t<complex<double>>, py::array_t<uint32_t>>
+flat_fermion_tensor_tensordot<complex<double>>(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const py::array_t<complex<double>> &adata,
+    const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,
+    const py::array_t<uint32_t> &bshs,
+    const py::array_t<complex<double>> &bdata,
+    const py::array_t<uint32_t> &bidxs, const py::array_t<int> &idxa,
+    const py::array_t<int> &idxb);

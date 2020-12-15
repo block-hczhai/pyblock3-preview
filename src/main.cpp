@@ -298,16 +298,27 @@ PYBIND11_MODULE(block3, m) {
 
     py::module flat_fermion_tensor = m.def_submodule("flat_fermion_tensor");
     flat_fermion_tensor.def("skeleton", &flat_fermion_tensor_skeleton,
-                           py::arg("infos"), py::arg("dq"));
-    flat_fermion_tensor.def("transpose", &flat_fermion_tensor_transpose,
+                            py::arg("infos"), py::arg("dq"));
+    // double
+    flat_fermion_tensor.def("transpose", &flat_fermion_tensor_transpose<double>,
                             py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                             py::arg("aidxs"), py::arg("perm"),
                             py::arg("cdata"));
-    flat_fermion_tensor.def("tensordot", &flat_fermion_tensor_tensordot,
+    flat_fermion_tensor.def("tensordot", &flat_fermion_tensor_tensordot<double>,
                             py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                             py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"),
                             py::arg("bdata"), py::arg("bidxs"), py::arg("idxa"),
                             py::arg("idxb"));
+    // complex double
+    flat_fermion_tensor.def(
+        "transpose", &flat_fermion_tensor_transpose<complex<double>>,
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("perm"), py::arg("cdata"));
+    flat_fermion_tensor.def(
+        "tensordot", &flat_fermion_tensor_tensordot<complex<double>>,
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
+        py::arg("idxa"), py::arg("idxb"));
 
     py::module hamiltonian = m.def_submodule("hamiltonian", "Hamiltonian");
     hamiltonian.def("build_mpo", &build_mpo, py::arg("orb_sym"),
