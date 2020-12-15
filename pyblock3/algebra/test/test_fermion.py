@@ -25,6 +25,7 @@ import unittest
 import numpy as np
 from pyblock3.algebra.symmetry import SZ, BondInfo
 from pyblock3.algebra.fermion import SparseFermionTensor, FlatFermionTensor
+from pyblock3.algebra.flat import SparseTensor
 
 def finger(tensor):
     if isinstance(tensor, SparseFermionTensor):
@@ -51,8 +52,11 @@ y = SZ(1,0,0)
 infox = BondInfo({x:3, y: 2})
 infoy = BondInfo({x:2, y: 3})
 
-asp = SparseFermionTensor.random((infox,infoy,infox), dq=y)
-bsp = SparseFermionTensor.random((infox,infox,infoy))
+asp = SparseTensor.random((infox,infoy,infox), dq=y)
+bsp = SparseTensor.random((infox,infox,infoy))
+
+asp = SparseFermionTensor(blocks=asp.blocks)
+bsp = SparseFermionTensor(blocks=bsp.blocks)
 
 af = FlatFermionTensor.from_sparse(asp)
 bf = FlatFermionTensor.from_sparse(bsp)
