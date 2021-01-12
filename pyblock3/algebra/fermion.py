@@ -84,6 +84,7 @@ def _unpack_flat_tensor(data, imap, ax, adata, qlst, shapelst):
         shapelst.append(shape)
 
 def _pack_sparse_tensor(tsr, s_label, ax):
+    parity = tsr.parity
     u_map = {}
     v_map = {}
     left_offset = 0
@@ -92,7 +93,7 @@ def _pack_sparse_tensor(tsr, s_label, ax):
         q_label_left = iblk.q_labels[:ax]
         q_label_right = iblk.q_labels[ax:]
         left_parity = np.mod(sum([iq.n for iq in q_label_left]) ,2)
-        right_parity = np.mod(sum([iq.n for iq in q_label_right]) ,2)
+        right_parity = np.mod(sum([iq.n for iq in q_label_right]) + parity ,2)
         q_label_left += (SZ(left_parity), )
         q_label_right = (SZ(right_parity), ) + q_label_right
         q_label_mid = (SZ(left_parity), SZ(right_parity))
@@ -111,7 +112,7 @@ def _pack_sparse_tensor(tsr, s_label, ax):
         q_label_left = iblk.q_labels[:ax]
         q_label_right = iblk.q_labels[ax:]
         left_parity = np.mod(sum([iq.n for iq in q_label_left]) ,2)
-        right_parity = np.mod(sum([iq.n for iq in q_label_right]) ,2)
+        right_parity = np.mod(sum([iq.n for iq in q_label_right]) + parity ,2)
         q_label_left += (SZ(left_parity), )
         q_label_right = (SZ(right_parity), ) + q_label_right
         q_label_mid = (SZ(left_parity), SZ(right_parity))
@@ -123,6 +124,7 @@ def _pack_sparse_tensor(tsr, s_label, ax):
 
 def _pack_flat_tensor(tsr, s_label, ax):
     nblks, ndim = tsr.q_labels.shape
+    parity = tsr.parity
     u_map = {}
     v_map = {}
     left_offset = 0
@@ -131,11 +133,10 @@ def _pack_flat_tensor(tsr, s_label, ax):
         q_label_left = tuple(SZ.from_flat(iq) for iq in tsr.q_labels[iblk][:ax])
         q_label_right = tuple(SZ.from_flat(iq) for iq in tsr.q_labels[iblk][ax:])
         left_parity = np.mod(sum([iq.n for iq in q_label_left]) ,2)
-        right_parity = np.mod(sum([iq.n for iq in q_label_right]) ,2)
+        right_parity = np.mod(sum([iq.n for iq in q_label_right]) + parity ,2)
         q_label_left += (SZ(left_parity), )
         q_label_right = (SZ(right_parity), ) + q_label_right
         q_label_mid = (SZ(left_parity), SZ(right_parity))
-        if q_label_mid != s_label: continue
         if q_label_mid != s_label: continue
         len_left = int(np.prod(tsr.shapes[iblk][:ax]))
         len_right = int(np.prod(tsr.shapes[iblk][ax:]))
@@ -151,7 +152,7 @@ def _pack_flat_tensor(tsr, s_label, ax):
         q_label_left = tuple(SZ.from_flat(iq) for iq in tsr.q_labels[iblk][:ax])
         q_label_right = tuple(SZ.from_flat(iq) for iq in tsr.q_labels[iblk][ax:])
         left_parity = np.mod(sum([iq.n for iq in q_label_left]) ,2)
-        right_parity = np.mod(sum([iq.n for iq in q_label_right]) ,2)
+        right_parity = np.mod(sum([iq.n for iq in q_label_right]) + parity ,2)
         q_label_left += (SZ(left_parity), )
         q_label_right = (SZ(right_parity), ) + q_label_right
         q_label_mid = (SZ(left_parity), SZ(right_parity))
@@ -288,8 +289,7 @@ def _run_sparse_fermion_svd(tsr, ax=2, **svd_opts):
     full_matrices = svd_opts.pop("full_matrices", False)
     absorb = svd_opts.pop("absorb", 0)
 
-    s_labels = {0: [(SZ(0), SZ(0)), (SZ(1), SZ(1))],
-                1: [(SZ(0), SZ(1)), (SZ(1), SZ(0))]}[tsr.parity]
+    s_labels = [(SZ(0), SZ(0)), (SZ(1), SZ(1))]
     ublk, sblk, vblk = [],[],[]
     for s_label in s_labels:
         data, umap, vmap = _pack_sparse_tensor(tsr, s_label, ax)
@@ -313,8 +313,7 @@ def _run_flat_fermion_svd(tsr, ax=2, **svd_opts):
     full_matrices = svd_opts.pop("full_matrices", False)
     absorb = svd_opts.pop("absorb", 0)
     nblk, ndim = tsr.q_labels.shape
-    s_labels = {0: [(SZ(0), SZ(0)), (SZ(1), SZ(1))],
-                1: [(SZ(0), SZ(1)), (SZ(1), SZ(0))]}[tsr.parity]
+    s_labels = [(SZ(0), SZ(0)), (SZ(1), SZ(1))]
     udata, sdata, vdata = [],[],[]
     uq, sq, vq = [],[],[]
     ushapes, sshapes, vshapes = [],[],[]
@@ -407,9 +406,7 @@ class SparseFermionTensor(SparseTensor):
 
     @property
     def parity(self):
-        self.check_sanity()
-        parity_uniq = np.unique(self.parity_per_block)
-        return parity_uniq[0]
+        return self.parity_per_block[0]
 
     @property
     def parity_per_block(self):
