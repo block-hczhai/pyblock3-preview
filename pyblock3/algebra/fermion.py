@@ -710,7 +710,7 @@ class FlatFermionTensor(FlatSparseTensor):
 
     @property
     def shape(self):
-        return np.amax(self.shapes, axis=1)
+        return tuple(np.amax(self.shapes, axis=0))
 
     def check_sanity(self):
         parity_uniq = np.unique(self.parity_per_block)
