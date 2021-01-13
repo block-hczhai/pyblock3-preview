@@ -495,6 +495,14 @@ class SparseFermionTensor(SparseTensor):
             blocks.append(SubTensor.random(shape=sh, q_labels=qs, dtype=dtype))
         return SparseFermionTensor(blocks=blocks)
 
+    @staticmethod
+    def eye(bond_info):
+        """Create tensor from BondInfo with Identity matrix."""
+        blocks = []
+        for sh, qs in SparseFermionTensor._skeleton((bond_info, bond_info)):
+            blocks.append(SubTensor(reduced=np.eye(sh[0]), q_labels=qs))
+        return SparseFermionTensor(blocks=blocks)
+
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if ufunc in _sparse_fermion_tensor_numpy_func_impls:
             types = tuple(
@@ -797,6 +805,14 @@ class FlatFermionTensor(FlatSparseTensor):
         else:
             return NotImplementedError('dtype %r not supported!' % dtype)
         return FlatSparseTensor(qs, shs, data, idxs)
+
+    @staticmethod
+    def eye(bond_info):
+        """Create tensor from BondInfo with Identity matrix."""
+        blocks = []
+        for sh, qs in SparseFermionTensor._skeleton((bond_info, bond_info)):
+            blocks.append(SubTensor(reduced=np.eye(sh[0]), q_labels=qs))
+        return SparseFermionTensor(blocks=blocks).to_flat()
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _flat_fermion_tensor_numpy_func_impls:
