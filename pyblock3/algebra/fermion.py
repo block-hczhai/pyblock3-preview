@@ -293,6 +293,8 @@ def _run_sparse_fermion_svd(tsr, ax=2, **svd_opts):
     ublk, sblk, vblk = [],[],[]
     for s_label in s_labels:
         data, umap, vmap = _pack_sparse_tensor(tsr, s_label, ax)
+        if data.size==0:
+            continue
         u, s, v = np.linalg.svd(data, full_matrices=full_matrices)
         u, s, v = _trim_and_renorm_SVD(u, s, v, **svd_opts)
         if absorb is None:
@@ -319,6 +321,8 @@ def _run_flat_fermion_svd(tsr, ax=2, **svd_opts):
     ushapes, sshapes, vshapes = [],[],[]
     for s_label in s_labels:
         data, umap, vmap = _pack_flat_tensor(tsr, s_label, ax)
+        if data.size==0:
+            continue
         u, s, v = np.linalg.svd(data, full_matrices=full_matrices)
         u, s, v = _trim_and_renorm_SVD(u, s, v, **svd_opts)
         if absorb is None:
