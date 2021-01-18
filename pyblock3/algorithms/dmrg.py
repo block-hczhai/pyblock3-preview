@@ -29,6 +29,7 @@ import psutil
 
 class DMRG(SweepAlgorithm):
     """Density Matrix Renormalization Group (DMRG)."""
+
     def __init__(self, mpe, bdims, noises=None, dav_thrds=None, iprint=2):
         self.mpe = mpe
         self.bdims = bdims
@@ -40,9 +41,12 @@ class DMRG(SweepAlgorithm):
             self.dav_thrds = []
         self.contract = True
         self.fast = hasattr(mpe.ket.tensors[0], "q_labels")
-        self.iprint = iprint
         self.energies = []
-        super().__init__()
+        super().__init__(mpi=self.mpe.mpi)
+        if self.mpi:
+            self.iprint = iprint if self.mrank == 0 else -1
+        else:
+            self.iprint = iprint
 
     def solve(self, n_sweeps=10, tol=1E-6, dot=2, forward=True):
         mpe = self.mpe
@@ -62,6 +66,9 @@ class DMRG(SweepAlgorithm):
         self.energies = []
         telp = time.perf_counter()
         for iw in range(n_sweeps):
+            tswp = time.perf_counter()
+            tdav_tot = 0
+            tdec_tot = 0
             self.energies.append(1E10)
             if self.iprint >= 1:
                 print("Sweep = %4d | Direction = %8s | BondDim = %4d | Noise = %5.2E | DavThrd = %5.2E" % (
@@ -71,6 +78,8 @@ class DMRG(SweepAlgorithm):
                 tt = time.perf_counter()
                 mpe.build_envs(i, i + dot)
                 eff = mpe[i:i + dot]
+                if self.mpe.mpi:
+                    eff.ket = self.comm.bcast(eff.ket, root=0)
                 mem = psutil.Process(os.getpid()).memory_info().rss
                 peak_mem = max(mem, peak_mem)
                 if self.contract:
@@ -80,8 +89,10 @@ class DMRG(SweepAlgorithm):
                         iprint=self.iprint >= 3, fast=self.fast, conv_thrd=self.dav_thrds[iw])
                     tdav = time.perf_counter() - tx
                     if dot == 2:
+                        tx = time.perf_counter()
                         error = self.decomp_two_site(
                             eff.mpo, eff.ket, forward, self.noises[iw], self.bdims[iw])
+                        tdec_tot += time.perf_counter() - tx
                     else:
                         error = 0
                 else:
@@ -98,10 +109,13 @@ class DMRG(SweepAlgorithm):
                 if self.iprint >= 2:
                     print(" %3s Site = %4d-%4d .. Mmps = %4d Ndav = %4d E = %20.12f MaxDW = %5.2E FLOPS = %5.2E Tdav = %8.3f T = %8.3f MEM = %7s" % (
                         "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, ndav, ener, error, nflop / tdav, tdav, time.perf_counter() - tt, fmt_size(mem)))
+                    tdav_tot += tdav
             de = 0 if iw == 0 else abs(
                 self.energies[iw] - self.energies[iw - 1])
-            print("Time elapsed = %10.3f | E = %20.12f | DE = %5.2E | MEM = %7s" %
-                  (time.perf_counter() - telp, self.energies[iw], de, fmt_size(peak_mem)))
+            if self.iprint >= 0:
+                print("Time elapsed = %10.3f | E = %20.12f | DE = %5.2E | MEM = %7s" %
+                      (time.perf_counter() - telp, self.energies[iw], de, fmt_size(peak_mem)))
+                print("Time sweep = %10.3f | Time davidson = %10.3f | Time decomp = %10.3f" % (time.perf_counter() - tswp, tdav_tot, tdec_tot))
             if iw > 0 and de < tol and self.noises[iw] == self.noises[-1]:
                 break
             forward = not forward

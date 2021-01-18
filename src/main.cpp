@@ -140,6 +140,28 @@ PYBIND11_MODULE(block3, m) {
                  r[from_sz(q)] = (*self)[from_sz(q)];
                  return r;
              })
+        .def(py::pickle(
+            [](unordered_map<uint32_t, uint32_t> *self) {
+                py::array_t<uint32_t> data{
+                    vector<ssize_t>{(ssize_t)self->size() * 2}};
+                vector<pair<uint32_t, uint32_t>> vpu(self->begin(),
+                                                     self->end());
+                for (size_t i = 0; i < vpu.size(); i++) {
+                    data.mutable_data()[i * 2] = vpu[i].first;
+                    data.mutable_data()[i * 2 + 1] = vpu[i].second;
+                }
+                return py::make_tuple(data);
+            },
+            [](py::tuple t) {
+                py::array_t<uint32_t> data = t[0].cast<py::array_t<uint32_t>>();
+                vector<pair<uint32_t, uint32_t>> vpu(data.shape()[0] / 2);
+                for (size_t i = 0; i < vpu.size(); i++) {
+                    vpu[i].first = data.data()[i * 2];
+                    vpu[i].second = data.data()[i * 2 + 1];
+                }
+                return unordered_map<uint32_t, uint32_t>(vpu.begin(),
+                                                         vpu.end());
+            }))
         .def_static(
             "set_bond_dimension_occ",
             [](const vector<unordered_map<uint32_t, uint32_t>> &basis,
@@ -291,9 +313,9 @@ PYBIND11_MODULE(block3, m) {
            const string &pattern) {
             return flat_sparse_tensor_fuse<double>(aqs, ashs, adata, aidxs,
                                                    idxs, info, pattern);
-        }, py::arg("aqs"), py::arg("ashs"),
-        py::arg("adata"), py::arg("aidxs"), py::arg("idxs"), py::arg("info"),
-        py::arg("pattern"));
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("idxs"), py::arg("info"), py::arg("pattern"));
 
     // complex double
     flat_sparse_tensor.def(

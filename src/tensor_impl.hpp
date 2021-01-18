@@ -35,6 +35,9 @@
 #ifdef _HAS_HPTT
 #include "hptt.h"
 #endif
+#ifdef I
+#undef I
+#endif
 
 #ifndef _HAS_INTEL_MKL
 
