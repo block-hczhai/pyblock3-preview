@@ -930,7 +930,7 @@ class FlatFermionTensor(FlatSparseTensor):
 
     def permute(self, axes=None):
         if axes is None:
-            axes = np.arange(a.ndim)[::-1]
+            axes = np.arange(self.ndim)[::-1]
         if self.n_blocks == 0:
             return self
         else:
