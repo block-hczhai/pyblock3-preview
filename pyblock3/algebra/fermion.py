@@ -61,29 +61,39 @@ def compute_phase(q_labels, axes):
         counted.append(x)
     return phase
 
-def _unpack_sparse_tensor(data, imap, ax, blklist):
+def _unpack_sparse_tensor(data, imap, ax, blklist, parity_axes=None):
     for q_label, (isec, ishape) in imap.items():
+        sign = 1
+        if parity_axes is not None:
+            count_parity = [q_label[iq].n for iq in parity_axes].count(1)
+            if np.mod(count_parity, 4) > 1:
+                sign = -1
         ist, ied = isec
         if ax==0:
-            tmp = data[ist:ied].reshape(ishape+(-1,))
+            tmp = data[ist:ied].reshape(ishape+(-1,)) * sign
         else:
-            tmp = data[:,ist:ied].reshape((-1,)+ishape)
+            tmp = data[:,ist:ied].reshape((-1,)+ishape) * sign
         blklist.append(SubTensor(tmp, q_labels=q_label))
 
-def _unpack_flat_tensor(data, imap, ax, adata, qlst, shapelst):
+def _unpack_flat_tensor(data, imap, ax, adata, qlst, shapelst, parity_axes=None):
     for q_label, (isec, ishape) in imap.items():
         qlst.append([SZ.to_flat(iq) for iq in q_label])
+        sign = 1
+        if parity_axes is not None:
+            count_parity = [q_label[iq].n for iq in parity_axes].count(1)
+            if np.mod(count_parity, 4) > 1:
+                sign = -1
         ist, ied = isec
         if ax==0:
-            tmp = data[ist:ied]
+            tmp = data[ist:ied] * sign
             shape = tuple(ishape) + (tmp.size//np.prod(ishape), )
         else:
-            tmp = data[:,ist:ied]
+            tmp = data[:,ist:ied] * sign
             shape = (tmp.size//np.prod(ishape), ) + tuple(ishape)
         adata.append(tmp.ravel())
         shapelst.append(shape)
 
-def _pack_sparse_tensor(tsr, s_label, ax):
+def _pack_sparse_tensor(tsr, s_label, ax, parity_axes=None):
     parity = tsr.parity
     u_map = {}
     v_map = {}
@@ -117,12 +127,18 @@ def _pack_sparse_tensor(tsr, s_label, ax):
         q_label_right = (SZ(right_parity), ) + q_label_right
         q_label_mid = (SZ(left_parity), SZ(right_parity))
         if q_label_mid != s_label: continue
+        sign = 1
+        if parity_axes is not None:
+            l_parity = [iblk.q_labels[iq].n for iq in parity_axes]
+            count_parity = l_parity.count(1)
+            if np.mod(count_parity, 4) > 1:
+                sign = -1
         ist, ied = u_map[q_label_left][0]
         jst, jed = v_map[q_label_right][0]
-        data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jed-jst)
+        data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jed-jst) * sign
     return data, u_map, v_map
 
-def _pack_flat_tensor(tsr, s_label, ax):
+def _pack_flat_tensor(tsr, s_label, ax, parity_axes=None):
     nblks, ndim = tsr.q_labels.shape
     parity = tsr.parity
     u_map = {}
@@ -157,10 +173,16 @@ def _pack_flat_tensor(tsr, s_label, ax):
         q_label_right = (SZ(right_parity), ) + q_label_right
         q_label_mid = (SZ(left_parity), SZ(right_parity))
         if q_label_mid != s_label: continue
+        sign = 1
+        if parity_axes is not None:
+            l_parity = [SZ.from_flat(tsr.q_labels[iblk][iq]).n for iq in parity_axes]
+            count_parity = l_parity.count(1)
+            if np.mod(count_parity, 4) > 1:
+                sign = -1
         ist, ied = u_map[q_label_left][0]
         jst, jed = v_map[q_label_right][0]
         blkst, blked = tsr.idxs[iblk], tsr.idxs[iblk+1]
-        data[ist:ied,jst:jed] = np.asarray(tsr.data[blkst:blked]).reshape(ied-ist, jed-jst)
+        data[ist:ied,jst:jed] = np.asarray(tsr.data[blkst:blked]).reshape(ied-ist, jed-jst) * sign
     return data, u_map, v_map
 
 def _trim_singular_vals(s, cutoff, cutoff_mode):
