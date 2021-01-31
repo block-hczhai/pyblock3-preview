@@ -34,7 +34,7 @@ Features
 Installation
 ------------
 
-Dependence: `python3`, and `numpy` (version >= 1.17.0). pyblock3 can run in pure python mode,
+Dependence: `python3`, `psutil`, `numba`, and `numpy` (version >= 1.17.0). pyblock3 can run in pure python mode,
 in which no C++ source code is required to be compiled.
 
 For optimal performance, the C++ source code is used and there are some additional dependences:

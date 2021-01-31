@@ -438,7 +438,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
             uint64_t rrepr =
                 (uint64_t &)res_factor & ~(((uint64_t)1 << 52) - 1);
             res_factor = (double &)rrepr;
-            assert(res_factor != 0);
+            if (res_factor == 0)
+                res_factor = 1;
             for (auto &mq : q_map) {
                 int s_kept = 0;
                 int iq = mq.second;
