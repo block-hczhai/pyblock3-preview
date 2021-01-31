@@ -184,16 +184,13 @@ class FCIDUMP:
             if self.mu != 0:
                 self.h1e -= self.mu * np.identity(self.n_sites)
         else:
-            self.h1e = (None, None)
-            self.h1e[0] = np.zeros((self.n_sites, self.n_sites))
-            self.h1e[1] = np.zeros((self.n_sites, self.n_sites))
-            self.g2e = (None, None, None)  # aa, ab, bb
-            self.g2e[0] = np.zeros(
-                (self.n_sites, self.n_sites, self.n_sites, self.n_sites))
-            self.g2e[1] = np.zeros(
-                (self.n_sites, self.n_sites, self.n_sites, self.n_sites))
-            self.g2e[2] = np.zeros(
-                (self.n_sites, self.n_sites, self.n_sites, self.n_sites))
+            self.h1e = (
+                np.zeros((self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites)))
+            self.g2e = (
+                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)))
             ip = 0
             for i, j, k, l, d in data:
                 if i + j + k + l == 0:
@@ -202,14 +199,10 @@ class FCIDUMP:
                         self.const_e = d
                 elif k + l == 0:
                     assert ip == 3 or ip == 4
-                    if ip == 3:
-                        self.h1e[0][i - 1, j -
-                                    1] = self.h1e[0][j - 1, i - 1] = d
-                    elif ip == 4:
-                        self.h1e[1][i - 1, j -
-                                    1] = self.h1e[1][j - 1, i - 1] = d
+                    self.h1e[ip - 3][i - 1, j - 1] = d
+                    self.h1e[ip - 3][j - 1, i - 1] = d
                 else:
-                    ig = [0, 3, 1][ip]
+                    ig = [0, 2, 1][ip]
                     self.g2e[ig][i - 1, j - 1, k - 1, l - 1] = d
                     if not self.general:
                         self.g2e[ig][j - 1, i - 1, k - 1, l - 1] = d

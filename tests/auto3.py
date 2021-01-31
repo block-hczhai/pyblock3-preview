@@ -118,7 +118,10 @@ def generate_qc_terms(n_sites, h1e, g2e, cutoff=1E-9):
                                                 OP_C + k * SITE + skl * SPIN,
                                                 OP_D + l * SITE + skl * SPIN,
                                                 OP_D + j * SITE + sij * SPIN])
-    return np.array(h_values, dtype=np.float64), np.array(h_terms, dtype=np.int32)
+    if len(h_values) == 0:
+        return np.zeros((0, ), dtype=np.float64), np.zeros((0, 4), dtype=np.int32)
+    else:
+        return np.array(h_values, dtype=np.float64), np.array(h_terms, dtype=np.int32)
 
 
 def build_hubbard(u=2, t=1, n=8, cutoff=1E-9):
@@ -137,24 +140,30 @@ def build_qc(filename, pg='d2h', cutoff=1E-9, max_bond_dim=-1):
     hamil = Hamiltonian(fcidump, flat=flat)
 
     tx = time.perf_counter()
-    terms = generate_qc_terms(
-        fcidump.n_sites, fcidump.h1e, fcidump.g2e, cutoff)
+    if fcidump.uhf:
+        terms = generate_qc_terms(
+            fcidump.n_sites, fcidump.h1e[0], fcidump.g2e[0], cutoff)
+    else:
+        terms = generate_qc_terms(
+            fcidump.n_sites, fcidump.h1e, fcidump.g2e, cutoff)
     print('hamil term time = ', time.perf_counter() - tx, len(terms[0]))
     return hamil, hamil.build_mpo(terms, cutoff=cutoff, max_bond_dim=max_bond_dim).to_sparse()
 
-os.environ['MKL_NUM_THREADS'] = str(1)
+# os.environ['MKL_NUM_THREADS'] = str(1)
 
 tx = time.perf_counter()
+# fd = '../data/HUBBARD-L8.FCIDUMP'
 # fd = '../data/N2.STO3G.FCIDUMP'
 # fd = '../data/H8.STO6G.R1.8.FCIDUMP'
 # fd = '../my_test/n2/N2.FCIDUMP'
-fd = '../my_test/n2/N2.CCPVDZ.FCIDUMP'
+# fd = '../my_test/n2/N2.CCPVDZ.FCIDUMP'
 # fd = '../data/CR2.SVP.FCIDUMP'
-# hamil, mpo = build_hubbard(n=16, cutoff=cutoff)
-hamil, mpo = build_qc(fd, cutoff=cutoff, max_bond_dim=-1)
+fd = '/home/hczhai/work/block2-old/my_test/cuprate3/prepare/REV.FCIDUMP'
+# hamil, mpo = build_hubbard(n=32, cutoff=cutoff)
+hamil, mpo = build_qc(fd, cutoff=cutoff, max_bond_dim=-5)
 print('rank = %4d mpo build time = %.3f' % (mrank, time.perf_counter() - tx))
 
-os.environ['MKL_NUM_THREADS'] = str(n_threads)
+# os.environ['MKL_NUM_THREADS'] = str(n_threads)
 
 tx = time.perf_counter()
 if not mpi or mrank == 0:
@@ -169,17 +178,21 @@ if flat:
     mps = mps.to_flat()
     mpo = mpo.to_flat()
 
-print('MPS = ', mps.show_bond_dims())
 print('rank = %4d MPO (build) =      ' % mrank, mpo.show_bond_dims())
-mpo, _ = mpo.compress(left=True, cutoff=cutoff, norm_cutoff=cutoff)
-print('rank = %4d MPO (compressed) = ' % mrank, mpo.show_bond_dims())
+print('MPS = ', mps.show_bond_dims())
+# mpo, _ = mpo.compress(left=True, cutoff=cutoff, norm_cutoff=cutoff)
+# comm.barrier()
+# for i in range(msize):
+#     if i == mrank:
+#         print('rank = %4d MPO (compressed) = ' % mrank, mpo.show_bond_dims(), flush=True)
+#     comm.barrier()
 
 bdims = [250] * 5 + [500] * 5
-noises = [1E-5] * 10 + [0]
-davthrds = [5E-3] * 4 + [1E-3] * 4 + [1E-4]
+noises = [1E-5] * 15 + [0]
+davthrds = [5E-3] * 4 + [1E-3] * 4 + [1E-4] * 2 + [1E-5] * 2 + [1E-6] * 2
 
 dmrg = CachedMPE(mps, mpo, mps, mpi=mpi).dmrg(bdims=bdims, noises=noises,
-                                     dav_thrds=davthrds, iprint=2, n_sweeps=10)
+                                     dav_thrds=davthrds, iprint=2, n_sweeps=15)
 ener = dmrg.energies[-1]
 if mrank == 0:
     print("Energy = %20.12f" % ener)

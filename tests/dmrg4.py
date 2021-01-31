@@ -53,6 +53,6 @@ noises = [1E-5] * 2 + [1E-6] * 4 + [1E-7] * 3 + [0]
 davthrds = [5E-3] * 4 + [1E-3] * 4 + [1E-4]
 
 dmrg = CachedMPE(mps, mpo, mps).dmrg(bdims=bdims, noises=noises,
-                                     dav_thrds=davthrds, iprint=2, n_sweeps=10)
+                                     dav_thrds=davthrds, iprint=3, n_sweeps=10)
 ener = dmrg.energies[-1]
 print("Energy = %20.12f" % ener)

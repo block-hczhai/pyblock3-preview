@@ -107,7 +107,7 @@ class DMRG(SweepAlgorithm):
                 mpe[i:i + dot] = eff
                 self.energies[iw] = min(self.energies[iw], ener)
                 if self.iprint >= 2:
-                    print(" %3s Site = %4d-%4d .. Mmps = %4d Ndav = %4d E = %20.12f MaxDW = %5.2E FLOPS = %5.2E Tdav = %8.3f T = %8.3f MEM = %7s" % (
+                    print(" %3s Site = %4d-%4d .. Mmps = %4d Ndav = %4d E = %20.12f DW = %5.2E FLOPS = %5.2E Tdav = %8.3f T = %8.3f MEM = %7s" % (
                         "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, ndav, ener, error, nflop / tdav, tdav, time.perf_counter() - tt, fmt_size(mem)))
                     tdav_tot += tdav
             de = 0 if iw == 0 else abs(

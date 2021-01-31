@@ -55,7 +55,7 @@ occ = [float(x) for x in open(occf, 'r').readline().split()]
 
 hamil = Hamiltonian(FCIDUMP(pg='d2h').read(fd).parallelize(), flat=True)
 
-os.environ['MKL_NUM_THREADS'] = str(1)
+# os.environ['MKL_NUM_THREADS'] = str(1)
 
 tx = time.perf_counter()
 mpo = hamil.build_qc_mpo()
@@ -65,10 +65,10 @@ print('rank = %2d build mpo time = ' % mrank, time.perf_counter() - tx)
 tx = time.perf_counter()
 mpo, _ = mpo.compress(left=True, cutoff=1E-9, norm_cutoff=1E-9)
 print('rank = %2d MPO (compressed) = ' % mrank, mpo.show_bond_dims())
-print('rank = %2d compress mpo time = ' % mrank, time.perf_counter() - tx)
+# print('rank = %2d compress mpo time = ' % mrank, time.perf_counter() - tx)
 
-mkl_set_num_threads(n_threads)
-print(mkl_get_max_threads())
+# mkl_set_num_threads(n_threads)
+# print(mkl_get_max_threads())
 
 if not mpi or mrank == 0:
     mps = hamil.build_mps(bond_dim, occ=occ)
@@ -81,6 +81,6 @@ noises = [1E-5] * 2 + [1E-6] * 4 + [1E-7] * 3 + [0]
 davthrds = [5E-3] * 4 + [1E-3] * 4 + [1E-4]
 
 dmrg = CachedMPE(mps, mpo, mps, mpi=mpi).dmrg(bdims=bdims, noises=noises,
-                                     dav_thrds=davthrds, iprint=3, n_sweeps=10)
+                                     dav_thrds=davthrds, iprint=2, n_sweeps=10)
 ener = dmrg.energies[-1]
 print("Energy = %20.12f" % ener)
