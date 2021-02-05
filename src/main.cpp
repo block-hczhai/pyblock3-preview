@@ -206,6 +206,27 @@ PYBIND11_MODULE(block3, m) {
     tensor.def("tensordot", &tensor_tensordot<complex<double>>, py::arg("a"),
                py::arg("b"), py::arg("idxa"), py::arg("idxb"),
                py::arg("alpha") = 1.0, py::arg("beta") = 0.0);
+    // mixed
+    tensor.def(
+        "tensordot",
+        [](const py::array_t<double> &a, const py::array_t<complex<double>> &b,
+           const py::object &idxa, const py::object &idxb,
+           complex<double> alpha, complex<double> beta) {
+            return tensor_tensordot<complex<double>>(a, b, idxa, idxb, alpha,
+                                                     beta);
+        },
+        py::arg("a"), py::arg("b"), py::arg("idxa"), py::arg("idxb"),
+        py::arg("alpha") = 1.0, py::arg("beta") = 0.0);
+    tensor.def(
+        "tensordot",
+        [](const py::array_t<complex<double>> &a, const py::array_t<double> &b,
+           const py::object &idxa, const py::object &idxb,
+           complex<double> alpha, complex<double> beta) {
+            return tensor_tensordot<complex<double>>(a, b, idxa, idxb, alpha,
+                                                     beta);
+        },
+        py::arg("a"), py::arg("b"), py::arg("idxa"), py::arg("idxb"),
+        py::arg("alpha") = 1.0, py::arg("beta") = 0.0);
 
     py::module flat_sparse_tensor =
         m.def_submodule("flat_sparse_tensor", "FlatSparseTensor");
@@ -378,6 +399,86 @@ PYBIND11_MODULE(block3, m) {
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
         py::arg("idxs"), py::arg("info"), py::arg("pattern"));
 
+    // mixed C x D
+    flat_sparse_tensor.def(
+        "tensordot",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs,
+           const py::object &bqs, const py::object &bshs,
+           const py::array_t<double> &bdata, const py::object &bidxs,
+           const py::object &idxa, const py::object &idxb) {
+            return flat_sparse_tensor_tensordot<complex<double>>(
+                aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
+        py::arg("idxa"), py::arg("idxb"));
+    flat_sparse_tensor.def(
+        "add",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs,
+           const py::object &bqs, const py::object &bshs,
+           const py::array_t<double> &bdata, const py::object &bidxs) {
+            return flat_sparse_tensor_add<complex<double>>(
+                aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"));
+    flat_sparse_tensor.def(
+        "kron_add",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs,
+           const py::object &bqs, const py::object &bshs,
+           const py::array_t<double> &bdata, const py::object &bidxs,
+           const unordered_map<uint32_t, uint32_t> &infol,
+           const unordered_map<uint32_t, uint32_t> &infor) {
+            return flat_sparse_tensor_kron_add<complex<double>>(
+                aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
+        py::arg("infol"), py::arg("infor"));
+
+    // mixed D x C
+    flat_sparse_tensor.def(
+        "tensordot",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs,
+           const py::object &bqs, const py::object &bshs,
+           const py::array_t<complex<double>> &bdata, const py::object &bidxs,
+           const py::object &idxa, const py::object &idxb) {
+            return flat_sparse_tensor_tensordot<complex<double>>(
+                aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
+        py::arg("idxa"), py::arg("idxb"));
+    flat_sparse_tensor.def(
+        "add",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs,
+           const py::object &bqs, const py::object &bshs,
+           const py::array_t<complex<double>> &bdata, const py::object &bidxs) {
+            return flat_sparse_tensor_add<complex<double>>(
+                aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"));
+    flat_sparse_tensor.def(
+        "kron_add",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs,
+           const py::object &bqs, const py::object &bshs,
+           const py::array_t<complex<double>> &bdata, const py::object &bidxs,
+           const unordered_map<uint32_t, uint32_t> &infol,
+           const unordered_map<uint32_t, uint32_t> &infor) {
+            return flat_sparse_tensor_kron_add<complex<double>>(
+                aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
+        py::arg("infol"), py::arg("infor"));
+
     flat_sparse_tensor.def("diag", &flat_sparse_tensor_diag, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
                            py::arg("idxa"), py::arg("idxb"));
@@ -438,6 +539,36 @@ PYBIND11_MODULE(block3, m) {
         "tensordot",
         [](const py::object &aqs, const py::object &ashs,
            const py::array_t<complex<double>> &adata, const py::object &aidxs,
+           const py::object &bqs, const py::object &bshs,
+           const py::array_t<complex<double>> &bdata, const py::object &bidxs,
+           const py::object &idxa, const py::object &idxb) {
+            return flat_fermion_tensor_tensordot<complex<double>>(
+                aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
+        py::arg("idxa"), py::arg("idxb"));
+    
+    // mixed C x D
+    flat_fermion_tensor.def(
+        "tensordot",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs,
+           const py::object &bqs, const py::object &bshs,
+           const py::array_t<double> &bdata, const py::object &bidxs,
+           const py::object &idxa, const py::object &idxb) {
+            return flat_fermion_tensor_tensordot<complex<double>>(
+                aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa, idxb);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
+        py::arg("idxa"), py::arg("idxb"));
+
+    // mixed D x C
+    flat_fermion_tensor.def(
+        "tensordot",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs,
            const py::object &bqs, const py::object &bshs,
            const py::array_t<complex<double>> &bdata, const py::object &bidxs,
            const py::object &idxa, const py::object &idxb) {
