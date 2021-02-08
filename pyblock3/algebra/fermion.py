@@ -529,6 +529,56 @@ class SparseFermionTensor(SparseTensor):
             blocks.append(SubTensor(reduced=np.eye(sh[0]), q_labels=qs))
         return SparseFermionTensor(blocks=blocks)
 
+    @staticmethod
+    @implements(np.add)
+    def _add(a, b):
+        if isinstance(a, numbers.Number):
+            blocks = [np.add(a, block) for block in b.blocks]
+            return b.__class__(blocks=blocks)
+        elif isinstance(b, numbers.Number):
+            blocks = [np.add(block, b) for block in a.blocks]
+            return a.__class__(blocks=blocks)
+        else:
+            if a.parity != b.parity:
+                raise ValueError("Tensors must have same parity for addition")
+            blocks_map = {block.q_labels: block for block in a.blocks}
+            for block in b.blocks:
+                if block.q_labels in blocks_map:
+                    mb = blocks_map[block.q_labels]
+                    np.add(mb, block, out=mb)
+                else:
+                    blocks_map[block.q_labels] = block
+            blocks = list(blocks_map.values())
+            return a.__class__(blocks=blocks)
+
+    def add(self, b):
+        return self._add(self, b)
+
+    @staticmethod
+    @implements(np.subtract)
+    def _subtract(a, b):
+        if isinstance(a, numbers.Number):
+            blocks = [np.subtract(a, block) for block in b.blocks]
+            return b.__class__(blocks=blocks)
+        elif isinstance(b, numbers.Number):
+            blocks = [np.subtract(block, b) for block in a.blocks]
+            return a.__class__(blocks=blocks)
+        else:
+            if a.parity != b.parity:
+                raise ValueError("Tensors must have same parity for subtraction")
+            blocks_map = {block.q_labels: block for block in a.blocks}
+            for block in b.blocks:
+                if block.q_labels in blocks_map:
+                    mb = blocks_map[block.q_labels]
+                    np.subtract(mb, block, out=mb)
+                else:
+                    blocks_map[block.q_labels] = block
+            blocks = list(blocks_map.values())
+            return a.__class__(blocks=blocks)
+
+    def subtract(self, b):
+        return self._subtract(self, b)
+
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if ufunc in _sparse_fermion_tensor_numpy_func_impls:
             types = tuple(
@@ -657,6 +707,50 @@ class SparseFermionTensor(SparseTensor):
                         blocks_map[outq] += mat * phase
 
         return a.__class__(blocks=list(blocks_map.values()))
+
+    @staticmethod
+    @implements(np.add)
+    def _add(a, b):
+        if isinstance(a, numbers.Number):
+            data = a + b.data
+            return b.__class__(b.q_labels, b.shapes, data, b.idxs)
+        elif isinstance(b, numbers.Number):
+            data = a.data + b
+            return a.__class__(a.q_labels, a.shapes, data, a.idxs)
+        elif b.n_blocks == 0:
+            return a
+        elif a.n_blocks == 0:
+            return b
+        else:
+            if a.parity != b.parity:
+                raise ValueError("Tensors must have same parity for addition")
+            return a.__class__(*flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
+                                                a.idxs, b.q_labels, b.shapes, b.data, b.idxs))
+
+    def add(self, b):
+        return self._add(self, b)
+
+    @staticmethod
+    @implements(np.subtract)
+    def _subtract(a, b):
+        if isinstance(a, numbers.Number):
+            data = a - b.data
+            return b.__class__(b.q_labels, b.shapes, data, b.idxs)
+        elif isinstance(b, numbers.Number):
+            data = a.data - b
+            return a.__class__(a.q_labels, a.shapes, data, a.idxs)
+        elif b.n_blocks == 0:
+            return a
+        elif a.n_blocks == 0:
+            return b.__class__(b.q_labels, b.shapes, -b.data, b.idxs)
+        else:
+            if a.parity != b.parity:
+                raise ValueError("Tensors must have same parity for subtraction")
+            return a.__class__(*flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
+                                                a.idxs, b.q_labels, b.shapes, -b.data, b.idxs))
+
+    def subtract(self, b):
+        return self._subtract(self, b)
 
     @staticmethod
     @implements(np.transpose)

@@ -38,23 +38,31 @@ def onsite_u(u=1):
     umat = SparseFermionTensor(blocks=blocks).to_flat()
     return umat
 
-def hubbard(t, u, fac=None):
-    if fac is None:
-        fac = (1, 1)
+def hubbard(t, u, mu=0, fac=None):
+    if fac is None: fac = (1, 1)
     faca, facb = fac
     ham = hopping(t).to_sparse()
+    identity = np.eye(2)
     for iblk in ham:
         qin, qout = iblk.q_labels[:2], iblk.q_labels[2:]
         if qin != qout: continue
         in_pair = [iq.n for iq in qin]
         if in_pair == [0,0]:
-            iblk[1,0,1,0] += faca * u
-            iblk[0,1,0,1] += facb * u
-            iblk[1,1,1,1] += (faca + facb) * u
+            iblk[1,:,1,:] += faca * (u+2*mu) * identity
+            iblk[:,1,:,1] += facb * (u+2*mu) * identity
         elif in_pair == [0,1]:
-            iblk[1,:,1,:] += faca * u * np.eye(2)
+            iblk[1,:,1,:] += faca * (u+2*mu) * identity
+            iblk[:,0,:,0] += facb * mu * identity
+            iblk[:,1,:,1] += facb * mu * identity
         elif in_pair == [1,0]:
-            iblk[:,1,:,1] += facb * u * np.eye(2)
+            iblk[:,1,:,1] += facb * (u+2*mu) * identity
+            iblk[0,:,0,:] += faca * mu * identity
+            iblk[1,:,1,:] += faca * mu * identity
+        else:
+            iblk[0,:,0,:] -= faca * mu * identity
+            iblk[1,:,1,:] -= faca * mu * identity
+            iblk[:,0,:,0] -= facb * mu * identity
+            iblk[:,1,:,1] -= facb * mu * identity
     return ham.to_flat()
 
 def count_n():
