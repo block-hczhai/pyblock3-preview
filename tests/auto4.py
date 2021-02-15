@@ -204,13 +204,17 @@ tx = time.perf_counter()
 # fd = '../my_test/n2/N2.FCIDUMP'
 # fd = '../my_test/n2/N2.CCPVDZ.FCIDUMP'
 # fd = '../data/CR2.SVP.FCIDUMP'
-fd = '/home/hczhai/work/block2-old/my_test/cuprate3/prepare/REV.FCIDUMP'
+fd = '../../block2-old/my_test/cr2/CR2.CCPVDZ.FCIDUMP'
+# fd = '../../block2-old/data/H4.STO6G.R1.8.FCIDUMP'
+# fd = '/home/hczhai/work/block2-old/my_test/cuprate3/prepare/REV.FCIDUMP'
 # hamil, mpo = build_hubbard(n=32, cutoff=cutoff)
 
-msize = 16
+msize = 1
 mmz = 0
 mtz = 0
 for mrank in range(0, msize):
+    hamil, mpo, tmpo = build_qc(fd, mrank, msize, cutoff=cutoff, max_bond_dim=-9)
+    print(mrank, mpo.bond_dim, tmpo, mpo.show_bond_dims())
     hamil, mpo, tmpo = build_qc(fd, mrank, msize, cutoff=cutoff, max_bond_dim=-5)
     print(mrank, mpo.bond_dim, tmpo, mpo.show_bond_dims())
     mmz = max(mmz, mpo.bond_dim)

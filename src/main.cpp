@@ -22,6 +22,7 @@
 #include "flat_functor.hpp"
 #include "flat_sparse.hpp"
 #include "hamiltonian.hpp"
+#include "hamiltonian_ptree.hpp"
 #include "qc_hamiltonian.hpp"
 #include "sz.hpp"
 #include "tensor.hpp"
@@ -583,6 +584,8 @@ PYBIND11_MODULE(block3, m) {
     hamiltonian.def("build_mpo", &build_mpo, py::arg("orb_sym"),
                     py::arg("h_values"), py::arg("h_terms"), py::arg("cutoff"),
                     py::arg("max_bond_dim"));
+    hamiltonian.def("build_mpo_ptree", &build_mpo_ptree, py::arg("orb_sym"),
+                    py::arg("h_values"), py::arg("h_terms"));
     hamiltonian.def("build_qc_mpo", &build_qc_mpo, py::arg("orb_sym"),
                     py::arg("t"), py::arg("v"));
 

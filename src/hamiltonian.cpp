@@ -47,7 +47,7 @@ typedef tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
               py::array_t<uint32_t>>
     op_skeleton;
 
-void op_matmul(const op_skeleton &ska, const op_skeleton &skb,
+inline void op_matmul(const op_skeleton &ska, const op_skeleton &skb,
                const op_skeleton &skc, const double *pa, const double *pb,
                double *pc) {
     int na = get<0>(ska).shape()[0], nb = get<0>(skb).shape()[0],

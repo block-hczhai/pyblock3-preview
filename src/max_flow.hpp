@@ -34,12 +34,13 @@ struct FLOW {
     vector<unordered_map<int, int>> resi;
     vector<int> dist;
     vector<mci> rix;
-    int n, nfs;
+    int n, nfs, inf;
     FLOW(int n) : n(n) {
         resi.resize(n + 2);
         dist.resize(n + 2);
         rix.resize(n + 2);
         nfs = 0;
+        inf = numeric_limits<int>::max();
     }
     void MVC_DFS(int i, uint8_t *vis) {
         vis[i] = 1;
@@ -65,11 +66,10 @@ struct FLOW {
     }
     // DINIC Algorithm (O(n^2m). for capacity=1, O(m sqrt(n)))
     int DINIC() {
-        int inf = 0;
         for (int i = 0; i < n + 2; i++)
             for (const auto &ri : resi[i])
                 if (ri.second != 0)
-                    resi[ri.first][i] = 0, inf++;
+                    resi[ri.first][i] = 0;
         int rs = 0;
         for (nfs = 0; DBFS(); rs += DDFS(n, inf), nfs++)
             ;

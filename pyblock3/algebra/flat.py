@@ -822,6 +822,14 @@ class FlatFermionTensor(FermionTensor):
         return np.copy(self)
 
     @staticmethod
+    @implements(np.linalg.norm)
+    def _norm(x):
+        return np.sqrt(np.linalg.norm(x.odd) ** 2 + np.linalg.norm(x.even) ** 2)
+
+    def norm(self):
+        return np.sqrt(np.linalg.norm(self.odd) ** 2 + np.linalg.norm(self.even) ** 2)
+
+    @staticmethod
     def _unfuse(a, i, info):
         return a.unfuse(i, info)
 

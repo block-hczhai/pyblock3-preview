@@ -154,13 +154,15 @@ def build_qc(filename, pg='d2h', cutoff=1E-9, max_bond_dim=-1):
 tx = time.perf_counter()
 # fd = '../data/HUBBARD-L8.FCIDUMP'
 # fd = '../data/N2.STO3G.FCIDUMP'
+# fd = '../../block2-old/data/H4.STO6G.R1.8.FCIDUMP'
+# fd = '../data/H4.TEST'
 # fd = '../data/H8.STO6G.R1.8.FCIDUMP'
 # fd = '../my_test/n2/N2.FCIDUMP'
-# fd = '../my_test/n2/N2.CCPVDZ.FCIDUMP'
+fd = '../my_test/n2/N2.CCPVDZ.FCIDUMP'
 # fd = '../data/CR2.SVP.FCIDUMP'
-fd = '/home/hczhai/work/block2-old/my_test/cuprate3/prepare/REV.FCIDUMP'
+# fd = '/home/hczhai/work/block2-old/my_test/cuprate3/prepare/REV.FCIDUMP'
 # hamil, mpo = build_hubbard(n=32, cutoff=cutoff)
-hamil, mpo = build_qc(fd, cutoff=cutoff, max_bond_dim=-5)
+hamil, mpo = build_qc(fd, cutoff=cutoff, max_bond_dim=-9)
 print('rank = %4d mpo build time = %.3f' % (mrank, time.perf_counter() - tx))
 
 # os.environ['MKL_NUM_THREADS'] = str(n_threads)
@@ -192,7 +194,7 @@ noises = [1E-5] * 15 + [0]
 davthrds = [5E-3] * 4 + [1E-3] * 4 + [1E-4] * 2 + [1E-5] * 2 + [1E-6] * 2
 
 dmrg = CachedMPE(mps, mpo, mps, mpi=mpi).dmrg(bdims=bdims, noises=noises,
-                                     dav_thrds=davthrds, iprint=2, n_sweeps=15)
+                                     dav_thrds=davthrds, iprint=2, n_sweeps=1)
 ener = dmrg.energies[-1]
 if mrank == 0:
     print("Energy = %20.12f" % ener)
