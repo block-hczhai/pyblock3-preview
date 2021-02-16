@@ -27,12 +27,18 @@ from .symmetry import SZ
 from .mps import MPS
 
 
-def flat_sparse_matmul_init(spt, pattern, dq, symmetric):
+def flat_sparse_matmul_init(spt, pattern, dq, symmetric, mpi):
     tl, tr = [ts.infos for ts in spt.tensors]
     dl, dr = [(len(tl) - 2) // 2, (len(tr) - 2) // 2]
     cinfos = [tl[0], *tl[1 + dl:1 + dl + dl], *tr[1 + dr:1 + dr + dr], tr[-1]]
     vinfos = [tl[0], *tl[1:1 + dl], *tr[1:1 + dr], tr[-1]]
     winfos = [tl[-1] | tr[0], *tr[1: 1 + dr], *tl[1 + dl: 1 + dl + dl]]
+    if mpi:
+        from mpi4py import MPI
+        comm = MPI.COMM_WORLD
+        for cvw in [cinfos, vinfos, winfos]:
+            for ic, c in enumerate(cvw):
+                cvw[ic] = comm.allreduce(c, op=MPI.BOR)
     if symmetric:
         vinfos = [x | y for x, y in zip(cinfos, vinfos)]
         vmat = FlatSparseTensor.zeros(vinfos, pattern, dq)
@@ -48,7 +54,7 @@ def flat_sparse_matmul_init(spt, pattern, dq, symmetric):
 if ENABLE_FAST_IMPLS:
     import block3.flat_sparse_tensor
 
-    def flat_sparse_matmul_init_impl(spt, pattern, dq, symmetric):
+    def flat_sparse_matmul_init_impl(spt, pattern, dq, symmetric, mpi):
         fdq = dq.to_flat() if dq is not None else SZ(0, 0, 0).to_flat()
         l, r = spt.tensors
         lo, le = l.odd, l.even
@@ -56,6 +62,12 @@ if ENABLE_FAST_IMPLS:
         dl, dr, cinfos, vinfos = block3.flat_sparse_tensor.matmul_init(
             lo.q_labels, lo.shapes, le.q_labels, le.shapes, ro.q_labels,
             ro.shapes, re.q_labels, re.shapes)
+        if mpi:
+            from mpi4py import MPI
+            comm = MPI.COMM_WORLD
+            for cvw in [cinfos, vinfos]:
+                for ic, c in enumerate(cvw):
+                    cvw[ic] = comm.allreduce(c, op=MPI.BOR)
         if symmetric:
             vinfos = vinfos.__class__([x | y for x, y in zip(cinfos, vinfos)])
             vdqs, vshs, vidxs = block3.flat_sparse_tensor.skeleton(
@@ -93,12 +105,12 @@ if ENABLE_FAST_IMPLS:
 
 
 class FlatSparseFunctor:
-    def __init__(self, spt, pattern, dq=None, symmetric=True):
+    def __init__(self, spt, pattern, dq=None, symmetric=True, mpi=False):
         assert ENABLE_FAST_IMPLS
         assert isinstance(spt, MPS)
         self.op = spt
         dl, dr, self.cmat, self.vmat, self.work = flat_sparse_matmul_init(
-            self.op, pattern, dq, symmetric)
+            self.op, pattern, dq, symmetric, mpi=mpi)
         self.axtr = np.array(
             (*range(dr + 1, dr + dl + 1), 0, *range(1, dr + 1)), dtype=np.int32)
         self.work2 = FlatSparseTensor(
@@ -107,12 +119,24 @@ class FlatSparseFunctor:
         self.dlr = dl, dr
         self.plan = self._matmul_plan(dl, dr)
         self.nflop = 0
+        self.mpi = mpi
+        if self.mpi:
+            from mpi4py import MPI
+            self.rank = MPI.COMM_WORLD.Get_rank()
+            self.comm = MPI.COMM_WORLD
 
     def diag(self):
         if self.dmat is None:
             self.dmat = self._prepare_diag(*self.dlr)
             if self.op.const != 0:
                 self.dmat += self.op.const
+            if self.mpi:
+                from mpi4py import MPI
+                if self.rank == 0:
+                    self.comm.Reduce(
+                        MPI.IN_PLACE, [self.dmat, MPI.DOUBLE], op=MPI.SUM, root=0)
+                else:
+                    self.comm.Reduce([self.dmat, MPI.DOUBLE], None, op=MPI.SUM, root=0)
         return self.dmat
 
     def _prepare_diag(self, dl, dr):
@@ -170,14 +194,25 @@ class FlatSparseFunctor:
         self.work.data[:] = 0
         self.work2.data[:] = 0
         self.vmat.data = np.zeros_like(self.vmat.data)
-        self.nflop += flat_sparse_matmul(pro, r.odd.data, other, self.work.data)
-        self.nflop += flat_sparse_matmul(pre, r.even.data, other, self.work.data)
+        self.nflop += flat_sparse_matmul(pro,
+                                         r.odd.data, other, self.work.data)
+        self.nflop += flat_sparse_matmul(pre,
+                                         r.even.data, other, self.work.data)
         flat_sparse_transpose(self.work.shapes, self.work.data,
                               self.work.idxs, self.axtr, self.work2.data)
-        self.nflop += flat_sparse_matmul(plo, l.odd.data, self.work2.data, self.vmat.data)
-        self.nflop += flat_sparse_matmul(ple, l.even.data, self.work2.data, self.vmat.data)
+        self.nflop += flat_sparse_matmul(plo, l.odd.data,
+                                         self.work2.data, self.vmat.data)
+        self.nflop += flat_sparse_matmul(ple, l.even.data,
+                                         self.work2.data, self.vmat.data)
         if self.op.const != 0:
             self.vmat.data += self.op.const * other
+        if self.mpi:
+            from mpi4py import MPI
+            if self.rank == 0:
+                self.comm.Reduce(
+                    MPI.IN_PLACE, [self.vmat.data, MPI.DOUBLE], op=MPI.SUM, root=0)
+            else:
+                self.comm.Reduce([self.vmat.data, MPI.DOUBLE], None, op=MPI.SUM, root=0)
         return self.vmat.data
 
     def prepare_vector(self, spt):
@@ -190,8 +225,8 @@ class FlatSparseFunctor:
 
 
 class GreensFunctionFunctor(FlatSparseFunctor):
-    def __init__(self, spt, pattern, omega, eta, dq=None, symmetric=True):
-        super().__init__(spt, pattern, dq=dq, symmetric=symmetric)
+    def __init__(self, spt, pattern, omega, eta, dq=None, symmetric=True, mpi=False):
+        super().__init__(spt, pattern, dq=dq, symmetric=symmetric, mpi=mpi)
         self.omega = omega
         self.eta = eta
 

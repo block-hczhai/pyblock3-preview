@@ -106,7 +106,7 @@ class GreensFunction(SweepAlgorithm):
                 if abs(self.targets[iw]) > abs(func):
                     self.targets[iw] = func
                 if self.iprint >= 2:
-                    print(" %3s Site = %4d-%4d .. Mmps = %4d Ncg = %4d Re = %20.12f Im = %20.12f MaxDW = %5.2E Tcg = %8.3f T = %8.3f" % (
+                    print(" %3s Site = %4d-%4d .. Mmps = %4d Ncg = %4d Re = %20.12f Im = %20.12f DW = %5.2E Tcg = %8.3f T = %8.3f" % (
                         "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, ncg, func.real, func.imag, error, tcg, time.perf_counter() - tt))
             df = 0 if iw == 0 else abs(
                 abs(self.targets[iw]) - abs(self.targets[iw - 1]))

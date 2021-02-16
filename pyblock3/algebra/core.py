@@ -592,7 +592,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         else:
             return NotImplemented
         if out is not None:
-            out.blocks = blocks
+            out[0].blocks = blocks
         return self.__class__(blocks=blocks)
 
     def __array_function__(self, func, types, args, kwargs):
@@ -1405,7 +1405,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         else:
             return NotImplemented
         if out is not None:
-            out.odd, out.even = blocks
+            out[0].odd, out[0].even = blocks
         return FermionTensor(odd=blocks[0], even=blocks[1])
 
     def __array_function__(self, func, types, args, kwargs):

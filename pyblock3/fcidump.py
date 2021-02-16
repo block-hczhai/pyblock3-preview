@@ -20,6 +20,7 @@
 """One-body/two-body integral object."""
 
 import numpy as np
+import numba as nb
 
 PointGroup = {
     "d2h": [8, 0, 7, 6, 1, 5, 2, 3, 4],
@@ -32,6 +33,33 @@ PointGroup = {
     "c1": [8, 0]
 }
 
+@nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :]))
+def parallelize_h1e(n_sites, mrank, msize, h1e):
+    for i in range(0, n_sites):
+        if mrank != i % msize:
+            h1e[i, :] = 0.0
+
+@nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :, :, :]))
+def parallelize_g2e(n_sites, mrank, msize, g2e):
+    for i in range(0, n_sites):
+        for j in range(0, n_sites):
+            for k in range(0, n_sites):
+                for l in range(0, n_sites):
+                    if g2e[i, j, k, l] == 0:
+                        continue
+                    x = np.array([i, j, k, l], dtype=np.int32)
+                    x.sort()
+                    if x[1] == x[2]:
+                        if mrank != x[1] % msize:
+                            g2e[i, j, k, l] = 0
+                    else:
+                        ii, jj = x[0], x[1]
+                        if ii <= jj:
+                            if mrank != (jj * (jj + 1) // 2 + ii) % msize:
+                                g2e[i, j, k, l] = 0
+                        else:
+                            if mrank != (ii * (ii + 1) // 2 + jj) % msize:
+                                g2e[i, j, k, l] = 0
 
 class FCIDUMP:
 
@@ -63,6 +91,26 @@ class FCIDUMP:
                 return self.g2e[1][k, l, i, j]
         else:
             return self.g2e[i, j, k, l]
+    
+    def parallelize(self, mpi=True):
+        if not mpi:
+            return self
+        from mpi4py import MPI
+        mrank = MPI.COMM_WORLD.Get_rank()
+        msize = MPI.COMM_WORLD.Get_size()
+        if mrank != 0:
+            self.const_e = 0
+        if isinstance(self.h1e, tuple):
+            for h in self.h1e:
+                parallelize_h1e(self.n_sites, mrank, msize, h)
+        else:
+            parallelize_h1e(self.n_sites, mrank, msize, self.h1e)
+        if isinstance(self.g2e, tuple):
+            for g in self.g2e:
+                parallelize_g2e(self.n_sites, mrank, msize, g)
+        else:
+            parallelize_g2e(self.n_sites, mrank, msize, self.g2e)
+        return self
 
     def read(self, filename):
         """
@@ -136,16 +184,13 @@ class FCIDUMP:
             if self.mu != 0:
                 self.h1e -= self.mu * np.identity(self.n_sites)
         else:
-            self.h1e = (None, None)
-            self.h1e[0] = np.zeros((self.n_sites, self.n_sites))
-            self.h1e[1] = np.zeros((self.n_sites, self.n_sites))
-            self.g2e = (None, None, None)  # aa, ab, bb
-            self.g2e[0] = np.zeros(
-                (self.n_sites, self.n_sites, self.n_sites, self.n_sites))
-            self.g2e[1] = np.zeros(
-                (self.n_sites, self.n_sites, self.n_sites, self.n_sites))
-            self.g2e[2] = np.zeros(
-                (self.n_sites, self.n_sites, self.n_sites, self.n_sites))
+            self.h1e = (
+                np.zeros((self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites)))
+            self.g2e = (
+                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)))
             ip = 0
             for i, j, k, l, d in data:
                 if i + j + k + l == 0:
@@ -154,14 +199,10 @@ class FCIDUMP:
                         self.const_e = d
                 elif k + l == 0:
                     assert ip == 3 or ip == 4
-                    if ip == 3:
-                        self.h1e[0][i - 1, j -
-                                    1] = self.h1e[0][j - 1, i - 1] = d
-                    elif ip == 4:
-                        self.h1e[1][i - 1, j -
-                                    1] = self.h1e[1][j - 1, i - 1] = d
+                    self.h1e[ip - 3][i - 1, j - 1] = d
+                    self.h1e[ip - 3][j - 1, i - 1] = d
                 else:
-                    ig = [0, 3, 1][ip]
+                    ig = [0, 2, 1][ip]
                     self.g2e[ig][i - 1, j - 1, k - 1, l - 1] = d
                     if not self.general:
                         self.g2e[ig][j - 1, i - 1, k - 1, l - 1] = d

@@ -20,6 +20,7 @@
 
 #include "hamiltonian.hpp"
 #include "flat_sparse.hpp"
+#include "max_flow.hpp"
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
@@ -27,7 +28,7 @@
 #include <unordered_map>
 
 inline SZ from_op(int32_t op, const int32_t *orb_sym, const int32_t m_site,
-                      const int32_t m_op) noexcept {
+                  const int32_t m_op) noexcept {
     int n = op / m_op ? -1 : 1;
     int twos = (op % m_site) ^ (op / m_op) ? -1 : 1;
     int pg = orb_sym[(op % m_op) / m_site];
@@ -46,7 +47,7 @@ typedef tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
               py::array_t<uint32_t>>
     op_skeleton;
 
-void op_matmul(const op_skeleton &ska, const op_skeleton &skb,
+inline void op_matmul(const op_skeleton &ska, const op_skeleton &skb,
                const op_skeleton &skc, const double *pa, const double *pb,
                double *pc) {
     int na = get<0>(ska).shape()[0], nb = get<0>(skb).shape()[0],
@@ -74,13 +75,32 @@ void op_matmul(const op_skeleton &ska, const op_skeleton &skb,
         }
 }
 
+// max_bond_dim >= -1: SVD
+// max_bond_dim = -2: NC
+// max_bond_dim = -3: CN
+// max_bond_dim = -4: bipartite O(K^5)
+// max_bond_dim = -5: fast bipartite O(K^4)
+// max_bond_dim = -6: SVD (rescale)
+// max_bond_dim = -7: SVD (rescale, fast)
+// max_bond_dim = -8: SVD (fast)
 vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
              py::array_t<uint32_t>>>
 build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
           py::array_t<int32_t> h_terms, double cutoff, int max_bond_dim) {
+    bool rescale = false, fast_k4 = false;
+    if (max_bond_dim == -6)
+        rescale = true, fast_k4 = false, max_bond_dim = -1;
+    else if (max_bond_dim == -7)
+        rescale = true, fast_k4 = true, max_bond_dim = -1;
+    else if (max_bond_dim == -8)
+        rescale = false, fast_k4 = true, max_bond_dim = -1;
+    else if (max_bond_dim == -5)
+        fast_k4 = true, max_bond_dim = -4;
     const int m_site = 2, m_op = 16384;
-    int n_sites = (int)orb_sym.shape()[0], n_values = (int)h_values.shape()[0];
-    int n_terms = (int)h_terms.shape()[0], term_len = (int)h_terms.shape()[1];
+    int n_sites = (int)orb_sym.shape()[0];
+    long long int n_values = (long long int)h_values.shape()[0];
+    long long int n_terms = (long long int)h_terms.shape()[0];
+    int term_len = (int)h_terms.shape()[1];
     assert(n_terms == n_values);
     vector<SZ> left_q = {SZ(0, 0, 0)};
     unordered_map<uint32_t, uint32_t> info_l, info_r;
@@ -88,9 +108,10 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
     // terms
     vector<int32_t> term_sorted(n_terms * term_len);
     // length of each term; starting index of each term
+    // at the beginning, term_i is all zero
     vector<int> term_l(n_terms), term_i(n_terms, 0);
     // index of current terms
-    vector<vector<int>> cur_terms(1);
+    vector<vector<long long int>> cur_terms(1);
     cur_terms[0].resize(n_terms);
     // multiplying left matrix
     vector<vector<double>> cur_values(1);
@@ -101,7 +122,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                   hsj = h_terms.strides()[1] / sizeof(uint32_t);
     vector<int> term_site(term_len);
     // pre-processing
-    for (int it = 0, ix; it < n_terms; it++) {
+    for (long long int it = 0; it < n_terms; it++) {
+        int ix;
         SZ q(0, 0, 0);
         for (ix = 0; ix < term_len; ix++) {
             int32_t op = pt[it * hsi + ix * hsj];
@@ -130,22 +152,61 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         return (i % m_op) / m_site < (j % m_op) / m_site;
                     });
     }
+    vector<long long int> prefix_part;
+    vector<long long int> prefix_terms;
+    vector<double> prefix_values;
+    // to save time, divide O(K^4) terms into K groups
+    // for each iteration on site k, only O(K^3) terms are processed
+    if (fast_k4) {
+        vector<long long int> len_m(n_sites, 0);
+        for (long long int it = 0; it < n_terms; it++)
+            if (term_l[it] != 0)
+                len_m[(term_sorted[it * term_len] % m_op) / m_site]++;
+        long long int new_n_terms = 0;
+        for (int ii = 0; ii < n_sites; ii++)
+            new_n_terms += len_m[ii];
+        prefix_part.resize(n_sites + 1, 0);
+        for (int ii = 1; ii < n_sites; ii++)
+            prefix_part[ii + 1] = prefix_part[ii] + len_m[ii - 1];
+        prefix_terms.resize(new_n_terms);
+        prefix_values = cur_values[0];
+        for (long long int it = 0; it < n_terms; it++)
+            if (term_l[it] != 0) {
+                int ii = (term_sorted[it * term_len] % m_op) / m_site;
+                long long int x = prefix_part[ii + 1]++;
+                prefix_terms[x] = it;
+            }
+        assert(prefix_part[n_sites] == new_n_terms);
+        cur_terms[0].resize(0);
+        cur_values[0].resize(0);
+    }
+    // result mpo
     vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
                  py::array_t<double>, py::array_t<uint32_t>>>
         rr(n_sites * 2);
     // do svd from left to right
     // time complexity: O(KDLN(log N))
     // K: n_sites, D: max_bond_dim, L: term_len, N: n_terms
+    // using block-structure according to left q number
+    // this is the map from left q number to its block index
     unordered_map<SZ, int> q_map;
-    vector<unordered_map<size_t, vector<pair<pair<int, int>, int>>>> map_ls;
-    vector<unordered_map<size_t, vector<pair<int, int>>>> map_rs;
+    // for each iq block, a map from hashed repr of string of op in left block
+    // to (mpo index, term index, left block string of op index)
+    vector<unordered_map<size_t, vector<pair<pair<int, long long int>, int>>>>
+        map_ls;
+    // for each iq block, a map from hashed repr of string of op in right block
+    // to (term index, right block string of op index)
+    vector<unordered_map<size_t, vector<pair<long long int, int>>>> map_rs;
+    // sparse repr of the connection (edge) matrix for each block
     vector<vector<pair<pair<int, int>, double>>> mats;
-    vector<pair<int, int>> nms;
+    // for each block, the nrow and ncol of the block
+    vector<pair<long long int, long long int>> nms;
     vector<int> cur_term_i(n_terms, -1);
     py::array_t<int32_t> perm(vector<ssize_t>{4});
     perm.mutable_data()[0] = 0, perm.mutable_data()[1] = 2,
     perm.mutable_data()[2] = 3, perm.mutable_data()[3] = 1;
     const int32_t *pperm = perm.data();
+    double rsc_factor = 1;
     for (int ii = 0; ii < n_sites; ii++) {
         cout << "MPO site" << setw(4) << ii << " / " << n_sites << endl;
         q_map.clear();
@@ -154,22 +215,49 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         mats.clear();
         nms.clear();
         info_r.clear();
+        // site basis
         unordered_map<uint32_t, uint32_t> basis;
         basis[from_sz(SZ(0, 0, 0))] = 1;
         basis[from_sz(SZ(1, 1, porb[ii]))] = 1;
         basis[from_sz(SZ(1, -1, porb[ii]))] = 1;
         basis[from_sz(SZ(2, 0, 0))] = 1;
+        long long int pholder_term = -1;
+        // iter over all mpos
         for (int ip = 0; ip < (int)cur_values.size(); ip++) {
             SZ qll = left_q[ip];
-            for (int ic = 0; ic < (int)cur_terms[ip].size(); ic++) {
-                if (abs(cur_values[ip][ic]) < cutoff)
-                    continue;
-                int it = cur_terms[ip][ic], ik = term_i[it], k = ik,
-                    kmax = term_l[it];
-                int itt = it * term_len;
+            long long int cn = (long long int)cur_terms[ip].size(), cnr = cn;
+            if (prefix_part.size() != 0 && ip == 0) {
+                cn += prefix_part[ii + 1] - prefix_part[ii];
+                if (prefix_part[ii + 1] != prefix_part[n_sites]) {
+                    pholder_term = prefix_terms[prefix_part[ii + 1]];
+                    q_map[qll] = 0;
+                    map_ls.emplace_back();
+                    map_rs.emplace_back();
+                    mats.emplace_back();
+                    nms.push_back(make_pair(1, 1));
+                    map_ls[0][0].push_back(
+                        make_pair(make_pair(0, pholder_term), 0));
+                    map_rs[0][0].push_back(make_pair(pholder_term, 0));
+                    mats[0].push_back(
+                        make_pair(make_pair(0, 0),
+                                  prefix_values[pholder_term] * rsc_factor));
+                    cur_term_i[pholder_term] = 0;
+                }
+            }
+            for (long long int ic = 0; ic < cn; ic++) {
+                long long int it =
+                    ic < cnr ? cur_terms[ip][ic]
+                             : prefix_terms[ic - cnr + prefix_part[ii]];
+                double itv = ic < cnr ? cur_values[ip][ic]
+                                      : prefix_values[it] * rsc_factor;
+                int ik = term_i[it], k = ik, kmax = term_l[it];
+                long long int itt = it * term_len;
+                // separate the current product into two parts
+                // (left block part and right block part)
                 for (; k < kmax && (term_sorted[itt + k] % m_op) / m_site <= ii;
                      k++)
                     ;
+                // first right site position
                 cur_term_i[it] = k;
                 size_t hl = op_hash(term_sorted.data() + itt + ik, k - ik, ip);
                 size_t hr = op_hash(term_sorted.data() + itt + k, kmax - k);
@@ -184,15 +272,16 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                     nms.push_back(make_pair(0, 0));
                 }
                 int iq = q_map.at(ql), il = -1, ir = -1;
-                int &nml = nms[iq].first, &nmr = nms[iq].second;
+                long long int &nml = nms[iq].first, &nmr = nms[iq].second;
                 auto &mpl = map_ls[iq];
                 auto &mpr = map_rs[iq];
                 if (mpl.count(hl)) {
                     int iq = 0;
                     auto &vq = mpl.at(hl);
                     for (; iq < vq.size(); iq++) {
-                        int vip = vq[iq].first.first, vit = vq[iq].first.second;
-                        int vitt = vit * term_len;
+                        int vip = vq[iq].first.first;
+                        long long int vit = vq[iq].first.second;
+                        long long int vitt = vit * term_len;
                         int vik = term_i[vit], vk = cur_term_i[vit];
                         if (vip == ip && vk - vik == k - ik &&
                             equal(term_sorted.data() + vitt + vik,
@@ -224,30 +313,59 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         ir = vq[iq].second;
                 } else
                     mpr[hr].push_back(make_pair(it, ir = nmr++));
-                mats[iq].push_back(
-                    make_pair(make_pair(il, ir), cur_values[ip][ic]));
+                mats[iq].push_back(make_pair(make_pair(il, ir), itv));
             }
         }
-        vector<array<vector<double>, 3>> svds(q_map.size());
+        vector<array<vector<double>, 3>> svds;
+        vector<array<vector<int>, 2>> mvcs;
+        if (max_bond_dim == -4)
+            mvcs.resize(q_map.size());
+        else
+            svds.resize(q_map.size());
         vector<SZ> qs(q_map.size());
         int s_kept_total = 0, nr_total = 0;
+        double res_s_sum = 0, res_factor = 1;
+        size_t res_s_count = 0;
         for (auto &mq : q_map) {
             int iq = mq.second;
             qs[iq] = mq.first;
             auto &matvs = mats[iq];
             auto &nm = nms[iq];
-            int szl = nm.first, szr = nm.second;
-            int szm = max_bond_dim == -2
-                          ? szl
-                          : (max_bond_dim == -3 ? szr : min(szl, szr));
-            int lwork = max(szl, szr) * 34, info;
-            vector<double> mat((size_t)szl * szr, 0), work(lwork);
-            svds[iq][0].resize((size_t)szm * szl);
-            svds[iq][1].resize(szm);
-            svds[iq][2].resize((size_t)szm * szr);
-            int s_kept = 1;
-            // NC
-            if (max_bond_dim == -2) {
+            int szl = nm.first, szr = nm.second, szm;
+            if (max_bond_dim == -2) // NC
+                szm = szl;
+            else if (max_bond_dim == -3) // CN
+                szm = szr;
+            else // bipartitie (-4/-5) / SVD (>= -1)
+                szm = min(szl, szr);
+            if (max_bond_dim != -4) {
+                if (pholder_term != -1 && iq == 0)
+                    szm = min(szl - 1, szr) + 1;
+                svds[iq][0].resize((size_t)szm * szl);
+                svds[iq][1].resize(szm);
+                svds[iq][2].resize((size_t)szm * szr);
+            }
+            int s_kept = 0;
+            if (max_bond_dim == -4) { // bipartite
+                FLOW flow(szl + szr);
+                for (auto &lrv : matvs)
+                    flow.resi[lrv.first.first][lrv.first.second + szl] = 1;
+                for (int i = 0; i < szl; i++)
+                    flow.resi[szl + szr][i] = 1;
+                for (int i = 0; i < szr; i++)
+                    flow.resi[szl + i][szl + szr + 1] = 1;
+                flow.MVC(0, szl, szl, szr, mvcs[iq][0], mvcs[iq][1]);
+                // placeholder I * O(K^4) term must be of Normal/Complementary
+                // type
+                if (pholder_term != -1 && iq == 0) {
+                    if ((mvcs[iq][0].size() == 0 || mvcs[iq][0][0] != 0))
+                        mvcs[iq][0].push_back(0);
+                    if (mvcs[iq][1].size() != 0 && mvcs[iq][1][0] == 0)
+                        mvcs[iq][1] = vector<int>(mvcs[iq][1].begin() + 1,
+                                                  mvcs[iq][1].end());
+                }
+                s_kept = (int)mvcs[iq][0].size() + (int)mvcs[iq][1].size();
+            } else if (max_bond_dim == -2) { // NC
                 memset(svds[iq][0].data(), 0,
                        sizeof(double) * svds[iq][0].size());
                 memset(svds[iq][2].data(), 0,
@@ -258,7 +376,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                 for (int i = 0; i < szm; i++)
                     svds[iq][0][i * szm + i] = svds[iq][1][i] = 1;
                 s_kept = szm;
-            } else if (max_bond_dim == -3) {
+            } else if (max_bond_dim == -3) { // CN
                 memset(svds[iq][0].data(), 0,
                        sizeof(double) * svds[iq][0].size());
                 memset(svds[iq][2].data(), 0,
@@ -269,24 +387,79 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                 for (int i = 0; i < szm; i++)
                     svds[iq][2][i * szr + i] = svds[iq][1][i] = 1;
                 s_kept = szm;
-            } else {
-                for (auto &lrv : matvs)
-                    mat[lrv.first.first * szr + lrv.first.second] += lrv.second;
-                dgesvd("S", "S", &szr, &szl, mat.data(), &szr,
-                       svds[iq][1].data(), svds[iq][2].data(), &szr,
-                       svds[iq][0].data(), &szm, work.data(), &lwork, &info);
-                for (int i = 1; i < szm; i++)
+            } else { // SVD
+                int lwork = max(szl, szr) * 34, info;
+                vector<double> mat((size_t)szl * szr, 0), work(lwork);
+                if (pholder_term != -1 && iq == 0) {
+                    for (auto &lrv : matvs)
+                        if (lrv.first.first == 0)
+                            svds[iq][2][lrv.first.second] += lrv.second;
+                        else
+                            mat[(lrv.first.first - 1) * szr + lrv.first.second] += lrv.second;
+                    szl--;
+                    svds[iq][1][0] = 1;
+                    svds[iq][0][0] = 1;
+                    dgesvd("S", "S", &szr, &szl, mat.data(), &szr,
+                        svds[iq][1].data() + 1, svds[iq][2].data() + szr, &szr,
+                        svds[iq][0].data() + 1 + szm, &szm, work.data(), &lwork, &info);
+                    szl++;
+                } else {
+                    for (auto &lrv : matvs)
+                        mat[lrv.first.first * szr + lrv.first.second] += lrv.second;
+                    dgesvd("S", "S", &szr, &szl, mat.data(), &szr,
+                        svds[iq][1].data(), svds[iq][2].data(), &szr,
+                        svds[iq][0].data(), &szm, work.data(), &lwork, &info);
+                }
+                res_s_sum += accumulate(svds[iq][1].begin(), svds[iq][1].end(),
+                                        0, plus<double>());
+                res_s_count += svds[iq][1].size();
+                if (!rescale) {
+                    for (int i = 0; i < szm; i++)
+                        if (svds[iq][1][i] > cutoff)
+                            s_kept++;
+                        else
+                            break;
+                    if (max_bond_dim > 1)
+                        s_kept = min(s_kept, max_bond_dim);
+                    svds[iq][1].resize(s_kept);
+                } else
+                    s_kept = szm;
+            }
+            if (s_kept != 0)
+                info_r[from_sz(mq.first)] = s_kept;
+            s_kept_total += s_kept;
+            nr_total += szr;
+        }
+        if (rescale) {
+            s_kept_total = 0;
+            assert(max_bond_dim == -1);
+            res_factor = res_s_sum / res_s_count;
+            // keep only 1 significant digit
+            uint64_t rrepr =
+                (uint64_t &)res_factor & ~(((uint64_t)1 << 52) - 1);
+            res_factor = (double &)rrepr;
+            if (res_factor == 0)
+                res_factor = 1;
+            for (auto &mq : q_map) {
+                int s_kept = 0;
+                int iq = mq.second;
+                auto &nm = nms[iq];
+                int szl = nm.first, szr = nm.second;
+                int szm = min(szl, szr);
+                if (pholder_term != -1 && iq == 0)
+                    szm = min(szl - 1, szr) + 1;
+                for (int i = 0; i < szm; i++)
+                    svds[iq][1][i] /= res_factor;
+                for (int i = 0; i < szm; i++)
                     if (svds[iq][1][i] > cutoff)
                         s_kept++;
                     else
                         break;
-                if (max_bond_dim > 1)
-                    s_kept = min(s_kept, max_bond_dim);
                 svds[iq][1].resize(s_kept);
+                if (s_kept != 0)
+                    info_r[from_sz(mq.first)] = s_kept;
+                s_kept_total += s_kept;
             }
-            info_r[from_sz(mq.first)] = s_kept;
-            s_kept_total += s_kept;
-            nr_total += szr;
         }
 
         // [optional optimization] ip can be inner loop
@@ -297,8 +470,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         // skeleton guarentees that right indices are contiguous
         vector<unordered_map<uint32_t, uint32_t>> infos = {info_l, info_r,
                                                            basis, basis};
-        auto skl = flat_sparse_tensor_skeleton(infos, "+-+-",
-                                               from_sz(SZ(0, 0, 0)));
+        auto skl =
+            flat_sparse_tensor_skeleton(infos, "+-+-", from_sz(SZ(0, 0, 0)));
         // separate odd and even
         int n_odd = 0, n_total = get<0>(skl).shape()[0];
         ssize_t size_odd = 0;
@@ -405,10 +578,18 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
             auto &matvs = mats[iq];
             auto &mpl = map_ls[iq];
             auto &nm = nms[iq];
-            int rszm = (int)svds[iq][1].size(), szl = nm.first, szr = nm.second;
-            int szm = max_bond_dim == -2
-                          ? szl
-                          : (max_bond_dim == -3 ? szr : min(szl, szr));
+            int szl = nm.first, szr = nm.second, szm;
+            if (max_bond_dim == -2) // NC
+                szm = szl;
+            else if (max_bond_dim == -3) // CN
+                szm = szr;
+            else if (max_bond_dim == -4) // bipartitie (-4/-5)
+                szm = (int)mvcs[iq][0].size() + (int)mvcs[iq][1].size();
+            else { // SVD (>= -1)
+                szm = min(szl, szr);
+                if (pholder_term != -1 && iq == 0)
+                    szm = min(szl - 1, szr) + 1;
+            }
             vector<vector<double>> reprs(szl);
             vector<uint32_t> repr_q(szl);
             for (auto &vls : mpl)
@@ -426,8 +607,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                             from_op(term_sorted[itt + ik], porb, m_site, m_op);
                         vector<double> p = dt_map.at(from_sz(qi));
                         for (int i = ik + 1; i < k; i++) {
-                            SZ qx = from_op(term_sorted[itt + i], porb,
-                                                m_site, m_op);
+                            SZ qx = from_op(term_sorted[itt + i], porb, m_site,
+                                            m_op);
                             uint32_t fqk = from_sz(qi + qx), fqx = from_sz(qx),
                                      fqi = from_sz(qi);
                             if (sk_map.count(fqk) == 0)
@@ -446,34 +627,84 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         repr_q[il] = from_sz(qi);
                     }
                 }
-            for (int ir = 0; ir < rszm; ir++) {
+            if (max_bond_dim == -4) { // bipartite
+                vector<int> lip(szl), lix(szl, -1), rix(szr, -1);
+                int ixln = (int)mvcs[iq][0].size(),
+                    ixrn = (int)mvcs[iq][1].size();
+                int szm = ixln + ixrn;
                 for (auto &vls : mpl)
                     for (auto &vl : vls.second) {
                         int il = vl.second, ip = vl.first.first;
-                        int ipp = ip_idx[ip].first, ipr = ip_idx[ip].second;
-                        uint64_t ql = from_sz(left_q[ip]), qr = from_sz(q);
-                        int npr = (int)info_l.at(ql);
-                        double *pr =
-                            left_q[ip].is_fermion() == q.is_fermion() ? pe : po;
-                        double *term_data = reprs[il].data();
-                        int term_size = (int)reprs[il].size();
-                        if (term_size == 0)
-                            continue;
-                        size_t pir = rdt_map.at((ql << 32) | qr);
-                        op_skeleton &sk_repr = sk_map.at(repr_q[il]);
-                        // singular values multiplies to left
-                        double factor =
-                            svds[iq][0][il * szm + ir] * svds[iq][1][ir];
-                        const int n_blocks = get<0>(sk_repr).shape()[0];
-                        const uint32_t *pb = get<2>(sk_repr).data();
-                        for (int ib = 0; ib < n_blocks; ib++) {
-                            int nb = pb[ib + 1] - pb[ib];
-                            daxpy(&nb, &factor, term_data + pb[ib], &incx,
-                                  pr + pir + (size_t)pb[ib] * rszm * npr +
-                                      nb * ((size_t)rszm * ipr + ir),
-                                  &incx);
-                        }
+                        lip[il] = ip;
                     }
+                for (int ixl = 0; ixl < ixln; ixl++)
+                    lix[mvcs[iq][0][ixl]] = ixl;
+                for (int ixr = 0; ixr < ixrn; ixr++)
+                    rix[mvcs[iq][1][ixr]] = ixr + ixln;
+                for (auto &lrv : matvs) {
+                    int il = lrv.first.first, ir = lrv.first.second, irx;
+                    double factor = 1;
+                    if (lix[il] == -2)
+                        continue;
+                    else if (lix[il] != -1)
+                        irx = lix[il], lix[il] = -2;
+                    else
+                        irx = rix[ir], factor = lrv.second;
+                    int ip = lip[il];
+                    int ipp = ip_idx[ip].first, ipr = ip_idx[ip].second;
+                    uint64_t ql = from_sz(left_q[ip]), qr = from_sz(q);
+                    int npr = (int)info_l.at(ql);
+                    double *pr =
+                        left_q[ip].is_fermion() == q.is_fermion() ? pe : po;
+                    double *term_data = reprs[il].data();
+                    int term_size = (int)reprs[il].size();
+                    if (term_size == 0)
+                        continue;
+                    size_t pir = rdt_map.at((ql << 32) | qr);
+                    op_skeleton &sk_repr = sk_map.at(repr_q[il]);
+                    const int n_blocks = get<0>(sk_repr).shape()[0];
+                    const uint32_t *pb = get<2>(sk_repr).data();
+                    for (int ib = 0; ib < n_blocks; ib++) {
+                        int nb = pb[ib + 1] - pb[ib];
+                        daxpy(&nb, &factor, term_data + pb[ib], &incx,
+                              pr + pir + (size_t)pb[ib] * szm * npr +
+                                  nb * ((size_t)szm * ipr + irx),
+                              &incx);
+                    }
+                }
+            } else {
+                int rszm = (int)svds[iq][1].size();
+                for (int ir = 0; ir < rszm; ir++) {
+                    for (auto &vls : mpl)
+                        for (auto &vl : vls.second) {
+                            int il = vl.second, ip = vl.first.first;
+                            int ipp = ip_idx[ip].first, ipr = ip_idx[ip].second;
+                            uint64_t ql = from_sz(left_q[ip]), qr = from_sz(q);
+                            int npr = (int)info_l.at(ql);
+                            double *pr =
+                                left_q[ip].is_fermion() == q.is_fermion() ? pe
+                                                                          : po;
+                            double *term_data = reprs[il].data();
+                            int term_size = (int)reprs[il].size();
+                            if (term_size == 0)
+                                continue;
+                            size_t pir = rdt_map.at((ql << 32) | qr);
+                            op_skeleton &sk_repr = sk_map.at(repr_q[il]);
+                            double factor =
+                                svds[iq][0][il * szm + ir] * res_factor;
+                            if (ii == n_sites - 1)
+                                factor *= svds[iq][1][ir];
+                            const int n_blocks = get<0>(sk_repr).shape()[0];
+                            const uint32_t *pb = get<2>(sk_repr).data();
+                            for (int ib = 0; ib < n_blocks; ib++) {
+                                int nb = pb[ib + 1] - pb[ib];
+                                daxpy(&nb, &factor, term_data + pb[ib], &incx,
+                                      pr + pir + (size_t)pb[ib] * rszm * npr +
+                                          nb * ((size_t)rszm * ipr + ir),
+                                      &incx);
+                            }
+                        }
+                }
             }
         }
         // transpose
@@ -502,36 +733,94 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         // assign cur_terms and update term_i
         info_l = info_r;
         vector<vector<double>> new_cur_values(s_kept_total);
-        vector<vector<int>> new_cur_terms(s_kept_total);
+        vector<vector<long long int>> new_cur_terms(s_kept_total);
         int isk = 0;
         left_q.resize(s_kept_total);
-        for (auto &mq : q_map) {
-            int iq = mq.second;
+        for (int iq = 0; iq < (int)qs.size(); iq++) {
             SZ q = qs[iq];
             auto &mpr = map_rs[iq];
             auto &nm = nms[iq];
-            int rszm = (int)svds[iq][1].size(), szr = nm.second;
-            vector<int> vct(szr);
+            int szr = nm.second, szl = nm.first;
+            vector<long long int> vct(szr);
             for (auto &vrs : mpr)
                 for (auto &vr : vrs.second) {
                     vct[vr.second] = vr.first;
                     term_i[vr.first] = cur_term_i[vr.first];
                 }
-            for (int j = 0; j < rszm; j++) {
-                left_q[j + isk] = q;
-                new_cur_terms[j + isk] = vct;
-                new_cur_values[j + isk] = vector<double>(
-                    &svds[iq][2][j * szr], &svds[iq][2][(j + 1) * szr]);
+            int rszm;
+            if (max_bond_dim == -4) { // bipartite
+                auto &matvs = mats[iq];
+                vector<int> lix(szl, -1), rix(szr, -1);
+                int ixln = (int)mvcs[iq][0].size(),
+                    ixrn = (int)mvcs[iq][1].size();
+                rszm = ixln + ixrn;
+                for (int ixl = 0; ixl < ixln; ixl++)
+                    lix[mvcs[iq][0][ixl]] = ixl;
+                // add right vertices in MVC
+                for (int ixr = 0; ixr < ixrn; ixr++) {
+                    int ir = mvcs[iq][1][ixr];
+                    rix[ir] = ixr + ixln;
+                    new_cur_terms[rix[ir] + isk].push_back(vct[ir]);
+                    new_cur_values[rix[ir] + isk].push_back(1);
+                }
+                for (int ir = 0; ir < rszm; ir++)
+                    left_q[ir + isk] = q;
+                // add edges with right vertex not in MVC
+                // and edges with both left and right vertices in MVC
+                for (auto &lrv : matvs) {
+                    int il = lrv.first.first, ir = lrv.first.second;
+                    if (rix[ir] != -1 && lix[il] == -1)
+                        continue;
+                    assert(lix[il] != -1);
+                    // placeholder for O(K^4) terms
+                    if (iq == 0 && vct[ir] == pholder_term)
+                        continue;
+                    new_cur_terms[lix[il] + isk].push_back(vct[ir]);
+                    new_cur_values[lix[il] + isk].push_back(lrv.second);
+                }
+            } else {
+                rszm = (int)svds[iq][1].size();
+                if (iq == 0 && pholder_term != -1)
+                    assert(rszm != 0);
+                bool has_pf = false;
+                double pf_factor = 0;
+                for (int j = 0; j < rszm; j++) {
+                    left_q[j + isk] = q;
+                    for (int ir = 0; ir < szr; ir++) {
+                        // singular values multiplies to right
+                        double val =
+                            ii == n_sites - 1
+                                ? svds[iq][2][j * szr + ir]
+                                : svds[iq][2][j * szr + ir] * svds[iq][1][j];
+                        if (iq == 0 && vct[ir] == pholder_term) {
+                            pf_factor += val;
+                            has_pf = true;
+                            continue;
+                        }
+                        if (abs(svds[iq][2][j * szr + ir]) < cutoff)
+                            continue;
+                        new_cur_terms[j + isk].push_back(vct[ir]);
+                        new_cur_values[j + isk].push_back(val);
+                    }
+                }
+                if (has_pf)
+                    rsc_factor = pf_factor / prefix_values[pholder_term];
             }
             isk += rszm;
         }
         assert(isk == s_kept_total);
         cur_terms = new_cur_terms;
         cur_values = new_cur_values;
+        if (cur_terms.size() == 0) {
+            cur_terms.emplace_back();
+            cur_values.emplace_back();
+        }
     }
-    // end of loop; check last term is identity with cur_values = 1
-    assert(cur_values.size() == 1 && cur_values[0].size() == 1);
-    assert(cur_values[0][0] == 1.0);
-    assert(term_i[cur_terms[0][0]] == term_l[cur_terms[0][0]]);
+    if (n_terms != 0) {
+        // end of loop; check last term is identity with cur_values = 1
+        assert(cur_values.size() == 1 && cur_values[0].size() == 1);
+        assert(cur_values[0][0] == 1.0);
+        assert(term_i[cur_terms[0][0]] == term_l[cur_terms[0][0]]);
+    }
     return rr;
 }

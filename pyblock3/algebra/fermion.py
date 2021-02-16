@@ -615,7 +615,7 @@ class SparseFermionTensor(SparseTensor):
         else:
             return NotImplemented
         if out is not None:
-            out.blocks = blocks
+            out[0].blocks = blocks
         return self.__class__(blocks=blocks)
 
     @staticmethod
@@ -1027,10 +1027,10 @@ class FlatFermionTensor(FlatSparseTensor):
         else:
             return NotImplemented
         if out is not None:
-            out.shapes[...] = shs
-            out.q_labels[...] = qs
-            out.data[...] = data
-            out.idxs[...] = idxs
+            out[0].shapes[...] = shs
+            out[0].q_labels[...] = qs
+            out[0].data[...] = data
+            out[0].idxs[...] = idxs
         return FlatFermionTensor(q_labels=qs, shapes=shs, data=data, idxs=idxs)
 
 

@@ -305,10 +305,10 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         else:
             return NotImplemented
         if out is not None:
-            out.shapes[...] = shs
-            out.q_labels[...] = qs
-            out.data[...] = data
-            out.idxs[...] = idxs
+            out[0].shapes[...] = shs
+            out[0].q_labels[...] = qs
+            out[0].data[...] = data
+            out[0].idxs[...] = idxs
         return self.__class__(q_labels=qs, shapes=shs, data=data, idxs=idxs)
 
     def __array_function__(self, func, types, args, kwargs):
@@ -820,6 +820,14 @@ class FlatFermionTensor(FermionTensor):
 
     def copy(self):
         return np.copy(self)
+
+    @staticmethod
+    @implements(np.linalg.norm)
+    def _norm(x):
+        return np.sqrt(np.linalg.norm(x.odd) ** 2 + np.linalg.norm(x.even) ** 2)
+
+    def norm(self):
+        return np.sqrt(np.linalg.norm(self.odd) ** 2 + np.linalg.norm(self.even) ** 2)
 
     @staticmethod
     def _unfuse(a, i, info):

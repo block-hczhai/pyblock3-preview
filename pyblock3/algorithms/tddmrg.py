@@ -99,7 +99,7 @@ class TDDMRG(SweepAlgorithm):
                 self.energies[iw] = ener
                 self.normsqs[iw] = norm ** 2
                 if self.iprint >= 2:
-                    print(" %3s Site = %4d-%4d .. Mmps = %4d Nmult = %4d E = %20.12f MaxDW = %5.2E FLOPS = %5.2E Tmult = %8.3f T = %8.3f MEM = %7s" % (
+                    print(" %3s Site = %4d-%4d .. Mmps = %4d Nmult = %4d E = %20.12f DW = %5.2E FLOPS = %5.2E Tmult = %8.3f T = %8.3f MEM = %7s" % (
                         "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, nmult, ener, error, nflop / tmult, tmult, time.perf_counter() - tt, fmt_size(mem)))
             print("Time elapsed = %10.3f | E = %20.12f | Norm^2 = %20.12f | MEM = %7s" %
                   (time.perf_counter() - telp, self.energies[iw], self.normsqs[iw], fmt_size(peak_mem)))

@@ -25,13 +25,13 @@ os.environ['OMP_NUM_THREADS'] = str(n_threads)
 # fd = '../data/N2.STO3G.FCIDUMP'
 # fd = '../data/H8.STO6G.R1.8.FCIDUMP'
 # fd = '../data/H10.STO6G.R1.8.FCIDUMP'
-# fd = '../my_test/n2/N2.FCIDUMP'
-fd = '../data/CR2.SVP.FCIDUMP'
+fd = '../my_test/n2/N2.FCIDUMP'
+# fd = '../data/CR2.SVP.FCIDUMP'
 occ = None
 bond_dim = 250
 
 occf = '../data/CR2.SVP.OCC'
-occ = [float(x) for x in open(occf, 'r').readline().split()]
+# occ = [float(x) for x in open(occf, 'r').readline().split()]
 
 hamil = Hamiltonian(FCIDUMP(pg='d2h').read(fd), flat=True)
 
@@ -53,6 +53,6 @@ noises = [1E-5] * 2 + [1E-6] * 4 + [1E-7] * 3 + [0]
 davthrds = [5E-3] * 4 + [1E-3] * 4 + [1E-4]
 
 dmrg = CachedMPE(mps, mpo, mps).dmrg(bdims=bdims, noises=noises,
-                                     dav_thrds=davthrds, iprint=2, n_sweeps=10)
+                                     dav_thrds=davthrds, iprint=3, n_sweeps=10)
 ener = dmrg.energies[-1]
 print("Energy = %20.12f" % ener)

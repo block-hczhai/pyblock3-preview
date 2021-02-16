@@ -52,12 +52,11 @@ class MPE:
     """Matrix Product Expectation (MPE).
     Original and partially contracted tensor network <bra|mpo|ket>."""
 
-    def __init__(self, bra, mpo, ket, opts=None, do_canon=True, idents=None):
+    def __init__(self, bra, mpo, ket, opts=None, do_canon=True, idents=None, mpi=False):
         self.bra = bra
         self.mpo = mpo
         self.ket = ket
         assert self.bra.n_sites == self.ket.n_sites
-        # assert self.mpo.n_sites == self.ket.n_sites
         self.left_envs = {}
         self.right_envs = {}
         self.do_canon = do_canon
@@ -69,6 +68,11 @@ class MPE:
             self.idents = idents
         self.t_ctr = 0
         self.t_rot = 0
+        self.mpi = mpi
+        if self.mpi:
+            from mpi4py import MPI
+            self.rank = MPI.COMM_WORLD.Get_rank()
+            self.comm = MPI.COMM_WORLD
 
     @property
     def nbytes(self):
@@ -77,7 +81,7 @@ class MPE:
         return sum(nls) + sum(nrs)
 
     def copy_shell(self, bra, mpo, ket):
-        return MPE(bra=bra, mpo=mpo, ket=ket, do_canon=self.do_canon, idents=self.idents)
+        return MPE(bra=bra, mpo=mpo, ket=ket, do_canon=self.do_canon, idents=self.idents, mpi=self.mpi)
 
     def copy(self):
         bra = self.bra.__class__(
@@ -87,7 +91,7 @@ class MPE:
         mpo = self.mpo.__class__(
             tensors=self.mpo.tensors[:], const=self.mpo.const, opts=self.mpo.opts)
         mpe = self.__class__(bra=bra, mpo=mpo, ket=ket,
-                             do_canon=self.do_canon, idents=self.idents)
+                             do_canon=self.do_canon, idents=self.idents, mpi=self.mpi)
         mpe.left_envs = self.left_envs.copy()
         mpe.right_envs = self.right_envs.copy()
         return mpe
@@ -136,6 +140,10 @@ class MPE:
             self._left_canonicalize_site(self.ket, i)
             if self.ket is not self.bra:
                 self._left_canonicalize_site(self.bra, i)
+            if self.mpi:
+                self.ket[i] = self.comm.bcast(self.ket[i], root=0)
+                if self.ket is not self.bra:
+                    self.bra[i] = self.comm.bcast(self.bra[i], root=0)
         # rotate
         du, dd = self.bra[i].ndim - 2, self.ket[i].ndim - 2
         t = time.perf_counter()
@@ -161,6 +169,10 @@ class MPE:
             self._right_canonicalize_site(self.ket, i)
             if self.ket is not self.bra:
                 self._right_canonicalize_site(self.bra, i)
+            if self.mpi:
+                self.ket[i] = self.comm.bcast(self.ket[i], root=0)
+                if self.ket is not self.bra:
+                    self.bra[i] = self.comm.bcast(self.bra[i], root=0)
         # rotate
         du, dd = self.bra[i].ndim - 2, self.ket[i].ndim - 2
         t = time.perf_counter()
@@ -279,7 +291,11 @@ class MPE:
     @property
     def expectation(self):
         """<bra|mpo|ket> for the whole system."""
-        return np.dot(self.bra, self.mpo @ self.ket)
+        r = np.dot(self.bra, self.mpo @ self.ket)
+        if self.mpi:
+            from mpi4py import MPI
+            r = self.comm.allreduce(r, op=MPI.SUM)
+        return r
 
     @staticmethod
     def _eigs(x, iprint=False, fast=False, conv_thrd=1E-7):
@@ -287,15 +303,15 @@ class MPE:
         if fast and x.ket.n_sites == 1 and x.mpo.n_sites == 2:
             from .flat_functor import FlatSparseFunctor
             pattern = '++' + '+' * (x.ket[0].ndim - 4) + '-+'
-            fst = FlatSparseFunctor(x.mpo, pattern=pattern)
+            fst = FlatSparseFunctor(x.mpo, pattern=pattern, mpi=x.mpi)
             w, v, ndav = davidson(
-                fst, [fst.prepare_vector(x.ket[0])], k=1, iprint=iprint, conv_thrd=conv_thrd)
+                fst, [fst.prepare_vector(x.ket[0])], k=1, iprint=iprint, conv_thrd=conv_thrd, mpi=x.mpi)
             v = [x.ket.__class__(
                 tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
             nflop = fst.nflop
         else:
             w, v, ndav = davidson(
-                x.mpo, [x.ket], k=1, iprint=iprint, conv_thrd=conv_thrd)
+                x.mpo, [x.ket], k=1, iprint=iprint, conv_thrd=conv_thrd, mpi=x.mpi)
             nflop = 0
         mpe = x.copy_shell(bra=v[0], mpo=x.mpo, ket=v[0])
         return w[0], mpe, ndav, nflop
@@ -308,7 +324,8 @@ class MPE:
         if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
             from .flat_functor import FlatSparseFunctor
             pattern = '++' + '+' * (self.ket[0].ndim - 4) + '-+'
-            fst = FlatSparseFunctor(self.mpo, pattern=pattern, symmetric=False)
+            fst = FlatSparseFunctor(
+                self.mpo, pattern=pattern, symmetric=False, mpi=self.mpi)
             v = fst.finalize_vector(fst @ fst.prepare_vector(self.ket[0]))
             v = self.ket.__class__(tensors=[v], opts=self.ket.opts)
         else:
@@ -316,24 +333,27 @@ class MPE:
         w = np.linalg.norm(v)
         mpe = self.copy_shell(bra=v, mpo=self.mpo, ket=self.ket)
         return w, mpe, 1
-    
+
     def rk4(self, dt, fast=False, eval_ener=True):
         if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
             from .flat_functor import FlatSparseFunctor
             pattern = '++' + '+' * (self.ket[0].ndim - 4) + '-+'
-            fst = FlatSparseFunctor(self.mpo, pattern=pattern, symmetric=False)
+            fst = FlatSparseFunctor(
+                self.mpo, pattern=pattern, symmetric=False, mpi=self.mpi)
             b = fst.prepare_vector(self.ket[0])
             k1 = dt * (fst @ b)
             k2 = dt * (fst @ (0.5 * k1 + b))
             k3 = dt * (fst @ (0.5 * k2 + b))
             k4 = dt * (fst @ (k3 + b))
-            r1 = b + (31.0 / 162) * k1 + (14.0 / 162) * k2 + (14.0 / 162) * k3 + (-5.0 / 162) * k4
-            r2 = b + (16.0 / 81) * k1 + (20.0 / 81) * k2 + (20.0 / 81) * k3 + (-2.0 / 81) * k4
+            r1 = b + (31.0 / 162) * k1 + (14.0 / 162) * k2 + \
+                (14.0 / 162) * k3 + (-5.0 / 162) * k4
+            r2 = b + (16.0 / 81) * k1 + (20.0 / 81) * k2 + \
+                (20.0 / 81) * k3 + (-2.0 / 81) * k4
             r3 = b + k1 / 6 + k2 / 3 + k3 / 3 + k4 / 6
             g = np.linalg.norm(r3)
             w = np.dot(r3, fst @ r3) / g ** 2 if eval_ener else 0
             kets = [self.ket.__class__(tensors=[fst.finalize_vector(x)],
-                        opts=self.ket.opts) for x in [b, r1, r2, r3]]
+                                       opts=self.ket.opts) for x in [b, r1, r2, r3]]
             nflop = fst.nflop
         else:
             raise NotImplementedError
@@ -345,7 +365,7 @@ class MPE:
             from .flat_functor import GreensFunctionFunctor
             pattern = '++' + '+' * (self.ket[0].ndim - 4) + '-+'
             fst = GreensFunctionFunctor(
-                self.mpo, pattern=pattern, omega=omega, eta=eta)
+                self.mpo, pattern=pattern, omega=omega, eta=eta, mpi=self.mpi)
             b = (-eta) * fst.prepare_vector(ket)
             x = fst.prepare_vector(self.ket[0])
             iw, x, ncg = conjugate_gradient(
@@ -364,7 +384,7 @@ class MPE:
 
     def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2, forward=True):
         return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot, forward=forward)
-    
+
     def tddmrg(self, bdims, dt, n_sweeps=10, n_sub_sweeps=2, dot=2, iprint=2, forward=True):
         return TDDMRG(self, bdims, iprint=iprint).solve(dt, n_sweeps, n_sub_sweeps, dot, forward=forward)
 
@@ -382,8 +402,8 @@ class MPE:
 class CachedMPE(MPE):
     """MPE for large system. Using disk storage to reduce memory usage."""
 
-    def __init__(self, bra, mpo, ket, opts=None, do_canon=True, idents=None, tag='MPE', scratch=None, maxsize=3):
-        super().__init__(bra, mpo, ket, opts=opts, do_canon=do_canon, idents=idents)
+    def __init__(self, bra, mpo, ket, opts=None, do_canon=True, idents=None, tag='MPE', scratch=None, maxsize=3, mpi=False):
+        super().__init__(bra, mpo, ket, opts=opts, do_canon=do_canon, idents=idents, mpi=mpi)
         self.tag = tag
         self.scratch = scratch if scratch is not None else os.environ['TMPDIR']
         self.cached = []
@@ -402,14 +422,17 @@ class CachedMPE(MPE):
             tensors=self.mpo.tensors[:], const=self.mpo.const, opts=self.mpo.opts)
         mpe = self.__class__(bra=bra, mpo=mpo, ket=ket, do_canon=self.do_canon,
                              idents=self.idents, tag=self.tag + '@TMP',
-                             scratch=self.scratch, maxsize=self.maxsize)
+                             scratch=self.scratch, maxsize=self.maxsize, mpi=self.mpi)
         mpe.cached = self.cached.copy()
         mpe.left_envs = self.left_envs.copy()
         mpe.right_envs = self.right_envs.copy()
         return mpe
 
     def _get_filename(self, left, i):
-        return "%s.%s.%d" % (self.tag, "L" if left else "R", i)
+        if self.mpi:
+            return "%s-%d.%s.%d" % (self.tag, self.rank, "L" if left else "R", i)
+        else:
+            return "%s.%s.%d" % (self.tag, "L" if left else "R", i)
 
     def _load_data(self, fn):
         if fn in [c[0] for c in self.cached]:

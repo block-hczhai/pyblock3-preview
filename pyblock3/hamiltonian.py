@@ -151,7 +151,10 @@ class Hamiltonian:
             from block3 import hamiltonian as hm
             from .algebra.flat import FlatFermionTensor, FlatSparseTensor
             orb_sym = np.array(self.orb_sym, dtype=int)
-            ts = hm.build_mpo(orb_sym, *gen, cutoff, max_bond_dim)
+            if max_bond_dim == -9:
+                ts = hm.build_mpo_ptree(orb_sym, *gen)
+            else:
+                ts = hm.build_mpo(orb_sym, *gen, cutoff, max_bond_dim)
             tensors = [None] * self.n_sites
             for i in range(0, self.n_sites):
                 tensors[i] = FlatFermionTensor(

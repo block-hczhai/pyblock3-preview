@@ -53,10 +53,16 @@ class NoiseTypes(Enum):
 class SweepAlgorithm:
     def __init__(self, cutoff=1E-14,
                  decomp_type=DecompositionTypes.DensityMatrix,
-                 noise_type=NoiseTypes.Perturbative):
+                 noise_type=NoiseTypes.Perturbative, mpi=False):
         self.cutoff = cutoff
         self.decomp_type = decomp_type
         self.noise_type = noise_type
+        self.mpi = mpi
+        if self.mpi:
+            from mpi4py import MPI
+            self.mrank = MPI.COMM_WORLD.Get_rank()
+            self.msize = MPI.COMM_WORLD.Get_size()
+            self.comm = MPI.COMM_WORLD
 
     def add_dm_noise(self, dm, mpo, wfn, noise, forward):
         if noise == 0:
@@ -75,6 +81,9 @@ class SweepAlgorithm:
                     mpo[1], wfn[0], axes=((3, 4), (3, 4)))
                 pket.normalize_along_axis(axis=0)
                 pdm = np.tensordot(pket, pket, axes=((0, 3, 4, 5, 6), ) * 2)
+            if self.mpi:
+                from mpi4py import MPI
+                pdm = self.comm.allreduce(pdm, op=MPI.SUM)
             norm = np.linalg.norm(pdm)
             return dm + (noise / norm) * pdm if abs(norm) > 1E-12 else dm
         else:
@@ -103,11 +112,12 @@ class SweepAlgorithm:
                         dm = dm + w * np.tensordot(
                             ex_wfn[0], ex_wfn[0], axes=((-3, -2, -1), ) * 2)
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
-                lsr = dm.tensor_svd(idx=3, pattern='+++---')
-                l, _, _, error = pbalg.truncate_svd(
-                    *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
-                wfn[:] = [l, np.tensordot(
-                    l, wfn[0], axes=((0, 1, 2), ) * 2)]
+                if not self.mpi or self.mrank == 0:
+                    lsr = dm.tensor_svd(idx=3, pattern='+++---')
+                    l, _, _, error = pbalg.truncate_svd(
+                        *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
+                    wfn[:] = [l, np.tensordot(
+                        l, wfn[0], axes=((0, 1, 2), ) * 2)]
             else:
                 dm = np.tensordot(
                     wfn[0], wfn[0], axes=((0, 1, 2), ) * 2)
@@ -117,32 +127,37 @@ class SweepAlgorithm:
                         dm = dm + w * np.tensordot(
                             ex_wfn[0], ex_wfn[0], axes=((0, 1, 2), ) * 2)
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
-                lsr = dm.tensor_svd(idx=3, pattern='-+-+-+')
-                _, _, r, error = pbalg.truncate_svd(
-                    *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
-                wfn[:] = [np.tensordot(
-                    wfn[0], r, axes=((-3, -2, -1), ) * 2), r]
-        elif self.decomp_type == DecompositionTypes.SVD:
-            assert not isinstance(wfns, list)
-            wfn = self.add_wfn_noise(
-                wfn[0], noise, forward)
-            lsr = wfn.tensor_svd(idx=3, pattern='++++-+')
-            l, s, r, error = pbalg.truncate_svd(
-                *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim)
-            if noise == 0:
-                if forward:
-                    wfn[:] = [l, np.tensordot(
-                        s.diag(), r, axes=1)]
-                else:
-                    wfn[:] = [np.tensordot(
-                        l, s.diag(), axes=1), r]
-            else:
-                if forward:
-                    wfn[:] = [l, np.tensordot(
-                        l, wfn[0], axes=((0, 1, 2), ) * 2)]
-                else:
+                if not self.mpi or self.mrank == 0:
+                    lsr = dm.tensor_svd(idx=3, pattern='-+-+-+')
+                    _, _, r, error = pbalg.truncate_svd(
+                        *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
                     wfn[:] = [np.tensordot(
                         wfn[0], r, axes=((-3, -2, -1), ) * 2), r]
+        elif self.decomp_type == DecompositionTypes.SVD:
+            assert not isinstance(wfns, list)
+            if not self.mpi or self.mrank == 0:
+                wfn = self.add_wfn_noise(
+                    wfn[0], noise, forward)
+                lsr = wfn.tensor_svd(idx=3, pattern='++++-+')
+                l, s, r, error = pbalg.truncate_svd(
+                    *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim)
+                if noise == 0:
+                    if forward:
+                        wfn[:] = [l, np.tensordot(
+                            s.diag(), r, axes=1)]
+                    else:
+                        wfn[:] = [np.tensordot(
+                            l, s.diag(), axes=1), r]
+                else:
+                    if forward:
+                        wfn[:] = [l, np.tensordot(
+                            l, wfn[0], axes=((0, 1, 2), ) * 2)]
+                    else:
+                        wfn[:] = [np.tensordot(
+                            wfn[0], r, axes=((-3, -2, -1), ) * 2), r]
         else:
             assert False
+        if self.mpi:
+            error = self.comm.bcast(error if self.mrank == 0 else 0, root=0)
+            wfn[:] = self.comm.bcast(wfn[:], root=0)
         return error
