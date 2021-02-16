@@ -572,7 +572,7 @@ class SparseFermionTensor(SparseTensor):
                     mb = blocks_map[block.q_labels]
                     np.subtract(mb, block, out=mb)
                 else:
-                    blocks_map[block.q_labels] = block
+                    blocks_map[block.q_labels] = -block
             blocks = list(blocks_map.values())
             return a.__class__(blocks=blocks)
 
