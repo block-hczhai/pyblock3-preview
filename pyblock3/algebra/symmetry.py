@@ -36,26 +36,26 @@ class SZ:
     @property
     def is_fermion(self):
         return self.n % 2 == 1
-    
+
     def to_flat(self):
         return ((self.n + 8192) * 16384 + (self.twos + 8192)) * 8 + self.pg
-    
+
     @staticmethod
     def from_flat(x):
         return SZ((x // 131072) % 16384 - 8192, (x // 8) % 16384 - 8192, x % 8)
-    
+
     @staticmethod
     def is_flat_fermion(x):
         return (x & 8) != 0
 
     def __add__(self, other):
-        return SZ(self.n + other.n, self.twos + other.twos, self.pg ^ other.pg)
+        return self.__class__(self.n + other.n, self.twos + other.twos, self.pg ^ other.pg)
 
     def __sub__(self, other):
-        return SZ(self.n - other.n, self.twos - other.twos, self.pg ^ other.pg)
+        return self.__class__(self.n - other.n, self.twos - other.twos, self.pg ^ other.pg)
 
     def __neg__(self):
-        return SZ(-self.n, -self.twos, self.pg)
+        return self.__class__(-self.n, -self.twos, self.pg)
 
     def __eq__(self, other):
         return self.n == other.n and self.twos == other.twos and self.pg == other.pg
@@ -72,6 +72,28 @@ class SZ:
         else:
             return "< N=%d SZ=%d PG=%d >" % (self.n, self.twos // 2, self.pg)
 
+class QPN(SZ):
+    """Quantum Particle Number Symmetry"""
+
+    def __init__(self, n=0, sz=0, *args, **kwargs):
+        self.n = n
+        self.twos = sz
+        self.pg = n % 2
+
+    @property
+    def sz(self):
+        return self.twos
+
+    @property
+    def parity(self):
+        return self.pg
+
+    @staticmethod
+    def from_flat(x):
+        return QPN((x // 131072) % 16384 - 8192, (x // 8) % 16384 - 8192)
+
+    def __repr__(self):
+        return "< N=%d SZ=%d >" % (self.n, self.twos)
 
 class BondInfo(Counter):
     """
@@ -138,7 +160,7 @@ class BondInfo(Counter):
                 self[k] = int(np.ceil(v * bond_dim / n_total + 0.1))
                 if ref is not None:
                     self[k] = min(self[k], ref[k])
-    
+
     def keep_maximal(self):
         maxk = max(self)
         return BondInfo({maxk: self[maxk]})

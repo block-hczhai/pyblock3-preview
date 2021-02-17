@@ -23,103 +23,62 @@ Author: Yang Gao
 
 import unittest
 import numpy as np
-from pyblock3.algebra.symmetry import SZ, BondInfo
-from pyblock3.algebra.fermion import SparseFermionTensor, FlatFermionTensor
-from pyblock3.algebra.flat import SparseTensor
+from pyblock3.algebra.symmetry import BondInfo, QPN
+from pyblock3.algebra.fermion import SparseFermionTensor
 
-def finger(tensor):
-    if isinstance(tensor, SparseFermionTensor):
-        array = FlatFermionTensor.from_sparse(tensor).data
-    else:
-        array = tensor.data
-    return np.dot(np.cos(np.arange(array.size)), array)
-
-def compare_equal(stensor, ftensor):
-    nblk, ndim = ftensor.q_labels.shape
-    equal_list = []
-    for ibk, sblk in enumerate(stensor):
-        num = np.asarray([SZ.to_flat(q) for q in sblk.q_labels])[None,]
-        delta = abs(num -ftensor.q_labels).sum(axis=1)
-        idx = np.where(delta==0)[0][0]
-        sarr = np.asarray(sblk).flatten()
-        farr = ftensor.data[ftensor.idxs[idx]:ftensor.idxs[idx+1]]
-        equal_list.append(np.allclose(sarr, farr))
-    return sum(equal_list)==nblk
-
+def finger(T):
+    if isinstance(T, SparseFermionTensor):
+        out = 0
+        for tsr in T:
+            data = np.asarray(tsr).ravel()
+            out += np.sum(np.sin(data) * np.arange(data.size))
+    return out
 np.random.seed(3)
-x = SZ(0,0,0)
-y = SZ(1,0,0)
-infox = BondInfo({x:3, y: 2})
-infoy = BondInfo({x:2, y: 3})
+q0 = QPN(0,0)
+q1 = QPN(1,1)
+q2 = QPN(1,-1)
+q3 = QPN(2,0)
 
-asp = SparseTensor.random((infox,infoy,infox), dq=y)
-bsp = SparseTensor.random((infox,infox,infoy))
+infox = BondInfo({q0: 2, q1: 3,
+                  q2: 3, q3: 2})
+infoy = BondInfo({q0: 3, q1: 2,
+                  q2: 2, q3: 5})
 
-asp = SparseFermionTensor(blocks=asp.blocks)
-bsp = SparseFermionTensor(blocks=bsp.blocks)
-
-af = FlatFermionTensor.from_sparse(asp)
-bf = FlatFermionTensor.from_sparse(bsp)
-
-assert(compare_equal(asp, af))
-assert(compare_equal(bsp, bf))
-
+Tsa = SparseFermionTensor.random((infox,infoy), pattern="+-")
+Tsb = SparseFermionTensor.random((infox,infoy,infox), pattern="-++", dq=QPN(2,0))
 
 class KnownValues(unittest.TestCase):
+
     def test_flip(self):
-        aspx = asp.copy()
-        afx = af.copy()
+        Tsa1 = Tsa.copy()
+        Tsa1._local_flip(1)
+        self.assertAlmostEqual(finger(Tsa1), 17.64635702584, 8)
 
-        afx._global_flip()
-        aspx._global_flip()
-        self.assertTrue(compare_equal(aspx, afx))
-        self.assertAlmostEqual(finger(afx)+finger(af), 0, 6)
+        Tsb1 = Tsb.copy()
+        Tsb1._global_flip()
+        self.assertAlmostEqual(finger(Tsb), -finger(Tsb1), 8)
 
-        afx._local_flip((0,1))
-        aspx._local_flip((0,1))
-        self.assertTrue(compare_equal(aspx, afx))
-        self.assertAlmostEqual(finger(afx), 1.8267976468986804, 6)
+        Tsb2 = Tsb.copy()
+        Tsb1._local_flip(1)
+        Tsb2._local_flip([0,2])
+        self.assertAlmostEqual(finger(Tsb1), -finger(Tsb2), 8)
 
     def test_transpose(self):
-        axes = (0,2,1)
-        aspx = asp.transpose(axes)
-        afx = af.transpose(axes)
-        self.assertTrue(compare_equal(aspx, afx))
+        Tsa1 = np.transpose(Tsa, (1,0))
+        self.assertAlmostEqual(finger(Tsa1), 16.65082083209277, 8)
 
-        bspx = bsp.transpose((2,1,0))
-        self.assertAlmostEqual(finger(bspx), 0.512065055131486, 6)
+        Tsb1 = np.transpose(Tsb, (2,0,1))
+        self.assertAlmostEqual(finger(Tsb1), -740.2582350554802, 8)
+
+        Tsb2 = np.transpose(Tsb1, (1,2,0))
+        self.assertAlmostEqual(finger(Tsb), finger(Tsb2), 8)
 
     def test_tensordot(self):
-        outsp = np.tensordot(asp, bsp, ((0,1), (1,2)))
-        outf = np.tensordot(af, bf, ((0,1), (1,2)))
-
-        atmp_sp = asp.transpose((2,1,0))
-        btmp_sp = bsp.transpose((1,2,0))
-        outtmp_sp = np.tensordot(atmp_sp, btmp_sp, ((2,1), (0,1)))
-
-        atmp_f = af.transpose((2,1,0))
-        btmp_f = bf.transpose((1,2,0))
-        outtmp_f = np.tensordot(atmp_f, btmp_f, ((2,1), (0,1)))
-
-        self.assertTrue(compare_equal(outsp, outf))
-        self.assertTrue(compare_equal(outtmp_sp, outf))
-        self.assertTrue(compare_equal(outsp, outtmp_f))
-
-        outsp = np.tensordot(asp, bsp, ((1,), (2,)))
-        outf = np.tensordot(af, bf, ((1,), (2,)))
-
-        atmp_sp = asp.transpose((0,2,1))
-        btmp_sp = bsp.transpose((2,0,1))
-        outtmp_sp = np.tensordot(atmp_sp, btmp_sp, ((2,), (0,)))
-
-        atmp_f = af.transpose((0,2,1))
-        btmp_f = bf.transpose((2,0,1))
-        outtmp_f = np.tensordot(atmp_f, btmp_f, ((2,), (0,)))
-
-        self.assertTrue(compare_equal(outsp, outf))
-        self.assertTrue(compare_equal(outtmp_sp, outf))
-        self.assertTrue(compare_equal(outsp, outtmp_f))
-        self.assertAlmostEqual(finger(outsp), 0.09654888859793742, 6)
+        Tsc = np.tensordot(Tsa, Tsb, axes=((0,),(2,)))
+        Tsa1 = np.transpose(Tsa, (1,0))
+        Tsb1 = np.transpose(Tsb, (2,0,1))
+        Tsc1 = np.tensordot(Tsa1, Tsb1, axes=((-1,),(0,)))
+        self.assertAlmostEqual(finger(Tsc-Tsc1), 0.0, 8)
 
 if __name__ == "__main__":
     print("Full Tests for Fermionic Tensors")
