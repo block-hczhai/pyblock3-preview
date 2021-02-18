@@ -26,6 +26,7 @@ from pyblock3.algebra.core import SparseTensor, SubTensor, _sparse_tensor_numpy_
 from pyblock3.algebra.flat import FlatSparseTensor, flat_sparse_skeleton, _flat_sparse_tensor_numpy_func_impls
 from pyblock3.algebra.symmetry import QPN
 import numbers
+from pyblock3.algebra.fermion_split import _run_sparse_fermion_svd
 
 def method_alias(name):
     def ff(f):
@@ -136,6 +137,12 @@ class SparseFermionTensor(SparseTensor):
         elif len(pattern_string) != self.ndim:
             raise ValueError("Pattern string length must match the dimension of the tensor")
         self._pattern = pattern_string
+
+    @property
+    def dagger(self):
+        axes = list(range(self.ndim))[::-1]
+        blocks = [np.transpose(block.conj(), axes=axes) for block in self.blocks]
+        return self.__class__(blocks=blocks, pattern=self.pattern[::-1])
 
     @property
     def parity(self):
