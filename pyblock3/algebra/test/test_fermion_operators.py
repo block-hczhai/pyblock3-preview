@@ -40,8 +40,8 @@ phys_bond = BondInfo({q0: 1, q1: 1,
 vir_bond = BondInfo({q0: 3, q1: 2,
                   q2: 2, q3: 5})
 
-Tsa = SparseFermionTensor.ones((phys_bond,vir_bond), pattern="+-", dq=QPN(1,1))
-Tsb = SparseFermionTensor.ones((vir_bond,phys_bond), pattern="++", dq=QPN(2,0))
+Tsa = SparseFermionTensor.random((phys_bond,vir_bond), pattern="+-", dq=QPN(1,1))
+Tsb = SparseFermionTensor.random((vir_bond,phys_bond), pattern="++", dq=QPN(2,0))
 
 ket = np.tensordot(Tsa, Tsb, axes=((-1,),(0,)))
 bra = ket.dagger
@@ -87,5 +87,5 @@ class KnownValues(unittest.TestCase):
         self.assertAlmostEqual(expec, t, 8)
 
 if __name__ == "__main__":
-    print("Full Tests for Fermionic Tensors")
+    print("Full Tests for Fermionic Operators")
     unittest.main()

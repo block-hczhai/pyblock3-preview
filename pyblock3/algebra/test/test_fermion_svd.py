@@ -15,37 +15,60 @@ infox = BondInfo({q0: 2, q1: 3,
 infoy = BondInfo({q0: 3, q1: 2,
                   q2: 2, q3: 5})
 
-T = SparseFermionTensor.random((infox,infox,infox,infox), pattern="++--", dq=QPN(2,0))
+Ts = SparseFermionTensor.random((infox,infox,infox,infox), pattern="++--", dq=QPN(2,0))
+Tf = Ts.to_flat()
 
-u,s,v=_run_sparse_fermion_svd(T, [0,1], absorb=0)
-out = np.tensordot(u, v, axes=((-1,),(0,)))
-err = out - T
-print(err.norm())
-print(u.dq, v.dq, u.pattern, v.pattern, out.dq)
+class KnownValues(unittest.TestCase):
 
-u,s,v = _run_sparse_fermion_svd(T, [0,2], absorb=1)
-out = np.tensordot(u, v, axes=((-1,),(0,))).transpose([0,2,1,3])
-err = out - T
-print(err.norm())
-print(u.dq, v.dq, u.pattern, v.pattern, out.dq)
+    def test_sparse_svd(self):
+        u, s, v= Ts.tensor_svd([0,1], absorb=0)
+        out = np.tensordot(u, v, axes=((-1,),(0,)))
+        err = out - Ts
+        self.assertAlmostEqual(err.norm(), 0, 8)
 
-u,s,v = _run_sparse_fermion_svd(T, [0,2], absorb=-1)
-out = np.tensordot(u, v, axes=((-1,),(0,))).transpose([0,2,1,3])
-err = out - T
-print(err.norm())
-print(u.dq, v.dq, u.pattern, v.pattern, out.dq)
+        u,s,v = Ts.tensor_svd([0,2], absorb=1)
+        out = np.tensordot(u, v, axes=((-1,),(0,))).transpose([0,2,1,3])
+        err = out - Ts
+        self.assertAlmostEqual(err.norm(), 0, 8)
 
-u,s,v = _run_sparse_fermion_svd(T, [0,1], absorb=1, qpn_info=(QPN(1,1), QPN(1,-1)))
-out = np.tensordot(u, v, axes=((-1,),(0,)))
-err = out - T
-print(err.norm())
-print(u.dq, v.dq, u.pattern, v.pattern, out.dq)
+        u,s,v = Ts.tensor_svd([0,2], absorb=-1)
+        out = np.tensordot(u, v, axes=((-1,),(0,))).transpose([0,2,1,3])
+        err = out - Ts
+        self.assertAlmostEqual(err.norm(), 0, 8)
 
-u,s,v = _run_sparse_fermion_svd(T, [0,2], absorb=-1, qpn_info=(QPN(2,0),QPN(0,0)))
-out = np.tensordot(u, v, axes=((-1,),(0,))).transpose([0,2,1,3])
-err = out - T
-print(err.norm())
-print(u.dq, v.dq, u.pattern, v.pattern, out.dq)
+        u,s,v = Ts.tensor_svd([0,1], absorb=None, qpn_info=(QPN(1,1), QPN(1,-1)))
+        out = np.tensordot(u, s, axes=((-1,),(0,)))
+        out = np.tensordot(out, v, axes=((-1,),(0,)))
+        err = out - Ts
+        self.assertAlmostEqual(err.norm(), 0, 8)
+        self.assertEqual(u.dq, QPN(1,1))
+        self.assertEqual(s.dq, QPN(0))
+        self.assertEqual(v.dq, QPN(1,-1))
+
+    def test_flat_svd(self):
+        u, s, v= Tf.tensor_svd([0,1], absorb=0)
+        out = np.tensordot(u, v, axes=((-1,),(0,)))
+        err = out - Tf
+        self.assertAlmostEqual(err.norm(), 0, 8)
+
+        u,s,v = Tf.tensor_svd([0,2], absorb=1)
+        out = np.tensordot(u, v, axes=((-1,),(0,))).transpose([0,2,1,3])
+        err = out - Tf
+        self.assertAlmostEqual(err.norm(), 0, 8)
+
+        u,s,v = Tf.tensor_svd([0,2], absorb=-1)
+        out = np.tensordot(u, v, axes=((-1,),(0,))).transpose([0,2,1,3])
+        err = out - Tf
+        self.assertAlmostEqual(err.norm(), 0, 8)
+
+        u,s,v = Tf.tensor_svd([0,1], absorb=None, qpn_info=(QPN(1,1), QPN(1,-1)))
+        out = np.tensordot(u, s, axes=((-1,),(0,)))
+        out = np.tensordot(out, v, axes=((-1,),(0,)))
+        err = out - Tf
+        self.assertAlmostEqual(err.norm(), 0, 8)
+        self.assertEqual(u.dq, QPN(1,1))
+        self.assertEqual(s.dq, QPN(0))
+        self.assertEqual(v.dq, QPN(1,-1))
 
 if __name__ == "__main__":
     print("Full Tests for Fermionic Tensor SVD")

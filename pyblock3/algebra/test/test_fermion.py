@@ -32,7 +32,10 @@ def finger(T):
         for tsr in T:
             data = np.asarray(tsr).ravel()
             out += np.sum(np.sin(data) * np.arange(data.size))
+    else:
+        out = np.sum(np.sin(T.data) * np.arange(T.data.size))
     return out
+
 np.random.seed(3)
 q0 = QPN(0,0)
 q1 = QPN(1,1)
@@ -46,6 +49,8 @@ infoy = BondInfo({q0: 3, q1: 2,
 
 Tsa = SparseFermionTensor.random((infox,infoy), pattern="+-")
 Tsb = SparseFermionTensor.random((infox,infoy,infox), pattern="-++", dq=QPN(2,0))
+Tfa = Tsa.to_flat()
+Tfb = Tsb.to_flat()
 
 class KnownValues(unittest.TestCase):
 
@@ -54,9 +59,17 @@ class KnownValues(unittest.TestCase):
         Tsa1._local_flip(1)
         self.assertAlmostEqual(finger(Tsa1), 17.64635702584, 8)
 
+        Tfa1 = Tfa.copy()
+        Tfa1._local_flip(1)
+        self.assertAlmostEqual(finger(Tsa1-Tfa1.to_sparse()), 0, 8)
+
         Tsb1 = Tsb.copy()
         Tsb1._global_flip()
         self.assertAlmostEqual(finger(Tsb), -finger(Tsb1), 8)
+
+        Tfb1 = Tfb.copy()
+        Tfb1._global_flip()
+        self.assertAlmostEqual(finger(Tsb1-Tfb1.to_sparse()), 0, 8)
 
         Tsb2 = Tsb.copy()
         Tsb1._local_flip(1)
@@ -67,11 +80,20 @@ class KnownValues(unittest.TestCase):
         Tsa1 = np.transpose(Tsa, (1,0))
         self.assertAlmostEqual(finger(Tsa1), 16.65082083209277, 8)
 
+        Tfa1 = np.transpose(Tfa, (1,0))
+        self.assertAlmostEqual(finger(Tsa1-Tfa1.to_sparse()), 0, 8)
+
         Tsb1 = np.transpose(Tsb, (2,0,1))
         self.assertAlmostEqual(finger(Tsb1), -740.2582350554802, 8)
 
+        Tfb1 = np.transpose(Tfb, (2,0,1))
+        self.assertAlmostEqual(finger(Tsb1-Tfb1.to_sparse()), 0, 8)
+
         Tsb2 = np.transpose(Tsb1, (1,2,0))
         self.assertAlmostEqual(finger(Tsb), finger(Tsb2), 8)
+
+        Tfb2 = np.transpose(Tfb1, (1,2,0))
+        self.assertAlmostEqual(finger(Tfb2-Tfb), 0, 8)
 
     def test_tensordot(self):
         Tsc = np.tensordot(Tsa, Tsb, axes=((0,),(2,)))
@@ -79,6 +101,14 @@ class KnownValues(unittest.TestCase):
         Tsb1 = np.transpose(Tsb, (2,0,1))
         Tsc1 = np.tensordot(Tsa1, Tsb1, axes=((-1,),(0,)))
         self.assertAlmostEqual(finger(Tsc-Tsc1), 0.0, 8)
+
+        Tfc = np.tensordot(Tfa, Tfb, axes=((0,),(2,)))
+        Tfa1 = np.transpose(Tfa, (1,0))
+        Tfb1 = np.transpose(Tfb, (2,0,1))
+        Tfc1 = np.tensordot(Tfa1, Tfb1, axes=((-1,),(0,)))
+        self.assertAlmostEqual(finger(Tfc-Tfc1), 0.0, 8)
+
+        self.assertAlmostEqual(finger(Tsc.to_flat()-Tfc), 0.0, 8)
 
 if __name__ == "__main__":
     print("Full Tests for Fermionic Tensors")

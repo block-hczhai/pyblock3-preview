@@ -26,7 +26,15 @@ from pyblock3.algebra.core import SparseTensor, SubTensor, _sparse_tensor_numpy_
 from pyblock3.algebra.flat import FlatSparseTensor, flat_sparse_skeleton, _flat_sparse_tensor_numpy_func_impls
 from pyblock3.algebra.symmetry import QPN
 import numbers
-from pyblock3.algebra.fermion_split import _run_sparse_fermion_svd
+from pyblock3.algebra.fermion_split import _run_sparse_fermion_svd, _run_flat_fermion_svd
+
+from block3 import flat_fermion_tensor, flat_sparse_tensor, VectorMapUIntUInt
+
+def flat_fermion_skeleton(bond_infos, pattern=None, dq=None):
+    fdq = dq.to_flat() if dq is not None else QPN(0).to_flat()
+    if pattern is None:
+        pattern = _gen_default_pattern(bond_infos)
+    return flat_sparse_tensor.skeleton(block3.VectorMapUIntUInt(bond_infos), pattern, fdq)
 
 def method_alias(name):
     def ff(f):
@@ -207,9 +215,6 @@ class SparseFermionTensor(SparseTensor):
                 xsh = tuple(ish[ix] for ish, ix in zip(sh, x))
                 yield xsh, xqs
 
-    def tensor_svd(self, left_idx, right_idx=None, **svd_opts):
-        return fermion_tensor_svd(self, left_idx, right_idx=right_idx, **svd_opts)
-
     @staticmethod
     def random(bond_infos, pattern=None, dq=None, dtype=float):
         """Create tensor from tuple of BondInfo with random elements."""
@@ -329,26 +334,31 @@ class SparseFermionTensor(SparseTensor):
                     blocks = [block * b for block in a.blocks]
                 else:
                     blocks = self._tensordot(a, b, axes=([-1], [0])).blocks
+                out_pattern = _contract_patterns(a.pattern, b.pattern, [a.ndim-1], [0])
             elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
                     blocks = [getattr(ufunc, method)(a, block)
                               for block in b.blocks]
+                    out_pattern = b.pattern
                 elif isinstance(b, numbers.Number):
                     blocks = [getattr(ufunc, method)(block, b)
                               for block in a.blocks]
+                    out_pattern = a.pattern
                 else:
                     return NotImplemented
             elif len(inputs) == 1:
                 blocks = [getattr(ufunc, method)(block)
                           for block in inputs[0].blocks]
+                out_pattern = inputs[0].pattern
             else:
                 return NotImplemented
         else:
             return NotImplemented
         if out is not None:
             out[0].blocks = blocks
-        return self.__class__(blocks=blocks, pattern=self.pattern)
+            out[0].pattern = out_pattern
+        return self.__class__(blocks=blocks, pattern=out_pattern)
 
     @staticmethod
     @implements(np.tensordot)
@@ -415,5 +425,302 @@ class SparseFermionTensor(SparseTensor):
         pattern = "".join([a.pattern[ix] for ix in axes])
         return a.__class__(blocks=blocks, pattern=pattern)
 
-    def tensor_svd(self, left_idx, right_idx=None, **svd_opts):
-        return fermion_tensor_svd(self, left_idx, right_idx=right_idx, **svd_opts)
+    def tensor_svd(self, left_idx, right_idx=None, qpn_info=None, **opts):
+        return _run_sparse_fermion_svd(self, left_idx, right_idx=right_idx, qpn_info=qpn_info, **opts)
+
+_flat_fermion_tensor_numpy_func_impls = _flat_sparse_tensor_numpy_func_impls.copy()
+[_flat_fermion_tensor_numpy_func_impls.pop(key) for key in NEW_METHODS]
+_numpy_func_impls = _flat_fermion_tensor_numpy_func_impls
+
+class FlatFermionTensor(FlatSparseTensor):
+
+    def __init__(self, q_labels, shapes, data, pattern=None, idxs=None):
+        self.n_blocks = len(q_labels)
+        self.ndim = q_labels.shape[1] if self.n_blocks != 0 else 0
+        self.shapes = shapes
+        self.q_labels = q_labels
+        self.data = data
+
+        if pattern is None:
+            pattern = _gen_default_pattern(self.ndim)
+        self._pattern = pattern
+
+        if idxs is None:
+            self.idxs = np.zeros((self.n_blocks + 1, ), dtype=shapes.dtype)
+            self.idxs[1:] = np.cumsum(shapes.prod(axis=1))
+        else:
+            self.idxs = idxs
+        if self.n_blocks != 0:
+            assert shapes.shape == (self.n_blocks, self.ndim)
+            assert q_labels.shape == (self.n_blocks, self.ndim)
+
+    @property
+    def dq(self):
+        dq = QPN()
+        for qpn, sign in zip(self.q_labels[0], self.pattern):
+            if sign == "+":
+                dq += QPN.from_flat(qpn)
+            else:
+                dq -= QPN.from_flat(qpn)
+        return dq
+
+    @property
+    def pattern(self):
+        return self._pattern
+
+    @pattern.setter
+    def pattern(self, pattern_string):
+        if not isinstance(pattern_string, str) or \
+              not set(pattern_string).issubset(set("+-")):
+            raise TypeError("Pattern must be a string of +-")
+
+        elif len(pattern_string) != self.ndim:
+            raise ValueError("Pattern string length must match the dimension of the tensor")
+        self._pattern = pattern_string
+
+    @property
+    def dagger(self):
+        axes = list(range(self.ndim))[::-1]
+        axes = np.array(axes, dtype=np.int32)
+        data = np.zeros_like(self.data)
+        flat_sparse_tensor.transpose(self.shapes, self.data.conj(), self.idxs, axes, data)
+        return self.__class__(self.q_labels[:, axes], self.shapes[:, axes], data, pattern=self.pattern[::-1], idxs=self.idxs)
+
+    @property
+    def parity(self):
+        return self.parity_per_block[0]
+
+    @property
+    def parity_per_block(self):
+        parity_list = []
+        for q_label in self.q_labels:
+            parity = np.add.reduce([QPN.from_flat(qlab) for qlab in q_label]).parity
+            parity_list.append(parity)
+        return parity_list
+
+    def conj(self):
+        return self.__class__(self.q_labels, self.shapes, self.data.conj(), pattern=self.pattern, idxs=self.idxs)
+
+    def check_sanity(self):
+        parity_uniq = np.unique(self.parity_per_block)
+        if len(parity_uniq) >1:
+            raise ValueError("both odd/even parity found in blocks, \
+                              this is prohibited")
+
+    def _local_flip(self, axes):
+        if isinstance(axes, int):
+            ax = [axes]
+        else:
+            ax = list(axes)
+        idx = self.idxs
+        for i in range(len(self.q_labels)):
+            block_parity = np.add.reduce([QPN.from_flat(self.q_labels[i][j]) for j in ax]).parity
+            if block_parity == 1:
+                self.data[idx[i]:idx[i+1]] *=-1
+
+    def _global_flip(self):
+        self.data *= -1
+
+    def to_sparse(self):
+        blocks = [None] * self.n_blocks
+        for i in range(self.n_blocks):
+            qs = tuple(map(QPN.from_flat, self.q_labels[i]))
+            blocks[i] = SubTensor(
+                self.data[self.idxs[i]:self.idxs[i + 1]].reshape(self.shapes[i]), q_labels=qs)
+        return SparseFermionTensor(blocks=blocks, pattern=self.pattern)
+
+    @staticmethod
+    def from_sparse(spt):
+        ndim = spt.ndim
+        n_blocks = spt.n_blocks
+        shapes = np.zeros((n_blocks, ndim), dtype=np.uint32)
+        q_labels = np.zeros((n_blocks, ndim), dtype=np.uint32)
+        for i in range(n_blocks):
+            shapes[i] = spt.blocks[i].shape
+            q_labels[i] = list(map(QPN.to_flat, spt.blocks[i].q_labels))
+        idxs = np.zeros((n_blocks + 1, ), dtype=np.uint32)
+        idxs[1:] = np.cumsum(shapes.prod(axis=1))
+        data = np.zeros((idxs[-1], ), dtype=spt.dtype)
+        for i in range(n_blocks):
+            data[idxs[i]:idxs[i + 1]] = spt.blocks[i].flatten()
+        return FlatFermionTensor(q_labels, shapes, data, spt.pattern, idxs)
+
+    @staticmethod
+    def random(bond_infos, pattern=None, dq=None, dtype=float):
+        if pattern is None:
+            pattern = _gen_default_pattern(bond_infos)
+        qs, shs, idxs = flat_fermion_skeleton(bond_infos, pattern, dq)
+        if dtype == float:
+            data = np.random.random((idxs[-1], ))
+        elif dtype == complex:
+            data = np.random.random(
+                (idxs[-1], )) + np.random.random((idxs[-1], )) * 1j
+        else:
+            return NotImplementedError('dtype %r not supported!' % dtype)
+        return FlatFermionTensor(qs, shs, data, pattern, idxs)
+
+    @staticmethod
+    def zeros(bond_infos, pattern=None, dq=None, dtype=float):
+        if pattern is None:
+            pattern = _gen_default_pattern(bond_infos)
+        qs, shs, idxs = flat_fermion_skeleton(bond_infos, pattern, dq)
+        data = np.zeros((idxs[-1], ), dtype=dtype)
+        return FlatFermionTensor(qs, shs, data, pattern, idxs)
+
+    @staticmethod
+    def ones(bond_infos, pattern=None, dq=None, dtype=float):
+        """Create tensor from tuple of BondInfo with one elements."""
+        if pattern is None:
+            pattern = _gen_default_pattern(bond_infos)
+        qs, shs, idxs = flat_fermion_skeleton(bond_infos, pattern, dq)
+        data = np.ones((idxs[-1], ), dtype=dtype)
+        return FlatFermionTensor(qs, shs, data, pattern, idxs)
+
+    @staticmethod
+    def symmetry_compatible(a, b):
+        if a.pattern == b.pattern:
+            return a.dq == b.dq
+        elif a.pattern == _flip_pattern(b.pattern):
+            return a.dq == -b.dq
+        else:
+            return False
+
+    @staticmethod
+    @implements(np.add)
+    def _add(a, b):
+        if isinstance(a, numbers.Number):
+            data = a + b.data
+            return b.__class__(b.q_labels, b.shapes, data, b.pattern, b.idxs)
+        elif isinstance(b, numbers.Number):
+            data = a.data + b
+            return a.__class__(a.q_labels, a.shapes, data, a.pattern, a.idxs)
+        elif b.n_blocks == 0:
+            return a
+        elif a.n_blocks == 0:
+            return b
+        else:
+            if not FlatFermionTensor.symmetry_compatible(a, b):
+                raise ValueError("Tensors must have same parity for addition")
+            q_labels, shapes, data, idxs = flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
+                                                a.idxs, b.q_labels, b.shapes, b.data, b.idxs)
+            return a.__class__(q_labels, shapes, data, a.pattern, idxs)
+
+    def add(self, b):
+        return self._add(self, b)
+
+    @staticmethod
+    @implements(np.subtract)
+    def _subtract(a, b):
+        if isinstance(a, numbers.Number):
+            data = a - b.data
+            return b.__class__(b.q_labels, b.shapes, data, b.pattern, b.idxs)
+        elif isinstance(b, numbers.Number):
+            data = a.data - b
+            return a.__class__(a.q_labels, a.shapes, data, a.pattern, a.idxs)
+        elif b.n_blocks == 0:
+            return a
+        elif a.n_blocks == 0:
+            return b
+        else:
+            if not FlatFermionTensor.symmetry_compatible(a, b):
+                raise ValueError("Tensors must have same parity for subtraction")
+            q_labels, shapes, data, idxs = flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
+                                                a.idxs, b.q_labels, b.shapes, -b.data, b.idxs)
+            return a.__class__(q_labels, shapes, data, a.pattern, idxs)
+
+    def subtract(self, b):
+        return self._subtract(self, b)
+
+    def __array_function__(self, func, types, args, kwargs):
+        if func not in _flat_fermion_tensor_numpy_func_impls:
+            return NotImplemented
+        if not all(issubclass(t, self.__class__) for t in types):
+            return NotImplemented
+        return _flat_fermion_tensor_numpy_func_impls[func](*args, **kwargs)
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        if ufunc in _flat_fermion_tensor_numpy_func_impls:
+            types = tuple(
+                x.__class__ for x in inputs if not isinstance(x, numbers.Number))
+            return self.__array_function__(ufunc, types, inputs, kwargs)
+        out = kwargs.pop("out", None)
+        if out is not None and not all(isinstance(x, self.__class__) for x in out):
+            return NotImplemented
+
+        if method == "__call__":
+            if ufunc.__name__ in ["matmul"]:
+                a, b = inputs
+                if isinstance(a, numbers.Number):
+                    shs, qs, data, idxs = b.shapes, b.q_labels, a * b.data, b.idxs
+                    out_pattern = b.pattern
+                elif isinstance(b, numbers.Number):
+                    shs, qs, data, idxs = a.shapes, a.q_labels, a.data * b, a.idxs
+                    out_pattern = a.pattern
+                else:
+                    c = self._tensordot(a, b, axes=([-1], [0]))
+                    shs, qs, data, idxs = c.shapes, c.q_labels, c.data, c.idxs
+                    out_pattern = _contract_patterns(a.pattern, b.pattern, [a.ndim-1], [0])
+            elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
+                a, b = inputs
+                if isinstance(a, numbers.Number):
+                    shs, qs, data, idxs = b.shapes, b.q_labels, getattr(
+                        ufunc, method)(a, b.data), b.idxs
+                    out_pattern = b.pattern
+                elif isinstance(b, numbers.Number):
+                    shs, qs, data, idxs = a.shapes, a.q_labels, getattr(
+                        ufunc, method)(a.data, b), a.idxs
+                    out_pattern = a.pattern
+                else:
+                    return NotImplemented
+            elif len(inputs) == 1:
+                a = inputs[0]
+                shs, qs, data, idxs = a.shapes, a.q_labels, getattr(
+                    ufunc, method)(a.data), a.idxs
+                out_pattern = a.pattern
+            else:
+                return NotImplemented
+        else:
+            return NotImplemented
+        if out is not None:
+            out[0].shapes[...] = shs
+            out[0].q_labels[...] = qs
+            out[0].data[...] = data
+            out[0].idxs[...] = idxs
+            out[0].pattern = out_pattern
+        return FlatFermionTensor(q_labels=qs, shapes=shs, data=data, pattern=out_pattern, idxs=idxs)
+
+    @staticmethod
+    @implements(np.tensordot)
+    def _tensordot(a, b, axes=2):
+        if isinstance(axes, int):
+            idxa = np.arange(-axes, 0, dtype=np.int32)
+            idxb = np.arange(0, axes, dtype=np.int32)
+        else:
+            idxa = np.array(axes[0], dtype=np.int32)
+            idxb = np.array(axes[1], dtype=np.int32)
+        idxa[idxa < 0] += a.ndim
+        idxb[idxb < 0] += b.ndim
+        q_labels, shapes, data, idxs = flat_fermion_tensor.tensordot(
+                    a.q_labels, a.shapes, a.data, a.idxs,
+                    b.q_labels, b.shapes, b.data, b.idxs,
+                    idxa, idxb)
+        out_pattern = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
+        return a.__class__(q_labels, shapes, data, out_pattern, idxs)
+
+    @staticmethod
+    @implements(np.transpose)
+    def _transpose(a, axes=None):
+        if axes is None:
+            axes = np.arange(a.ndim)[::-1]
+        if a.n_blocks == 0:
+            return a
+        else:
+            data = np.zeros_like(a.data)
+            axes = np.array(axes, dtype=np.int32)
+            flat_fermion_tensor.transpose(a.q_labels, a.shapes, a.data, a.idxs, axes, data)
+            pattern = "".join([a.pattern[ix] for ix in axes])
+            return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
+                               data, pattern, a.idxs)
+
+    def tensor_svd(self, left_idx, right_idx=None, qpn_info=None, **opts):
+        return _run_flat_fermion_svd(self, left_idx, right_idx=right_idx, qpn_info=qpn_info, **opts)
