@@ -55,7 +55,7 @@ def implements(np_func):
                       if np_func not in _numpy_func_impls else None,
                       _numpy_func_impls[np_func])[1]
 
-NEW_METHODS = [np.transpose, np.tensordot, np.add, np.subtract]
+NEW_METHODS = [np.transpose, np.tensordot, np.add, np.subtract, np.copy]
 
 _sparse_fermion_tensor_numpy_func_impls = _sparse_tensor_numpy_func_impls.copy()
 [_sparse_fermion_tensor_numpy_func_impls.pop(key) for key in NEW_METHODS]
@@ -151,6 +151,14 @@ class SparseFermionTensor(SparseTensor):
         axes = list(range(self.ndim))[::-1]
         blocks = [np.transpose(block.conj(), axes=axes) for block in self.blocks]
         return self.__class__(blocks=blocks, pattern=self.pattern[::-1])
+
+    @staticmethod
+    @implements(np.copy)
+    def _copy(x):
+        return x.__class__(blocks=[b.copy() for b in x.blocks], pattern=x.pattern)
+
+    def copy(self):
+        return np.copy(self)
 
     @property
     def parity(self):
@@ -485,6 +493,14 @@ class FlatFermionTensor(FlatSparseTensor):
         data = np.zeros_like(self.data)
         flat_sparse_tensor.transpose(self.shapes, self.data.conj(), self.idxs, axes, data)
         return self.__class__(self.q_labels[:, axes], self.shapes[:, axes], data, pattern=self.pattern[::-1], idxs=self.idxs)
+
+    @staticmethod
+    @implements(np.copy)
+    def _copy(x):
+        return x.__class__(q_labels=x.q_labels.copy(), shapes=x.shapes.copy(), data=x.data.copy(), pattern=x.pattern, idxs=x.idxs.copy())
+
+    def copy(self):
+        return np.copy(self)
 
     @property
     def parity(self):
