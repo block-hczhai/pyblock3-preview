@@ -26,7 +26,8 @@ from pyblock3.algebra.core import SparseTensor, SubTensor, _sparse_tensor_numpy_
 from pyblock3.algebra.flat import FlatSparseTensor, flat_sparse_skeleton, _flat_sparse_tensor_numpy_func_impls
 from pyblock3.algebra.symmetry import QPN
 import numbers
-from pyblock3.algebra.fermion_split import _run_sparse_fermion_svd, _run_flat_fermion_svd
+from pyblock3.algebra.fermion_split import (_run_flat_fermion_svd,
+                _run_sparse_fermion_svd, get_flat_exponential, get_sparse_exponential)
 
 from block3 import flat_fermion_tensor, flat_sparse_tensor, VectorMapUIntUInt
 
@@ -96,23 +97,6 @@ def compute_phase(q_labels, axes, direction="left"):
         phase *= (-1) ** parity
         counted.append(x)
     return phase
-
-def fermion_tensor_svd(tsr, left_idx, right_idx=None, **opts):
-    pass
-    '''
-    if right_idx is None:
-        right_idx = [idim for idim in range(tsr.ndim) if idim not in left_idx]
-    neworder = tuple(left_idx) + tuple(right_idx)
-    split_ax = len(left_idx)
-    newtsr = tsr.transpose(neworder)
-    if isinstance(tsr, SparseFermionTensor):
-        u, s, v = _run_sparse_fermion_svd(newtsr, split_ax, **opts)
-    elif isinstance(tsr, FlatFermionTensor):
-        u, s, v = _run_flat_fermion_svd(newtsr, split_ax, **opts)
-    else:
-        raise TypeError("Tensor class not Sparse/FlatFermionTensor")
-    return u, s, v
-    '''
 
 class SparseFermionTensor(SparseTensor):
 
@@ -436,6 +420,9 @@ class SparseFermionTensor(SparseTensor):
     def tensor_svd(self, left_idx, right_idx=None, qpn_info=None, **opts):
         return _run_sparse_fermion_svd(self, left_idx, right_idx=right_idx, qpn_info=qpn_info, **opts)
 
+    def to_exponential(self, x):
+        return get_sparse_exponential(self,x)
+
 _flat_fermion_tensor_numpy_func_impls = _flat_sparse_tensor_numpy_func_impls.copy()
 [_flat_fermion_tensor_numpy_func_impls.pop(key) for key in NEW_METHODS]
 _numpy_func_impls = _flat_fermion_tensor_numpy_func_impls
@@ -740,3 +727,6 @@ class FlatFermionTensor(FlatSparseTensor):
 
     def tensor_svd(self, left_idx, right_idx=None, qpn_info=None, **opts):
         return _run_flat_fermion_svd(self, left_idx, right_idx=right_idx, qpn_info=qpn_info, **opts)
+
+    def to_exponential(self, x):
+        return get_flat_exponential(self,x)

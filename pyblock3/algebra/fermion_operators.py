@@ -4,6 +4,8 @@ from pyblock3.algebra.core import SubTensor
 from pyblock3.algebra.fermion import SparseFermionTensor
 from pyblock3.algebra.symmetry import QPN, BondInfo
 
+USE_FLAT = True
+
 def _compute_swap_phase(*qpns):
     cre_map = {QPN(0):"", QPN(1,1):"a", QPN(1,-1):"b", QPN(2,0):"ab"}
     ann_map = {QPN(0):"", QPN(1,1):"a", QPN(1,-1):"b", QPN(2,0):"ba"}
@@ -28,7 +30,7 @@ def _compute_swap_phase(*qpns):
         full_string[nops+ix] = ib
     return phase
 
-def gen_h1(h=1.):
+def gen_h1(h=1., FLAT=USE_FLAT):
     '''
     a_i^{\dagger}a_j
     '''
@@ -43,20 +45,26 @@ def gen_h1(h=1.):
                 phase = _compute_swap_phase(q1, q2, q1-dq, q2+dq)
                 blocks.append(SubTensor(reduced=phase*np.ones([1,1,1,1])*h, q_labels=(q1, q2, q1-dq, q2+dq)))
     T = SparseFermionTensor(blocks=blocks, pattern="++--")
-    return T
+    if FLAT:
+        return T.to_flat()
+    else:
+        return T
 
-hopping = lambda t=1.0: gen_h1(-t)
+hopping = lambda t=1.0, FLAT=USE_FLAT: gen_h1(-t, FLAT)
 
-def onsite_u(u=1):
+def onsite_u(u=1, FLAT=USE_FLAT):
     '''
     Onsite Coulomb Repulsion
     '''
     blocks = [SubTensor(reduced=np.zeros([1,1]), q_labels=(QPN(0), QPN(0))),
               SubTensor(reduced=np.eye(1)*u, q_labels=(QPN(2), QPN(2)))]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    return T
+    if FLAT:
+        return T.to_flat()
+    else:
+        return T
 
-def hubbard(t, u, mu=0, fac=None):
+def hubbard(t, u, mu=0, fac=None, FLAT=USE_FLAT):
     if fac is None: fac=(1,1)
     faca, facb = fac
     blocks = []
@@ -77,7 +85,7 @@ def hubbard(t, u, mu=0, fac=None):
     T = SparseFermionTensor(blocks=blocks, pattern="++--")
     return T
 
-def count_n():
+def count_n(FLAT=USE_FLAT):
     '''
     a_i^{\dagger}a_i
     '''
@@ -86,12 +94,18 @@ def count_n():
               SubTensor(reduced=np.eye(1), q_labels=(QPN(1,-1), QPN(1,-1))),
               SubTensor(reduced=np.eye(1)*2, q_labels=(QPN(2), QPN(2)))]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    return T
+    if FLAT:
+        return T.to_flat()
+    else:
+        return T
 
-def measure_sz():
+def measure_sz(FLAT=USE_FLAT):
     blocks = [SubTensor(reduced=np.zeros([1,1]), q_labels=(QPN(0), QPN(0))),
               SubTensor(reduced=np.eye(1)*.5, q_labels=(QPN(1,1), QPN(1,1))),
               SubTensor(reduced=np.eye(1)*-.5, q_labels=(QPN(1,-1), QPN(1,-1))),
               SubTensor(reduced=np.zeros([1,1]), q_labels=(QPN(2), QPN(2)))]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    return T
+    if FLAT:
+        return T.to_flat()
+    else:
+        return T

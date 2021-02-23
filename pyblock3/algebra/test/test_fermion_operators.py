@@ -51,7 +51,7 @@ norm = np.asarray(norm.blocks[0])
 class KnownValues(unittest.TestCase):
 
     def test_nops(self):
-        nop = ops.count_n()
+        nop = ops.count_n(FLAT=False)
         state1 = np.tensordot(nop, ket, axes=((-1,),(0,)))
         state2 = np.tensordot(nop, ket, axes=((-1,),(1,))).transpose((1,0))
         state = state1 + state2
@@ -60,7 +60,7 @@ class KnownValues(unittest.TestCase):
         self.assertAlmostEqual(n_expec, 3, 8)
 
     def test_sz(self):
-        zop = ops.measure_sz()
+        zop = ops.measure_sz(FLAT=False)
         state1 = np.tensordot(zop, ket, axes=((-1,),(0,)))
         state2 = np.tensordot(zop, ket, axes=((-1,),(1,))).transpose((1,0))
         state = state1+state2
@@ -79,12 +79,48 @@ class KnownValues(unittest.TestCase):
         psi_bra = psi.dagger
         norm1 = np.tensordot(psi_bra, psi, axes=((1,0), (0,1)))
         norm1 = np.asarray(norm1.blocks[0])
-        hop = ops.hopping(t)
+        hop = ops.hopping(t,FLAT=False)
 
         psi2 = np.tensordot(hop, psi, axes=((2,3),(0,1)))
         expec = np.tensordot(psi_bra, psi2, axes=((1,0), (0,1)))
         expec = np.asarray(expec.blocks[0]) / norm1
         self.assertAlmostEqual(expec, t, 8)
+
+    def test_sparse_exponential(self):
+        tau = 0.01
+        t = 1.5
+        hop = ops.hopping(t,FLAT=False)
+        blocks =[]
+        blocks.append(SubTensor(reduced=np.eye(1), q_labels=(QPN(1,1),QPN(0,0))))
+        blocks.append(SubTensor(reduced=np.eye(1), q_labels=(QPN(0,0),QPN(1,1))))
+        psi = SparseFermionTensor(blocks=blocks, pattern="++")
+        psi_bra = psi.dagger
+        norm1 = np.tensordot(psi_bra, psi, axes=((1,0), (0,1)))
+        norm1 = np.asarray(norm1.blocks[0])
+        op = hop.to_exponential(-tau)
+
+        psi2 = np.tensordot(op, psi, axes=((2,3),(0,1)))
+        expec = np.tensordot(psi_bra, psi2, axes=((1,0), (0,1)))
+        expec = np.asarray(expec.blocks[0]) / norm1
+        self.assertAlmostEqual(expec, np.e**(tau*t), 8)
+
+    def test_flat_exponential(self):
+        tau = 0.01
+        t = 1.5
+        hop = ops.hopping(t)#.to_flat()
+        blocks =[]
+        blocks.append(SubTensor(reduced=np.eye(1), q_labels=(QPN(1,1),QPN(0,0))))
+        blocks.append(SubTensor(reduced=-np.eye(1), q_labels=(QPN(0,0),QPN(1,1))))
+        psi = SparseFermionTensor(blocks=blocks, pattern="++").to_flat()
+        psi_bra = psi.dagger
+        norm1 = np.tensordot(psi_bra, psi, axes=((1,0), (0,1)))
+        norm1 = norm1.data[0]
+        op = hop.to_exponential(-tau)
+
+        psi2 = np.tensordot(op, psi, axes=((2,3),(0,1)))
+        expec = np.tensordot(psi_bra, psi2, axes=((1,0), (0,1)))
+        expec = expec.data[0] / norm1
+        self.assertAlmostEqual(expec, np.e**(-tau*t), 8)
 
 if __name__ == "__main__":
     print("Full Tests for Fermionic Operators")

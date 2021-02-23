@@ -400,8 +400,42 @@ def _pack_align_flat_tensor(T, s_label):
         data[ist:ied,jst:jed] = np.asarray(T.data[blkst:blked]).reshape(ied-ist, jed-jst) * sign
     return data, row_map
 
+def _pack_align_sparse_tensor(T, s_label):
+    ax = T.ndim//2
+    row_map = {}
+    left_offset = 0
+    for iblk in T.blocks:
+        qpn_left = iblk.q_labels[:ax]
+        qpn_right = iblk.q_labels[ax:]
+        left_netq = _compute_qpn(qpn_left, T.pattern[:ax])
+        right_netq = -_compute_qpn(qpn_right, T.pattern[ax:])
+        if left_netq != s_label or right_netq != s_label:
+            continue
+
+        qpn_left += (left_netq, )
+        len_left = int(np.prod(iblk.shape[:ax]))
+        if qpn_left not in row_map.keys():
+            row_map[qpn_left] = ((left_offset, left_offset+len_left), iblk.shape[:ax])
+            left_offset += len_left
+
+    data = np.zeros((left_offset, left_offset), dtype=T.dtype)
+    for iblk in T.blocks:
+        qpn_left = iblk.q_labels[:ax]
+        qpn_right = iblk.q_labels[ax:]
+        left_netq = _compute_qpn(qpn_left, T.pattern[:ax])
+        right_netq = - _compute_qpn(qpn_right, T.pattern[ax:])
+        if left_netq != s_label or right_netq != s_label:
+            continue
+        sign = _compute_swap_phase(*qpn_left, *qpn_right)
+        qpn_left += (left_netq, )
+        qpn_right+= (right_netq, )
+        ist, ied = row_map[qpn_left][0]
+        jst, jed = row_map[qpn_right][0]
+        data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jed-jst) * sign
+    return data, row_map
+
 def get_flat_exponential(T, x):
-    '''Return the expontial of this tensor
+    '''Return the exponential of a FlatFermionTensor
     '''
     ndim = T.ndim
     if T.dq != QPN(0):
@@ -435,4 +469,32 @@ def get_flat_exponential(T, x):
     shapes = np.asarray(shape_lst, dtype=np.uint32)
     data = np.concatenate(exp_data)
     Texp = T.__class__(qlst, shapes, data, pattern=T.pattern)
+    return Texp
+
+def get_sparse_exponential(T, x):
+    '''Return the exponential of a SparseFermionTensor
+    '''
+    ndim = T.ndim
+    if T.dq != QPN(0):
+        raise ValueError("expontial only allowed on Tensors with symmetry QPN(0)")
+    if np.mod(ndim, 2) !=0:
+        raise ValueError("dimension of the tensor must be even (%i)"%ndim)
+
+    ax = ndim //2
+    qpn_info, _, _, s_labels = _svd_preprocess(T, list(range(ax)), None, None, None)
+    blocks = []
+    for slab in s_labels:
+        data, row_map = _pack_align_sparse_tensor(T, slab)
+        el, ev = np.linalg.eig(data)
+        s = np.diag(np.exp(el*x))
+        tmp = reduce(np.dot, (ev, s, ev.conj().T))
+        for q_left, (isec, ishape) in row_map.items():
+            ist, ied = isec
+            for q_right, (jsec, jshape) in row_map.items():
+                jst, jed = jsec
+                q_label = q_left[:-1] + q_right[:-1]
+                sign = _compute_swap_phase(*q_label)
+                chunk = tmp[ist:ied, jst:jed].ravel() * sign
+                blocks.append(SubTensor(reduced=chunk.reshape(list(ishape)+list(jshape)), q_labels=q_label))
+    Texp = T.__class__(blocks=blocks, pattern=T.pattern)
     return Texp
