@@ -1,7 +1,32 @@
 import numpy as np
+from functools import reduce
 from pyblock3.algebra.symmetry import QPN
 from pyblock3.algebra.core import SubTensor
 
+
+def _compute_swap_phase(*qpns):
+    cre_map = {QPN(0):"", QPN(1,1):"a", QPN(1,-1):"b", QPN(2,0):"ab"}
+    ann_map = {QPN(0):"", QPN(1,1):"a", QPN(1,-1):"b", QPN(2,0):"ba"}
+    nops = len(qpns) //2
+    cre_string = [cre_map[ikey] for ikey in qpns[:nops]]
+    ann_string = [ann_map[ikey] for ikey in qpns[nops:]]
+    full_string = cre_string + ann_string
+    phase = 1
+    for ix, ia in enumerate(cre_string):
+        ib = full_string[ix+nops]
+        shared = set(ia) & set(ib)
+        const_off = sum(len(istring) for istring in full_string[ix+1:ix+nops])
+        offset = 0
+        for char_a in list(shared):
+            inda = ia.index(char_a)
+            indb = ib.index(char_a)
+            ib = ib.replace(char_a,"")
+            ia = ia.replace(char_a,"")
+            offset += indb + len(ia)-inda + const_off
+        phase *= (-1) ** offset
+        full_string[ix] = ia
+        full_string[nops+ix] = ib
+    return phase
 
 def _compute_qpn(q_labels, pattern):
     dq = QPN()
@@ -338,3 +363,76 @@ def _run_flat_fermion_svd(tsr, left_idx, right_idx=None, qpn_info=None, **opts):
     u = tsr.__class__(uq, ushapes, udata, pattern=newtsr.pattern[:split_ax]+"-")
     v = tsr.__class__(vq, vshapes, vdata, pattern="+"+newtsr.pattern[split_ax:])
     return u, s ,v
+
+def _pack_align_flat_tensor(T, s_label):
+    nblks, ndim = T.q_labels.shape
+    ax = T.ndim//2
+    row_map = {}
+    left_offset = 0
+    for iblk in range(nblks):
+        qpn_left = tuple(QPN.from_flat(iq) for iq in T.q_labels[iblk][:ax])
+        qpn_right = tuple(QPN.from_flat(iq) for iq in T.q_labels[iblk][ax:])
+        left_netq = _compute_qpn(qpn_left, T.pattern[:ax])
+        right_netq = -_compute_qpn(qpn_right, T.pattern[ax:])
+        if left_netq != s_label or right_netq != s_label:
+            continue
+
+        qpn_left += (left_netq, )
+        len_left = int(np.prod(T.shapes[iblk][:ax]))
+        if qpn_left not in row_map.keys():
+            row_map[qpn_left] = ((left_offset, left_offset+len_left), T.shapes[iblk][:ax])
+            left_offset += len_left
+
+    data = np.zeros((left_offset, left_offset), dtype=T.dtype)
+    for iblk in range(nblks):
+        qpn_left = tuple(QPN.from_flat(iq) for iq in T.q_labels[iblk][:ax])
+        qpn_right = tuple(QPN.from_flat(iq) for iq in T.q_labels[iblk][ax:])
+        left_netq = _compute_qpn(qpn_left, T.pattern[:ax])
+        right_netq = - _compute_qpn(qpn_right, T.pattern[ax:])
+        if left_netq != s_label or right_netq != s_label:
+            continue
+        sign = _compute_swap_phase(*qpn_left, *qpn_right)
+        qpn_left += (left_netq, )
+        qpn_right+= (right_netq, )
+        ist, ied = row_map[qpn_left][0]
+        jst, jed = row_map[qpn_right][0]
+        blkst, blked = T.idxs[iblk], T.idxs[iblk+1]
+        data[ist:ied,jst:jed] = np.asarray(T.data[blkst:blked]).reshape(ied-ist, jed-jst) * sign
+    return data, row_map
+
+def get_flat_exponential(T, x):
+    '''Return the expontial of this tensor
+    '''
+    ndim = T.ndim
+    if T.dq != QPN(0):
+        raise ValueError("expontial only allowed on Tensors with symmetry QPN(0)")
+    if np.mod(ndim, 2) !=0:
+        raise ValueError("dimension of the tensor must be even (%i)"%ndim)
+
+    ax = ndim //2
+    qpn_info, _, _, s_labels = _svd_preprocess(T, list(range(ax)), None, None, None)
+
+    exp_data = []
+    shape_lst = []
+    qlst = []
+    for slab in s_labels:
+        data, row_map = _pack_align_flat_tensor(T, slab)
+        el, ev = np.linalg.eig(data)
+        s = np.diag(np.exp(el*x))
+        tmp = reduce(np.dot, (ev, s, ev.conj().T))
+        for q_left, (isec, ishape) in row_map.items():
+            ist, ied = isec
+            for q_right, (jsec, jshape) in row_map.items():
+                jst, jed = jsec
+                q_label = q_left[:-1] + q_right[:-1]
+                qlst.append([QPN.to_flat(iq) for iq in q_label])
+                sign = _compute_swap_phase(*q_label)
+                chunk = tmp[ist:ied, jst:jed].ravel() * sign
+                shape_lst.append(list(ishape)+list(jshape))
+                exp_data.append(chunk)
+
+    qlst = np.asarray(qlst, dtype=np.uint32)
+    shapes = np.asarray(shape_lst, dtype=np.uint32)
+    data = np.concatenate(exp_data)
+    Texp = T.__class__(qlst, shapes, data, pattern=T.pattern)
+    return Texp
