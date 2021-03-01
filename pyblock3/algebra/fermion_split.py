@@ -292,6 +292,9 @@ def _svd_preprocess(tsr, left_idx, right_idx, qpn_info, absorb):
 
     if right_idx is None:
         right_idx = [idim for idim in range(tsr.ndim) if idim not in left_idx]
+    elif left_idx is None:
+        left_idx = [idim for idim in range(tsr.ndim) if idim not in right_idx]
+
     neworder = tuple(left_idx) + tuple(right_idx)
     split_ax = len(left_idx)
     newtsr = tsr.transpose(neworder)
@@ -303,6 +306,18 @@ def _svd_preprocess(tsr, left_idx, right_idx, qpn_info, absorb):
 
 def _run_sparse_fermion_svd(tsr, left_idx, right_idx=None, qpn_info=None, **opts):
     absorb = opts.pop("absorb", 0)
+    if left_idx is not None and len(left_idx) == tsr.ndim:
+        new_tsr = tsr.transpose(left_idx)
+        u, v, s = new_tsr.expand_dim(axis=new_tsr.ndim, return_full=True)
+        if absorb is not None:  s = None
+        return u, s, v
+
+    elif right_idx is not None and len(right_idx) == tsr.ndim:
+        new_tsr = tsr.transpose(right_idx)
+        v, u, s = new_tsr.expand_dim(axis=0, return_full=True)
+        if absorb is not None:  s = None
+        return u, s, v
+
     qpn_info, newtsr, split_ax, s_labels = _svd_preprocess(tsr, left_idx, right_idx, qpn_info, absorb)
     ublk, sblk, vblk = [],[],[]
     for slab in s_labels:
@@ -326,6 +341,18 @@ def _run_sparse_fermion_svd(tsr, left_idx, right_idx=None, qpn_info=None, **opts
 
 def _run_flat_fermion_svd(tsr, left_idx, right_idx=None, qpn_info=None, **opts):
     absorb = opts.pop("absorb", 0)
+    if left_idx is not None and len(left_idx) == tsr.ndim:
+        new_tsr = tsr.transpose(left_idx)
+        u, v, s = new_tsr.expand_dim(axis=new_tsr.ndim, return_full=True)
+        if absorb is not None:  s = None
+        return u, s, v
+
+    elif right_idx is not None and len(right_idx) == tsr.ndim:
+        new_tsr = tsr.transpose(right_idx)
+        v, u, s = new_tsr.expand_dim(axis=0, return_full=True)
+        if absorb is not None:  s = None
+        return u, s, v
+
     qpn_info, newtsr, split_ax, s_labels = _svd_preprocess(tsr, left_idx, right_idx, qpn_info, absorb)
     udata, sdata, vdata = [],[],[]
     uq, sq, vq = [],[],[]

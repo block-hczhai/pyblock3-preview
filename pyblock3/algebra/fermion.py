@@ -24,7 +24,7 @@ Author: Yang Gao
 import numpy as np
 from pyblock3.algebra.core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
 from pyblock3.algebra.flat import FlatSparseTensor, flat_sparse_skeleton, _flat_sparse_tensor_numpy_func_impls
-from pyblock3.algebra.symmetry import QPN
+from pyblock3.algebra.symmetry import QPN, BondInfo
 import numbers
 from pyblock3.algebra.fermion_split import (_run_flat_fermion_svd,
                 _run_sparse_fermion_svd, get_flat_exponential, get_sparse_exponential)
@@ -71,7 +71,6 @@ def _flip_pattern(pattern):
     return "".join([flip_dict[ip] for ip in pattern])
 
 def _contract_patterns(patterna, patternb, idxa, idxb):
-
     conc_a = "".join([patterna[ix] for ix in idxa])
     out_a = "".join([ip for ix, ip in enumerate(patterna) if ix not in idxa])
     conc_b = "".join([patternb[ix] for ix in idxb])
@@ -182,6 +181,25 @@ class SparseFermionTensor(SparseTensor):
 
     def to_flat(self):
         return FlatFermionTensor.from_sparse(self)
+
+    def expand_dim(self, axis=0, return_full=False):
+        blocks = []
+        for iblk in self.blocks:
+            shape = iblk.shape
+            new_shape = shape[:axis] + (1,) + shape[axis:]
+            dat = np.asarray(iblk).reshape(new_shape)
+            qpn = iblk.q_labels[:axis] + (QPN(0),) + iblk.q_labels[axis:]
+            blocks.append(SubTensor(reduced=dat, q_labels=qpn))
+        pattern = self.pattern[:axis] + "+" + self.pattern[axis:]
+        new_T = self.__class__(blocks=blocks, pattern=pattern)
+
+        if return_full:
+            comp = self.__class__(
+                    blocks=[SubTensor(reduced=np.ones(1), q_labels=(QPN(0),))], pattern="+")
+            identity = self.__class__.eye(BondInfo({QPN(0):1}))
+            return new_T, comp, identity
+        else:
+            return new_T
 
     @staticmethod
     def _skeleton(bond_infos, pattern=None, dq=None):
@@ -494,6 +512,10 @@ class FlatFermionTensor(FlatSparseTensor):
         return self.parity_per_block[0]
 
     @property
+    def shape(self):
+        return tuple(np.amax(self.shapes, axis=0))
+
+    @property
     def parity_per_block(self):
         parity_list = []
         for q_label in self.q_labels:
@@ -531,6 +553,21 @@ class FlatFermionTensor(FlatSparseTensor):
             blocks[i] = SubTensor(
                 self.data[self.idxs[i]:self.idxs[i + 1]].reshape(self.shapes[i]), q_labels=qs)
         return SparseFermionTensor(blocks=blocks, pattern=self.pattern)
+
+    def expand_dim(self, axis=0, return_full=False):
+        const = QPN(0).to_flat()
+        q_labels = self.q_labels
+        qpn = np.insert(q_labels, axis, const, axis=1)
+        shapes = np.insert(self.shapes, axis, 1, axis=1)
+        pattern = self.pattern[:axis] + "+" + self.pattern[axis:]
+        new_T = self.__class__(qpn, shapes, self.data, pattern=pattern)
+        if return_full:
+            bond = BondInfo({QPN(0):1})
+            comp = SparseFermionTensor.ones((bond,), pattern="+").to_flat()
+            identity = SparseFermionTensor.eye(bond).to_flat()
+            return new_T, comp, identity
+        else:
+            return new_T
 
     @staticmethod
     def from_sparse(spt):
