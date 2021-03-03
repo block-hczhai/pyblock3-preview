@@ -92,6 +92,80 @@ class QPN(SZ):
     def from_flat(x):
         return QPN((x // 131072) % 16384 - 8192, (x // 8) % 16384 - 8192)
 
+    @staticmethod
+    def compute(pattern, qpnlst, offset=None, neg=False):
+        is_qpn = isinstance(qpnlst[0], QPN)
+        if is_qpn:
+            assert(len(pattern)==len(qpnlst))
+            out = QPN()
+            if offset is not None:
+                ix, dq = offset
+                pattern += "ix"
+                qpnlst = list(qpnlst) + [dq, ]
+            for iq, ix in zip(qpnlst, pattern):
+                if ix=="+":
+                    out += iq
+                else:
+                    out -= iq
+            if neg:
+                out = -out
+        elif isinstance(qpnlst, np.ndarray):
+            nsec = len(pattern)
+            nplus = pattern.count("+")
+            nmin = pattern.count("-")
+            newdat = qpnlst.copy().astype(int)
+            narr = (newdat // 131072) % 16384 - 8192
+            zarr = (newdat // 8) % 16384 - 8192
+            if offset is not None:
+                ix, dq = offset
+                if not isinstance(dq, QPN):
+                    dq = QPN(dq)
+                if ix=="-":
+                    dq = -dq
+                offn = dq.n
+                offz = dq.sz
+            else:
+                offn = offz = 0
+            for ix, istr in enumerate(pattern):
+                if istr=="-":
+                    narr[:,ix] *= -1
+                    zarr[:,ix] *= -1
+            if neg:
+                narr = -np.sum(narr, axis=1) - offn
+                zarr = -np.sum(zarr, axis=1) - offz
+            else:
+                narr = np.sum(narr, axis=1) + offn
+                zarr = np.sum(zarr, axis=1) + offz
+
+            out = ((narr + 8192) * 16384 + (zarr + 8192)) * 8 + narr % 2
+        else:
+            newdat = np.asarray(pqnlst)
+            narr = (newdat // 131072) % 16384 - 8192
+            zarr = (newdat // 8) % 16384 - 8192
+            if offset is not None:
+                ix, dq = offset
+                if not isinstance(dq, QPN):
+                    dq = QPN(dq)
+                if ix=="-":
+                    dq = -dq
+                offn = dq.n
+                offz = dq.sz
+            else:
+                offn = offz = 0
+            for ix, istr in enumerate(pattern):
+                if istr=="-":
+                    narr[ix] *= -1
+                    zarr[ix] *= -1
+            if neg:
+                narr = -np.sum(narr) - offn
+                zarr = -np.sum(zarr) - offz
+            else:
+                narr = np.sum(narr) + offn
+                zarr = np.sum(zarr) + offz
+            out = ((narr + 8192) * 16384 + (zarr + 8192)) * 8 + narr % 2
+        return out
+
+
     def __repr__(self):
         return "< N=%d SZ=%d >" % (self.n, self.twos)
 
@@ -209,7 +283,7 @@ class BondFusingInfo(BondInfo):
             qs = [sorted(q.items(), key=lambda x: trans(x[0])) for q in infos]
         if pattern is None:
             pattern = "+" * len(qs)
-        it = np.zeros(tuple(len(q) for q in qs), dtype=int)
+        it = np.szeros(tuple(len(q) for q in qs), dtype=int)
         nit = np.nditer(it, flags=['multi_index'])
         for _ in nit:
             x = nit.multi_index

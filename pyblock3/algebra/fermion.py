@@ -467,6 +467,9 @@ class FlatFermionTensor(FlatSparseTensor):
             assert shapes.shape == (self.n_blocks, self.ndim)
             assert q_labels.shape == (self.n_blocks, self.ndim)
 
+        parity_per_block = QPN.compute(self.pattern, self.q_labels)
+        self._parity_per_block = ((parity_per_block // 131072) % 16384 - 8192) % 2
+
     @property
     def dq(self):
         dq = QPN()
@@ -517,11 +520,7 @@ class FlatFermionTensor(FlatSparseTensor):
 
     @property
     def parity_per_block(self):
-        parity_list = []
-        for q_label in self.q_labels:
-            parity = np.add.reduce([QPN.from_flat(qlab) for qlab in q_label]).parity
-            parity_list.append(parity)
-        return parity_list
+        return self._parity_per_block
 
     def conj(self):
         return self.__class__(self.q_labels, self.shapes, self.data.conj(), pattern=self.pattern, idxs=self.idxs)
