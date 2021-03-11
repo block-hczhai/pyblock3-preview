@@ -555,6 +555,16 @@ def get_flat_exponential(T, x):
     Texp = T.__class__(q_labels, shapes, datas, pattern=T.pattern)
     return Texp
 
+def eye(bond_info, FLAT=True):
+    """Create tensor from BondInfo with Identity matrix."""
+    blocks = []
+    for sh, qs in SparseFermionTensor._skeleton((bond_info, bond_info)):
+        blocks.append(SubTensor(reduced=np.eye(sh[0]), q_labels=qs))
+    T = SparseFermionTensor(blocks=blocks, pattern="+-")
+    if Flat:
+        T = T.to_flat()
+    return T
+
 class SparseFermionTensor(SparseTensor):
 
     def __init__(self, blocks=None, pattern=None):

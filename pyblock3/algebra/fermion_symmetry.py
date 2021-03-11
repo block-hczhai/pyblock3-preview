@@ -517,6 +517,7 @@ class Z4(Z2):
         cre_map = cls.operator_cre_map()
         ann_map = cls.operator_ann_map()
         dqlst = cls.operator_dqlst()
+        n_map = {Z4(0):0, Z4(1):1, Z4(2):2, Z4(3):1}
         for q1, q2 in product(qpn_lst, repeat=2):
             for dq1, dq2 in product(dqlst, repeat=2):
                 if q1 + dq1 in qpn_lst and q2+dq2 in qpn_lst:
@@ -527,8 +528,8 @@ class Z4(Z2):
                     phase = _compute_swap_phase(cre_map, ann_map, q1, q2, q1+dq1, q2+dq2)
                     blocks.append(SubTensor(reduced=phase*np.ones([1,1,1,1])*-t, q_labels=(q1, q2, q1+dq1, q2+dq2)))
             q_labels = (q1, q2, q1, q2)
-            val = (q1==Z4(2)) * faca * u + q1.n * faca * mu +\
-                  (q2==Z4(2)) * facb * u + q2.n * facb * mu
+            val = (q1==Z4(2)) * faca * u + n_map[q1] * faca * mu +\
+                  (q2==Z4(2)) * facb * u + n_map[q2] * facb * mu
             phase = _compute_swap_phase(cre_map, ann_map, q1, q2, q1, q2)
             blocks.append(SubTensor(reduced=phase*np.ones([1,1,1,1])*val, q_labels=q_labels))
         return _blocks_to_tensor(blocks, "++--", FLAT)
