@@ -457,13 +457,13 @@ def flat_sparse_fuse(aqs, ashs, adata, aidxs, idxs, info, pattern):
 
 
 def flat_sparse_trans_fusing_info(info):
-    from block3 import MapFusing, MapVUIntPUV, VectorUInt
-    minfo = MapFusing()
+    import block3.sz as block3
+    minfo = block3.MapFusing()
     for k, v in info.items():
-        mp = MapVUIntPUV()
+        mp = block3.MapVUIntPUV()
         for kk, (vv, tvv) in info.finfo[k].items():
-            vk = VectorUInt([x.to_flat() for x in kk])
-            mp[vk] = (vv, VectorUInt(tvv))
+            vk = block3.VectorUInt([x.to_flat() for x in kk])
+            mp[vk] = (vv, block3.VectorUInt(tvv))
         minfo[k.to_flat()] = (v, mp)
     return minfo
 

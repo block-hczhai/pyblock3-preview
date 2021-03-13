@@ -104,7 +104,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
     assert(n_terms == n_values);
     vector<SZ> left_q = {SZ(0, 0, 0)};
     unordered_map<uint32_t, uint32_t> info_l, info_r;
-    info_l[from_sz(left_q[0])] = 1;
+    info_l[SZ::from_q(left_q[0])] = 1;
     // terms
     vector<int32_t> term_sorted(n_terms * term_len);
     // length of each term; starting index of each term
@@ -217,10 +217,10 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         info_r.clear();
         // site basis
         unordered_map<uint32_t, uint32_t> basis;
-        basis[from_sz(SZ(0, 0, 0))] = 1;
-        basis[from_sz(SZ(1, 1, porb[ii]))] = 1;
-        basis[from_sz(SZ(1, -1, porb[ii]))] = 1;
-        basis[from_sz(SZ(2, 0, 0))] = 1;
+        basis[SZ::from_q(SZ(0, 0, 0))] = 1;
+        basis[SZ::from_q(SZ(1, 1, porb[ii]))] = 1;
+        basis[SZ::from_q(SZ(1, -1, porb[ii]))] = 1;
+        basis[SZ::from_q(SZ(2, 0, 0))] = 1;
         long long int pholder_term = -1;
         // iter over all mpos
         for (int ip = 0; ip < (int)cur_values.size(); ip++) {
@@ -426,7 +426,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                     s_kept = szm;
             }
             if (s_kept != 0)
-                info_r[from_sz(mq.first)] = s_kept;
+                info_r[SZ::from_q(mq.first)] = s_kept;
             s_kept_total += s_kept;
             nr_total += szr;
         }
@@ -457,7 +457,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         break;
                 svds[iq][1].resize(s_kept);
                 if (s_kept != 0)
-                    info_r[from_sz(mq.first)] = s_kept;
+                    info_r[SZ::from_q(mq.first)] = s_kept;
                 s_kept_total += s_kept;
             }
         }
@@ -471,7 +471,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         vector<unordered_map<uint32_t, uint32_t>> infos = {info_l, info_r,
                                                            basis, basis};
         auto skl =
-            flat_sparse_tensor_skeleton(infos, "+-+-", from_sz(SZ(0, 0, 0)));
+            flat_sparse_tensor_skeleton<SZ>(infos, "+-+-", SZ::from_q(SZ(0, 0, 0)));
         // separate odd and even
         int n_odd = 0, n_total = get<0>(skl).shape()[0];
         ssize_t size_odd = 0;
@@ -482,8 +482,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         const ssize_t sklqi = get<0>(skl).strides()[0] / sizeof(uint32_t),
                       sklqj = get<0>(skl).strides()[1] / sizeof(uint32_t);
         for (int i = 0; i < n_total; i++)
-            if (to_sz(psklqs[i * sklqi + 2 * sklqj]).is_fermion() !=
-                to_sz(psklqs[i * sklqi + 3 * sklqj]).is_fermion())
+            if (SZ::to_q(psklqs[i * sklqi + 2 * sklqj]).is_fermion() !=
+                SZ::to_q(psklqs[i * sklqi + 3 * sklqj]).is_fermion())
                 n_odd++, skf[i] = true, size_odd += psklis[i + 1] - psklis[i];
         int n_even = n_total - n_odd;
 
@@ -542,11 +542,11 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         unordered_map<uint32_t, op_skeleton> sk_map;
         vector<unordered_map<uint32_t, uint32_t>> op_infos = {basis, basis};
         vector<uint32_t> sk_qs = {
-            from_sz(SZ(0, 0, 0)), from_sz(SZ(1, 1, porb[ii])),
-            from_sz(SZ(1, -1, porb[ii])), from_sz(SZ(-1, -1, porb[ii])),
-            from_sz(SZ(-1, 1, porb[ii]))};
+            SZ::from_q(SZ(0, 0, 0)), SZ::from_q(SZ(1, 1, porb[ii])),
+            SZ::from_q(SZ(1, -1, porb[ii])), SZ::from_q(SZ(-1, -1, porb[ii])),
+            SZ::from_q(SZ(-1, 1, porb[ii]))};
         for (auto &k : sk_qs)
-            sk_map[k] = flat_sparse_tensor_skeleton(op_infos, "+-", k);
+            sk_map[k] = flat_sparse_tensor_skeleton<SZ>(op_infos, "+-", k);
         // data for on-site operators
         vector<ssize_t> op_sh(1, 2), op_ish(1, 4);
         unordered_map<uint32_t, vector<double>> dt_map;
@@ -605,14 +605,14 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                     } else {
                         SZ qi =
                             from_op(term_sorted[itt + ik], porb, m_site, m_op);
-                        vector<double> p = dt_map.at(from_sz(qi));
+                        vector<double> p = dt_map.at(SZ::from_q(qi));
                         for (int i = ik + 1; i < k; i++) {
                             SZ qx = from_op(term_sorted[itt + i], porb, m_site,
                                             m_op);
-                            uint32_t fqk = from_sz(qi + qx), fqx = from_sz(qx),
-                                     fqi = from_sz(qi);
+                            uint32_t fqk = SZ::from_q(qi + qx), fqx = SZ::from_q(qx),
+                                     fqi = SZ::from_q(qi);
                             if (sk_map.count(fqk) == 0)
-                                sk_map[fqk] = flat_sparse_tensor_skeleton(
+                                sk_map[fqk] = flat_sparse_tensor_skeleton<SZ>(
                                     op_infos, "+-", fqk);
                             auto &skt = sk_map.at(fqk);
                             vector<double> pp(
@@ -624,7 +624,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                             qi = qi + qx;
                         }
                         reprs[il] = p;
-                        repr_q[il] = from_sz(qi);
+                        repr_q[il] = SZ::from_q(qi);
                     }
                 }
             if (max_bond_dim == -4) { // bipartite
@@ -652,7 +652,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         irx = rix[ir], factor = lrv.second;
                     int ip = lip[il];
                     int ipp = ip_idx[ip].first, ipr = ip_idx[ip].second;
-                    uint64_t ql = from_sz(left_q[ip]), qr = from_sz(q);
+                    uint64_t ql = SZ::from_q(left_q[ip]), qr = SZ::from_q(q);
                     int npr = (int)info_l.at(ql);
                     double *pr =
                         left_q[ip].is_fermion() == q.is_fermion() ? pe : po;
@@ -679,7 +679,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         for (auto &vl : vls.second) {
                             int il = vl.second, ip = vl.first.first;
                             int ipp = ip_idx[ip].first, ipr = ip_idx[ip].second;
-                            uint64_t ql = from_sz(left_q[ip]), qr = from_sz(q);
+                            uint64_t ql = SZ::from_q(left_q[ip]), qr = SZ::from_q(q);
                             int npr = (int)info_l.at(ql);
                             double *pr =
                                 left_q[ip].is_fermion() == q.is_fermion() ? pe
@@ -711,8 +711,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         auto &todata = get<2>(rodd), &tedata = get<2>(reven);
         todata = py::array_t<double>(vector<ssize_t>{size_odd});
         tedata = py::array_t<double>(vector<ssize_t>{size_even});
-        flat_sparse_tensor_transpose(oshs, odata, oi, perm, todata);
-        flat_sparse_tensor_transpose(eshs, edata, ei, perm, tedata);
+        flat_sparse_tensor_transpose<SZ>(oshs, odata, oi, perm, todata);
+        flat_sparse_tensor_transpose<SZ>(eshs, edata, ei, perm, tedata);
         for (int i = 0, iodd = 0, ieven = 0; i < n_total; i++)
             if (skf[i]) {
                 for (int j = 0; j < 4; j++) {

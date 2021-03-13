@@ -21,7 +21,7 @@ from pyblock3.aux.hamil import MPSTools, MPOTools, HamilTools
 from pyblock3.aux.io import SymbolicMPOTools
 import pyblock3.algebra.funcs as pbalg
 import os
-import block3
+import block3.sz as block3
 
 scratch = './my_tmp'
 empty_scratch = True

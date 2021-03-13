@@ -20,9 +20,10 @@
 
 #pragma once
 
-#include "sz.hpp"
 #include <algorithm>
 #include <unordered_map>
+#include <vector>
+#include "sz.hpp"
 
 using namespace std;
 
@@ -31,15 +32,19 @@ typedef unordered_map<
                                            pair<uint32_t, vector<uint32_t>>>>>
     map_fusing;
 
-void bond_info_trans_to_sz(
+template<typename Q>
+void bond_info_trans(
     const vector<unordered_map<uint32_t, uint32_t>> &infos,
-    const string &pattern, vector<vector<pair<SZ, uint32_t>>> &infox,
+    const string &pattern, vector<vector<pair<Q, uint32_t>>> &infox,
     bool sorted = false);
 
+
+template<typename Q>
 map_fusing
 bond_info_fusing_product(const vector<unordered_map<uint32_t, uint32_t>> &infos,
                          const string &pattern);
 
+template<typename Q>
 pair<vector<unordered_map<uint32_t, uint32_t>>,
      vector<unordered_map<uint32_t, uint32_t>>>
 bond_info_set_bond_dimension_occ(
@@ -48,7 +53,79 @@ bond_info_set_bond_dimension_occ(
     vector<unordered_map<uint32_t, uint32_t>> &right_dims, uint32_t vacuum,
     uint32_t target, int m, const vector<double> &occ, double bias);
 
+template<>
+pair<vector<unordered_map<uint32_t, uint32_t>>,
+     vector<unordered_map<uint32_t, uint32_t>>>
+bond_info_set_bond_dimension_occ<SZ>(
+    const vector<unordered_map<uint32_t, uint32_t>> &basis,
+    vector<unordered_map<uint32_t, uint32_t>> &left_dims,
+    vector<unordered_map<uint32_t, uint32_t>> &right_dims, uint32_t vacuum,
+    uint32_t target, int m, const vector<double> &occ, double bias);
+
+template<typename Q>
 unordered_map<uint32_t, uint32_t>
 tensor_product_ref(const unordered_map<uint32_t, uint32_t> &ma,
                    const unordered_map<uint32_t, uint32_t> &mb,
                    const unordered_map<uint32_t, uint32_t> &mcref);
+
+#define TMPL_EXTERN extern
+#define TMPL_NAME bond_info
+#include "symmetry_tmpl.hpp"
+#undef TMPL_NAME
+#undef TMPL_EXTERN
+
+
+inline size_t q_labels_hash(const uint32_t *qs, int nctr, const int *idxs,
+                            const int inc) noexcept {
+    size_t h = 0;
+    for (int i = 0; i < nctr; i++)
+        h ^= (size_t)qs[idxs[i] * inc] + 0x9E3779B9 + (h << 6) + (h >> 2);
+    return h;
+}
+
+inline size_t q_labels_hash(const uint32_t *qs, int nctr,
+                            const int inc) noexcept {
+    size_t h = 0;
+    for (int i = 0; i < nctr; i++)
+        h ^= (size_t)qs[i * inc] + 0x9E3779B9 + (h << 6) + (h >> 2);
+    return h;
+}
+
+namespace std {
+
+template <> struct hash<vector<uint32_t>> {
+    size_t operator()(const vector<uint32_t> &s) const noexcept {
+        return q_labels_hash(s.data(), s.size(), 1);
+    }
+};
+
+} // namespace std
+
+template <typename Q>
+inline bool less_psz(const pair<Q, uint32_t> &x,
+                     const pair<Q, uint32_t> &y) noexcept {
+    return x.first < y.first;
+}
+
+template <typename Q>
+inline bool less_vsz(const vector<Q> &x, const vector<Q> &y) noexcept {
+    for (size_t i = 0; i < x.size(); i++)
+        if (x[i] != y[i])
+            return x[i] < y[i];
+    return false;
+}
+
+template <typename Q, typename T>
+inline bool less_pvsz(const pair<vector<Q>, T> &x,
+                      const pair<vector<Q>, T> &y) noexcept {
+    return less_vsz(x.first, y.first);
+}
+
+inline bool is_shape_one(const uint32_t *shs, int n, int nfree, const int inci,
+                         const int incj) noexcept {
+    for (int j = 0; j < nfree * incj; j += incj)
+        for (int i = 0; i < n * inci; i += inci)
+            if (shs[i + j] != 1)
+                return false;
+    return true;
+}

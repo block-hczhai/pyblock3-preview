@@ -39,7 +39,7 @@ ENABLE_FAST_IMPLS = True
 
 if ENABLE_FAST_IMPLS:
     try:
-        import block3.flat_sparse_tensor
+        import block3.sz as block3
         flat_sparse_tensordot = block3.flat_sparse_tensor.tensordot
         flat_sparse_add = block3.flat_sparse_tensor.add
         flat_sparse_kron_add = block3.flat_sparse_tensor.kron_add

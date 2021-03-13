@@ -29,13 +29,6 @@ from itertools import accumulate, groupby
 
 from .symmetry import BondInfo, BondFusingInfo
 
-ENABLE_FAST_SZ = False
-
-if ENABLE_FAST_SZ:
-    import block3
-    from . import symmetry
-    symmetry.SZ = block3.SZ
-
 
 def method_alias(name):
     """Make method callable from algebra.funcs."""

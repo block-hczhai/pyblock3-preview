@@ -70,14 +70,14 @@ class Hamiltonian:
         if flat:
             self.vacuum = self.vacuum.to_flat()
             self.target = self.target.to_flat()
-            from block3 import MapUIntUInt, VectorMapUIntUInt
+            import block3.sz as block3
             from .algebra.flat import FlatFermionTensor
             for i, b in enumerate(self.basis):
-                dt = MapUIntUInt()
+                dt = block3.MapUIntUInt()
                 for k, v in b.items():
                     dt[k.to_flat()] = v
                 self.basis[i] = dt
-            self.basis = VectorMapUIntUInt(self.basis)
+            self.basis = block3.VectorMapUIntUInt(self.basis)
             self.FT = FlatFermionTensor
         else:
             self.FT = FermionTensor
@@ -131,7 +131,7 @@ class Hamiltonian:
 
     def build_qc_mpo(self):
         if self.flat:
-            from block3 import hamiltonian as hm
+            import block3.sz.hamiltonian as hm
             from .algebra.flat import FlatFermionTensor, FlatSparseTensor
             ts = hm.build_qc_mpo(self.fcidump.orb_sym,
                                  self.fcidump.h1e, self.fcidump.g2e)
@@ -148,7 +148,7 @@ class Hamiltonian:
     def build_mpo(self, gen, cutoff=1E-12, max_bond_dim=-1):
 
         if self.flat and isinstance(gen, tuple):
-            from block3 import hamiltonian as hm
+            import block3.sz.hamiltonian as hm
             from .algebra.flat import FlatFermionTensor, FlatSparseTensor
             orb_sym = np.array(self.orb_sym, dtype=int)
             if max_bond_dim == -9:

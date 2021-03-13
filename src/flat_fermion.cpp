@@ -19,7 +19,6 @@
  */
 
 #include "flat_sparse.hpp"
-#include "sz.hpp"
 #include <algorithm>
 #include <cstring>
 #include <iostream>
@@ -27,7 +26,7 @@
 #include <math.h>
 #include <numeric>
 
-template <typename FL>
+template <typename Q, typename FL>
 void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
                                    const py::array_t<uint32_t> &ashs,
                                    const py::array_t<FL> &adata,
@@ -47,7 +46,7 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
     for (int ia = 0; ia < n_blocks_a; ia++) {
         int pnuma[ndima];
         for (int j = 0; j < ndima; j++) {
-            pnuma[j] = to_sz(apqs[ia * asi + j * asj]).n();
+            pnuma[j] = Q::to_q(apqs[ia * asi + j * asj]).parity();
         }
         int aparity_counter = 0;
         list<int> acounted;
@@ -78,7 +77,7 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
     }
 }
 
-template <typename FL>
+template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>>
 flat_fermion_tensor_tensordot(
@@ -207,7 +206,7 @@ flat_fermion_tensor_tensordot(
 
         int pnuma[ndima];
         for (int j = 0; j < ndima; j++) {
-            pnuma[j] = to_sz(apqs[i * asi + j * asj]).n();
+            pnuma[j] = Q::to_q(apqs[i * asi + j * asj]).parity();
         }
         int aparity_counter = 0;
         list<int> acounted;
@@ -234,7 +233,7 @@ flat_fermion_tensor_tensordot(
 
         int pnumb[ndimb];
         for (int j = 0; j < ndimb; j++) {
-            pnumb[j] = to_sz(bpqs[i * bsi + j * bsj]).n();
+            pnumb[j] = Q::to_q(bpqs[i * bsi + j * bsj]).parity();
         }
         int bparity_counter = 0;
         list<int> bcounted;
@@ -415,6 +414,7 @@ flat_fermion_tensor_tensordot(
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
 
+template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
 flat_fermion_tensor_skeleton(
     const vector<unordered_map<uint32_t, uint32_t>> &infos, uint32_t fdq) {
@@ -426,22 +426,22 @@ flat_fermion_tensor_skeleton(
     const string pattern(ndim, '+');
     vector<uint32_t> qs, shs;
     vector<uint32_t> idxs(1, 0);
-    vector<vector<pair<SZ, uint32_t>>> infox;
-    bond_info_trans_to_sz(infos, pattern, infox, true);
-    SZ dq = to_sz(fdq);
+    vector<vector<pair<Q, uint32_t>>> infox;
+    bond_info_trans<Q>(infos, pattern, infox, true);
+    Q dq = Q::to_q(fdq);
     vector<uint32_t> qk(ndim), shk(ndim);
     for (size_t x = 0; x < nx; x++) {
         size_t xp = x;
-        SZ xq;
+        Q xq;
         for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--)
             xq = xq + infox[i][xp % infox[i].size()].first;
 
-        if ((xq.n() % 2) == (dq.n() % 2)) {
+        if (xq.parity() == dq.parity()) {
             uint32_t sz = 1;
             xp = x;
             for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--) {
                 auto &r = infox[i][xp % infox[i].size()];
-                qk[i] = from_sz(r.first);
+                qk[i] = Q::from_q(r.first);
                 shk[i] = r.second, sz *= r.second;
             }
             qs.insert(qs.end(), qk.begin(), qk.end());
@@ -460,31 +460,14 @@ flat_fermion_tensor_skeleton(
     return std::make_tuple(cqs, cshs, cidxs);
 }
 
-// explicit template instantiation
-template void flat_fermion_tensor_transpose<double>(
-    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
-    const py::array_t<int32_t> &perm, py::array_t<double> &cdata);
-template void flat_fermion_tensor_transpose<complex<double>>(
-    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<complex<double>> &adata,
-    const py::array_t<uint32_t> &aidxs, const py::array_t<int32_t> &perm,
-    py::array_t<complex<double>> &cdata);
-template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-               py::array_t<double>, py::array_t<uint32_t>>
-flat_fermion_tensor_tensordot<double>(
-    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<double> &adata, const py::array_t<uint32_t> &aidxs,
-    const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
-    const py::array_t<double> &bdata, const py::array_t<uint32_t> &bidxs,
-    const py::array_t<int> &idxa, const py::array_t<int> &idxb);
-template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-               py::array_t<complex<double>>, py::array_t<uint32_t>>
-flat_fermion_tensor_tensordot<complex<double>>(
-    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<complex<double>> &adata,
-    const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,
-    const py::array_t<uint32_t> &bshs,
-    const py::array_t<complex<double>> &bdata,
-    const py::array_t<uint32_t> &bidxs, const py::array_t<int> &idxa,
-    const py::array_t<int> &idxb);
+#define TMPL_NAME flat_fermion
+
+#include "symmetry_tmpl.hpp"
+#define TMPL_FL double
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+#define TMPL_FL complex<double>
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+
+#undef TMPL_NAME

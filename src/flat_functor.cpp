@@ -23,6 +23,7 @@
 #include <cstring>
 #include <map>
 
+template<typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
 flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
@@ -138,6 +139,7 @@ flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
 
+template<typename Q>
 size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
                                  const py::array_t<double> &adata,
                                  const py::array_t<double> &bdata,
@@ -178,6 +180,7 @@ size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
     return nflop;
 }
 
+template<typename Q>
 tuple<int, int, vector<unordered_map<uint32_t, uint32_t>>,
       vector<unordered_map<uint32_t, uint32_t>>>
 flat_sparse_tensor_matmul_init(
@@ -248,6 +251,7 @@ flat_sparse_tensor_matmul_init(
     return std::make_tuple(dl, dr, cinfos, vinfos);
 }
 
+template<typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
 flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<uint32_t> &ashs,
@@ -406,6 +410,7 @@ flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
     return std::make_tuple(cqs, cshs, cidxs);
 }
 
+template<typename Q>
 py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
     const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,
@@ -605,3 +610,7 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
 
     return ar;
 }
+
+#define TMPL_NAME flat_functor
+#include "symmetry_tmpl.hpp"
+#undef TMPL_NAME

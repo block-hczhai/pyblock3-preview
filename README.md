@@ -112,3 +112,30 @@ Ground-state DMRG (H8 STO6G) with C++ optimized core functions (0.87 seconds):
     print("Energy = %20.12f" % ener)
 
 The printed ground-state energy for this system should be `-4.345079402665`.
+
+Adding Extra Symmetry Class
+---------------------------
+
+1. Write the C++ definition of the class (named `QPN`, for example) in `src/qpn.hpp`, which should be similar to `src/sz.hpp`.
+2. Add the following in `src/symmetry_tmpl.hpp` after `add other symmetries here` line:
+
+        #include "qpn.hpp"
+        #define TMPL_Q QPN
+        #include NAME_IMPL(TMPL_NAME,_tmpl.hpp)
+        #undef TMPL_Q
+
+   Note that if multiple symmetry class are defined in the same file `src/qpn.hpp`, you may only write `#include "qpn.hpp"` once. The other three lines have to be repeated for each symmetry class.
+   If you do not need the default symmetry class `SZ` and you want to save compiling time, the four lines for `SZ` can be removed/commented.
+3. Add the following in `src/main.hpp` after `bind extra symmetry here` line:
+
+        py::module m_qpn = m.def_submodule("qpn", "General other symmetry.");
+        bind_sparse_tensor<QPN>(m_qpn, "QPN");
+    
+    If you do not need the default symmetry class `SZ` and you want to save compiling time, the two lines `bind_ ...` for `SZ` can be removed/commented.
+
+4. In python script, use the following to indicate which symmetry class is being used:
+
+        if DEFAULT_SYMMETRY == SZ:
+            import block3.sz as block3
+        elif DEFAULT_SYMMETRY == QPN:
+            import block3.qpn as block3
