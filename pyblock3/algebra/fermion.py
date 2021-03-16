@@ -277,7 +277,6 @@ def _run_sparse_fermion_svd(T, left_idx, right_idx=None, qpn_info=None, **opts):
 
 def _run_flat_fermion_svd(T, left_idx, right_idx=None, qpn_info=None, **opts):
     absorb = opts.pop("absorb", 0)
-    absorb = opts.pop("absorb", 0)
     new_T, left_idx, right_idx, qpn_info, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_info, absorb)
     if left_idx is not None and len(left_idx) == T.ndim:
         u, v, s = new_T.expand_dim(axis=new_T.ndim, dq=qpn_info[0]-new_T.dq, direction="right", return_full=True)
@@ -552,7 +551,7 @@ def get_flat_exponential(T, x):
     q_labels = np.asarray(qlablst, dtype=np.uint32)
     shapes = np.asarray(shapes, dtype=np.uint32)
     datas = np.concatenate(datas)
-    Texp = T.__class__(q_labels, shapes, datas, pattern=T.pattern)
+    Texp = T.__class__(q_labels, shapes, datas, pattern=T.pattern, symmetry=T.symmetry)
     return Texp
 
 def eye(bond_info, FLAT=True):
@@ -561,7 +560,7 @@ def eye(bond_info, FLAT=True):
     for sh, qs in SparseFermionTensor._skeleton((bond_info, bond_info)):
         blocks.append(SubTensor(reduced=np.eye(sh[0]), q_labels=qs))
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    if Flat:
+    if FLAT:
         T = T.to_flat()
     return T
 
