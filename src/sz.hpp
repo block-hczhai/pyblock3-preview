@@ -36,11 +36,12 @@ struct SZ {
     int n() const { return _n; }
     int twos() const { return _twos; }
     int pg() const { return _pg; }
+    int parity() const { return _n & 1; }
     void set_n(int _n) { this->_n = _n; }
     void set_twos(int _twos) { this->_twos = _twos; }
     void set_pg(int _pg) { this->_pg = _pg; }
     int multiplicity() const noexcept { return 1; }
-    bool is_fermion() const noexcept { return _n & 1; }
+    int is_fermion() const { return parity(); }
     bool operator==(SZ other) const noexcept {
         return _n == other._n && _twos == other._twos && _pg == other._pg;
     }
@@ -65,6 +66,16 @@ struct SZ {
         return (size_t)(((size_t)_n << 24) | ((size_t)_twos << 8) | _pg);
     }
     int count() const noexcept { return 1; }
+    static SZ to_q(uint32_t x) noexcept {
+        return SZ((int)((x >> 17) & 16383) - 8192,
+                  (int)((x >> 3) & 16383) - 8192, x & 7);
+    }
+    static uint32_t from_q(SZ x) {
+        return ((((uint32_t)(x.n() + 8192U) << 14) +
+                 (uint32_t)(x.twos() + 8192U))
+                << 3) +
+               (uint32_t)x.pg();
+    }
     string to_str() const {
         stringstream ss;
         ss << "< N=" << n() << " SZ=";
@@ -81,32 +92,10 @@ struct SZ {
     }
 };
 
-inline size_t q_labels_hash(const uint32_t *qs, int nctr, const int *idxs,
-                            const int inc) noexcept {
-    size_t h = 0;
-    for (int i = 0; i < nctr; i++)
-        h ^= (size_t)qs[idxs[i] * inc] + 0x9E3779B9 + (h << 6) + (h >> 2);
-    return h;
-}
-
-inline size_t q_labels_hash(const uint32_t *qs, int nctr,
-                            const int inc) noexcept {
-    size_t h = 0;
-    for (int i = 0; i < nctr; i++)
-        h ^= (size_t)qs[i * inc] + 0x9E3779B9 + (h << 6) + (h >> 2);
-    return h;
-}
-
 namespace std {
 
 template <> struct hash<SZ> {
     size_t operator()(const SZ &s) const noexcept { return s.hash(); }
-};
-
-template <> struct hash<vector<uint32_t>> {
-    size_t operator()(const vector<uint32_t> &s) const noexcept {
-        return q_labels_hash(s.data(), s.size(), 1);
-    }
 };
 
 template <> struct less<SZ> {
@@ -116,47 +105,3 @@ template <> struct less<SZ> {
 };
 
 } // namespace std
-
-inline SZ to_sz(uint32_t x) noexcept {
-    return SZ((int)((x >> 17) & 16383) - 8192, (int)((x >> 3) & 16383) - 8192,
-              x & 7);
-}
-
-inline uint32_t from_sz(SZ x) {
-    return ((((uint32_t)(x.n() + 8192U) << 14) + (uint32_t)(x.twos() + 8192U))
-            << 3) +
-           (uint32_t)x.pg();
-}
-
-inline bool less_sz(SZ x, SZ y) noexcept {
-    return x.n() != y.n()
-               ? x.n() < y.n()
-               : (x.twos() != y.twos() ? x.twos() < y.twos() : x.pg() < y.pg());
-}
-
-inline bool less_psz(const pair<SZ, uint32_t> &x,
-                     const pair<SZ, uint32_t> &y) noexcept {
-    return less_sz(x.first, y.first);
-}
-
-inline bool less_vsz(const vector<SZ> &x, const vector<SZ> &y) noexcept {
-    for (size_t i = 0; i < x.size(); i++)
-        if (x[i] != y[i])
-            return less_sz(x[i], y[i]);
-    return false;
-}
-
-template <typename T>
-inline bool less_pvsz(const pair<vector<SZ>, T> &x,
-                      const pair<vector<SZ>, T> &y) noexcept {
-    return less_vsz(x.first, y.first);
-}
-
-inline bool is_shape_one(const uint32_t *shs, int n, int nfree, const int inci,
-                         const int incj) noexcept {
-    for (int j = 0; j < nfree * incj; j += incj)
-        for (int i = 0; i < n * inci; i += inci)
-            if (shs[i + j] != 1)
-                return false;
-    return true;
-}

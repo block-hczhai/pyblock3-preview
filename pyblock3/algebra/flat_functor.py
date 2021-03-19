@@ -52,7 +52,7 @@ def flat_sparse_matmul_init(spt, pattern, dq, symmetric, mpi):
 
 
 if ENABLE_FAST_IMPLS:
-    import block3.flat_sparse_tensor
+    import block3.sz as block3
 
     def flat_sparse_matmul_init_impl(spt, pattern, dq, symmetric, mpi):
         fdq = dq.to_flat() if dq is not None else SZ(0, 0, 0).to_flat()

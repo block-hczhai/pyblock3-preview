@@ -28,7 +28,7 @@ from pyblock3.algebra.core import SparseTensor, SubTensor, _sparse_tensor_numpy_
 from pyblock3.algebra.flat import FlatSparseTensor, _flat_sparse_tensor_numpy_func_impls
 from pyblock3.algebra.symmetry import BondInfo
 from pyblock3.algebra.fermion_symmetry import U1, Z4, Z2,_make_z2_phase_array, _compute_swap_phase
-from block3 import flat_fermion_tensor, flat_sparse_tensor
+import block3.sz as block3
 
 DEFAULT_SYMMETRY = U1
 SVD_SCREENING = 1e-10
@@ -934,7 +934,7 @@ class FlatFermionTensor(FlatSparseTensor):
         axes = list(range(self.ndim))[::-1]
         axes = np.array(axes, dtype=np.int32)
         data = np.zeros_like(self.data)
-        flat_sparse_tensor.transpose(self.shapes, self.data.conj(), self.idxs, axes, data)
+        block3.flat_sparse_tensor.transpose(self.shapes, self.data.conj(), self.idxs, axes, data)
         return self.__class__(self.q_labels[:, axes], self.shapes[:, axes], data, pattern=self.pattern[::-1], idxs=self.idxs, symmetry=self.symmetry)
 
     @staticmethod
@@ -1046,7 +1046,7 @@ class FlatFermionTensor(FlatSparseTensor):
         else:
             if not symmetry_compatible(a, b):
                 raise ValueError("Tensors must have same symmetry for addition")
-            q_labels, shapes, data, idxs = flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
+            q_labels, shapes, data, idxs = block3.flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
                                                 a.idxs, b.q_labels, b.shapes, b.data, b.idxs)
             return a.__class__(q_labels, shapes, data, a.pattern, idxs, a.symmetry)
 
@@ -1069,7 +1069,7 @@ class FlatFermionTensor(FlatSparseTensor):
         else:
             if not symmetry_compatible(a, b):
                 raise ValueError("Tensors must have same symmetry for subtraction")
-            q_labels, shapes, data, idxs = flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
+            q_labels, shapes, data, idxs = block3.flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
                                                 a.idxs, b.q_labels, b.shapes, -b.data, b.idxs)
             return a.__class__(q_labels, shapes, data, a.pattern, idxs, a.symmetry)
 
@@ -1152,7 +1152,7 @@ class FlatFermionTensor(FlatSparseTensor):
             idxb = np.array(axes[1], dtype=np.int32)
         idxa[idxa < 0] += a.ndim
         idxb[idxb < 0] += b.ndim
-        q_labels, shapes, data, idxs = flat_fermion_tensor.tensordot(
+        q_labels, shapes, data, idxs = block3.flat_fermion_tensor.tensordot(
                     a.q_labels, a.shapes, a.data, a.idxs,
                     b.q_labels, b.shapes, b.data, b.idxs,
                     idxa, idxb)
@@ -1169,7 +1169,7 @@ class FlatFermionTensor(FlatSparseTensor):
         else:
             data = np.zeros_like(a.data)
             axes = np.array(axes, dtype=np.int32)
-            flat_fermion_tensor.transpose(a.q_labels, a.shapes, a.data, a.idxs, axes, data)
+            block3.flat_fermion_tensor.transpose(a.q_labels, a.shapes, a.data, a.idxs, axes, data)
             pattern = "".join([a.pattern[ix] for ix in axes])
             return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, pattern, a.idxs, a.symmetry)
