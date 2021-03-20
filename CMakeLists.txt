@@ -115,6 +115,10 @@ ELSE()
     SET(OPT_FLAG -O3 -funroll-loops -openmp -Werror -Werror=return-type)
 ENDIF()
 
+IF ((CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang") OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+    SET(OPT_FLAG ${OPT_FLAG} -Wno-error=instantiation-after-specialization -Wno-instantiation-after-specialization)
+ENDIF()
+
 FILE(GLOB SRCS src/*.cpp)
 MESSAGE(STATUS "SRCS = ${SRCS}")
 
