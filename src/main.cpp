@@ -43,70 +43,66 @@ PYBIND11_MAKE_OPAQUE(
     vector<std::tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
                       py::array_t<complex<double>>, py::array_t<uint32_t>>>);
 
-template <typename Q> void bind_sparse_tensor(py::module &m, const string &name) {
+template <typename Q>
+void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
 
-    py::bind_map<unordered_map<uint32_t, uint32_t>>(m, "MapUIntUInt")
+    py::bind_map<map_uint_uint<Q>>(m, "MapUIntUInt")
         .def_property_readonly("n_bonds",
-                               [](unordered_map<uint32_t, uint32_t> *self) {
+                               [](map_uint_uint<Q> *self) {
                                    uint32_t r = 0;
                                    for (auto &kv : *self)
                                        r += kv.second;
                                    return r;
                                })
         .def("__neg__",
-             [](unordered_map<uint32_t, uint32_t> *self) {
-                 unordered_map<uint32_t, uint32_t> r;
+             [](map_uint_uint<Q> *self) {
+                 map_uint_uint<Q> r;
                  for (auto &kv : *self)
                      r[Q::from_q(-Q::to_q(kv.first))] = kv.second;
                  return r;
              })
         .def("__add__",
-             [](unordered_map<uint32_t, uint32_t> *self,
-                unordered_map<uint32_t, uint32_t> *other) {
-                 unordered_map<uint32_t, uint32_t> r;
+             [](map_uint_uint<Q> *self, map_uint_uint<Q> *other) {
+                 map_uint_uint<Q> r;
                  r.insert(self->begin(), self->end());
                  for (auto &kv : *other)
                      r[kv.first] += kv.second;
                  return r;
              })
         .def("__mul__",
-             [](unordered_map<uint32_t, uint32_t> *self,
-                unordered_map<uint32_t, uint32_t> *other) {
-                 unordered_map<uint32_t, uint32_t> r;
+             [](map_uint_uint<Q> *self, map_uint_uint<Q> *other) {
+                 map_uint_uint<Q> r;
                  for (auto &a : *self)
                      for (auto &b : *other) {
-                         uint32_t q = Q::from_q(Q::to_q(a.first) + Q::to_q(b.first));
+                         uint32_t q =
+                             Q::from_q(Q::to_q(a.first) + Q::to_q(b.first));
                          r[q] = min(a.second * b.second + r[q], 65535U);
                      }
                  return r;
              })
         .def("__or__",
-             [](unordered_map<uint32_t, uint32_t> *self,
-                unordered_map<uint32_t, uint32_t> *other) {
-                 unordered_map<uint32_t, uint32_t> r;
+             [](map_uint_uint<Q> *self, map_uint_uint<Q> *other) {
+                 map_uint_uint<Q> r;
                  r.insert(self->begin(), self->end());
                  r.insert(other->begin(), other->end());
                  return r;
              })
         .def("__xor__",
-             [](unordered_map<uint32_t, uint32_t> *self,
-                unordered_map<uint32_t, uint32_t> *other) {
+             [](map_uint_uint<Q> *self, map_uint_uint<Q> *other) {
                  return move(bond_info_fusing_product<Q>(
-                     vector<unordered_map<uint32_t, uint32_t>>{*self, *other},
-                     "++"));
+                     vector<map_uint_uint<Q>>{*self, *other}, "++"));
              })
         .def("filter",
-             [](unordered_map<uint32_t, uint32_t> *self,
-                unordered_map<uint32_t, uint32_t> *other) {
-                 unordered_map<uint32_t, uint32_t> r;
+             [](map_uint_uint<Q> *self, map_uint_uint<Q> *other) {
+                 map_uint_uint<Q> r;
                  for (auto &a : *self)
                      if (other->count(a.first))
                          r[a.first] = min(a.second, other->at(a.first));
                  return r;
              })
         .def("truncate",
-             [](unordered_map<uint32_t, uint32_t> *self, int bond_dim,
-                unordered_map<uint32_t, uint32_t> *ref = nullptr) {
+             [](map_uint_uint<Q> *self, int bond_dim,
+                map_uint_uint<Q> *ref = nullptr) {
                  size_t n_total = 0;
                  for (auto &kv : *self)
                      n_total += kv.second;
@@ -122,9 +118,9 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
                  }
              })
         .def("keep_maximal",
-             [](unordered_map<uint32_t, uint32_t> *self) {
+             [](map_uint_uint<Q> *self) {
                  vector<Q> qs;
-                 unordered_map<uint32_t, uint32_t> r;
+                 map_uint_uint<Q> r;
                  for (auto &a : *self)
                      qs.push_back(Q::to_q(a.first));
                  Q q = *max_element(qs.begin(), qs.end());
@@ -132,7 +128,7 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
                  return r;
              })
         .def(py::pickle(
-            [](unordered_map<uint32_t, uint32_t> *self) {
+            [](map_uint_uint<Q> *self) {
                 py::array_t<uint32_t> data{
                     vector<ssize_t>{(ssize_t)self->size() * 2}};
                 vector<pair<uint32_t, uint32_t>> vpu(self->begin(),
@@ -150,66 +146,58 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
                     vpu[i].first = data.data()[i * 2];
                     vpu[i].second = data.data()[i * 2 + 1];
                 }
-                return unordered_map<uint32_t, uint32_t>(vpu.begin(),
-                                                         vpu.end());
+                return map_uint_uint<Q>(vpu.begin(), vpu.end());
             }))
         .def_static(
             "set_bond_dimension_occ",
-            [](const vector<unordered_map<uint32_t, uint32_t>> &basis,
-               vector<unordered_map<uint32_t, uint32_t>> &left_dims,
-               vector<unordered_map<uint32_t, uint32_t>> &right_dims,
-               uint32_t vacuum, uint32_t target, int m,
-               py::array_t<double> &occ, double bias) {
+            [](const vector<map_uint_uint<Q>> &basis,
+               vector<map_uint_uint<Q>> &left_dims,
+               vector<map_uint_uint<Q>> &right_dims, uint32_t vacuum,
+               uint32_t target, int m, py::array_t<double> &occ, double bias) {
                 vector<double> vocc(occ.data(), occ.data() + occ.size());
-                return bond_info_set_bond_dimension_occ<Q>(basis, left_dims,
-                                                        right_dims, vacuum,
-                                                        target, m, vocc, bias);
+                return bond_info_set_bond_dimension_occ<Q>(
+                    basis, left_dims, right_dims, vacuum, target, m, vocc,
+                    bias);
             })
         .def_static("tensor_product", &tensor_product_ref<Q>, py::arg("a"),
                     py::arg("b"), py::arg("ref"));
 
-    py::bind_vector<vector<unordered_map<uint32_t, uint32_t>>>(
-        m, "VectorMapUIntUInt");
-    py::bind_vector<vector<uint32_t>>(m, "VectorUInt");
-    py::bind_map<
-        unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>(
-        m, "MapVUIntPUV");
-    py::bind_map<map_fusing>(m, "MapFusing");
+    py::bind_vector<vector<map_uint_uint<Q>>>(m, "VectorMapUIntUInt");
 
-    py::bind_vector<vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                                 py::array_t<double>, py::array_t<uint32_t>>>>(
-        m, "VectorFlat");
-    py::bind_vector<
-        vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                     py::array_t<complex<double>>, py::array_t<uint32_t>>>>(
-        m, "VectorComplexFlat");
+    m.attr("VectorUInt") = pm.attr("VectorUInt");
+    m.attr("MapVUIntPUV") = pm.attr("MapVUIntPUV");
+    m.attr("MapFusing") = pm.attr("MapFusing");
+    m.attr("VectorFlat") = pm.attr("VectorFlat");
+    m.attr("VectorComplexFlat") = pm.attr("VectorComplexFlat");
 
     py::module flat_sparse_tensor =
         m.def_submodule("flat_sparse_tensor", "FlatSparseTensor");
     flat_sparse_tensor.def("skeleton", &flat_sparse_tensor_skeleton<Q>,
                            py::arg("infos"), py::arg("pattern"), py::arg("dq"));
-    flat_sparse_tensor.def("left_canonicalize", &flat_sparse_left_canonicalize<Q>,
-                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
-                           py::arg("aidxs"));
+    flat_sparse_tensor.def("left_canonicalize",
+                           &flat_sparse_left_canonicalize<Q>, py::arg("aqs"),
+                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
     flat_sparse_tensor.def("right_canonicalize",
                            &flat_sparse_right_canonicalize<Q>, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
     flat_sparse_tensor.def("left_svd", &flat_sparse_left_svd<Q>, py::arg("aqs"),
                            py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("right_svd", &flat_sparse_right_svd<Q>, py::arg("aqs"),
-                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("right_svd", &flat_sparse_right_svd<Q>,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                           py::arg("aidxs"));
     flat_sparse_tensor.def(
         "left_canonicalize_indexed", &flat_sparse_left_canonicalize_indexed<Q>,
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def(
-        "right_canonicalize_indexed", &flat_sparse_right_canonicalize_indexed<Q>,
-        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("right_canonicalize_indexed",
+                           &flat_sparse_right_canonicalize_indexed<Q>,
+                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
+                           py::arg("aidxs"));
     flat_sparse_tensor.def("left_svd_indexed", &flat_sparse_left_svd_indexed<Q>,
                            py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                            py::arg("aidxs"));
-    flat_sparse_tensor.def("right_svd_indexed", &flat_sparse_right_svd_indexed<Q>,
-                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
-                           py::arg("aidxs"));
+    flat_sparse_tensor.def("right_svd_indexed",
+                           &flat_sparse_right_svd_indexed<Q>, py::arg("aqs"),
+                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
     flat_sparse_tensor.def("tensor_svd", &flat_sparse_tensor_svd<Q>,
                            py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
                            py::arg("aidxs"), py::arg("idx"), py::arg("linfo"),
@@ -224,8 +212,9 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
         py::arg("eigen_values") = false);
     flat_sparse_tensor.def("get_infos", &flat_sparse_tensor_get_infos<Q>,
                            py::arg("aqs"), py::arg("ashs"));
-    flat_sparse_tensor.def("kron_sum_info", &flat_sparse_tensor_kron_sum_info<Q>,
-                           py::arg("aqs"), py::arg("ashs"), py::arg("pattern"));
+    flat_sparse_tensor.def("kron_sum_info",
+                           &flat_sparse_tensor_kron_sum_info<Q>, py::arg("aqs"),
+                           py::arg("ashs"), py::arg("pattern"));
     flat_sparse_tensor.def("kron_product_info", &bond_info_fusing_product<Q>,
                            py::arg("infos"), py::arg("pattern"));
     flat_sparse_tensor.def("tensordot_skeleton",
@@ -240,7 +229,7 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
            const py::object &aidxs, const py::object &perm,
            py::array_t<double> &cdata) {
             return flat_sparse_tensor_transpose<Q, double>(ashs, adata, aidxs,
-                                                        perm, cdata);
+                                                           perm, cdata);
         },
         py::arg("ashs"), py::arg("adata"), py::arg("aidxs"), py::arg("perm"),
         py::arg("cdata"));
@@ -263,8 +252,8 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
            const py::array_t<double> &adata, const py::object &aidxs,
            const py::object &bqs, const py::object &bshs,
            const py::array_t<double> &bdata, const py::object &bidxs) {
-            return flat_sparse_tensor_add<Q, double>(aqs, ashs, adata, aidxs, bqs,
-                                                  bshs, bdata, bidxs);
+            return flat_sparse_tensor_add<Q, double>(aqs, ashs, adata, aidxs,
+                                                     bqs, bshs, bdata, bidxs);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
         py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"));
@@ -274,8 +263,7 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
            const py::array_t<double> &adata, const py::object &aidxs,
            const py::object &bqs, const py::object &bshs,
            const py::array_t<double> &bdata, const py::object &bidxs,
-           const unordered_map<uint32_t, uint32_t> &infol,
-           const unordered_map<uint32_t, uint32_t> &infor) {
+           const map_uint_uint<Q> &infol, const map_uint_uint<Q> &infor) {
             return flat_sparse_tensor_kron_add<Q, double>(
                 aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor);
         },
@@ -289,7 +277,7 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
            const py::object &idxs, const map_fusing &info,
            const string &pattern) {
             return flat_sparse_tensor_fuse<Q, double>(aqs, ashs, adata, aidxs,
-                                                   idxs, info, pattern);
+                                                      idxs, info, pattern);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
         py::arg("idxs"), py::arg("info"), py::arg("pattern"));
@@ -335,8 +323,7 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
            const py::array_t<complex<double>> &adata, const py::object &aidxs,
            const py::object &bqs, const py::object &bshs,
            const py::array_t<complex<double>> &bdata, const py::object &bidxs,
-           const unordered_map<uint32_t, uint32_t> &infol,
-           const unordered_map<uint32_t, uint32_t> &infor) {
+           const map_uint_uint<Q> &infol, const map_uint_uint<Q> &infor) {
             return flat_sparse_tensor_kron_add<Q, complex<double>>(
                 aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor);
         },
@@ -386,8 +373,7 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
            const py::array_t<complex<double>> &adata, const py::object &aidxs,
            const py::object &bqs, const py::object &bshs,
            const py::array_t<double> &bdata, const py::object &bidxs,
-           const unordered_map<uint32_t, uint32_t> &infol,
-           const unordered_map<uint32_t, uint32_t> &infor) {
+           const map_uint_uint<Q> &infol, const map_uint_uint<Q> &infor) {
             return flat_sparse_tensor_kron_add<Q, complex<double>>(
                 aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor);
         },
@@ -426,8 +412,7 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
            const py::array_t<double> &adata, const py::object &aidxs,
            const py::object &bqs, const py::object &bshs,
            const py::array_t<complex<double>> &bdata, const py::object &bidxs,
-           const unordered_map<uint32_t, uint32_t> &infol,
-           const unordered_map<uint32_t, uint32_t> &infor) {
+           const map_uint_uint<Q> &infol, const map_uint_uint<Q> &infor) {
             return flat_sparse_tensor_kron_add<Q, complex<double>>(
                 aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor);
         },
@@ -462,7 +447,7 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
            const py::array_t<double> &adata, const py::object &aidxs,
            const py::object &perm, py::array_t<double> &cdata) {
             return flat_fermion_tensor_transpose<Q, double>(aqs, ashs, adata,
-                                                         aidxs, perm, cdata);
+                                                            aidxs, perm, cdata);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
         py::arg("perm"), py::arg("cdata"));
@@ -534,10 +519,10 @@ template <typename Q> void bind_sparse_tensor(py::module &m, const string &name)
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
         py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
         py::arg("idxa"), py::arg("idxb"));
-
 }
 
-template <typename Q = void> void bind_hamiltonian(py::module &m, const string &name) {
+template <typename Q = void>
+void bind_hamiltonian(py::module &m, const string &name) {
 
     py::module hamiltonian = m.def_submodule("hamiltonian", "Hamiltonian");
     hamiltonian.def("build_mpo", &build_mpo, py::arg("orb_sym"),
@@ -547,7 +532,6 @@ template <typename Q = void> void bind_hamiltonian(py::module &m, const string &
                     py::arg("h_values"), py::arg("h_terms"));
     hamiltonian.def("build_qc_mpo", &build_qc_mpo, py::arg("orb_sym"),
                     py::arg("t"), py::arg("v"));
-
 }
 
 PYBIND11_MODULE(block3, m) {
@@ -562,14 +546,28 @@ PYBIND11_MODULE(block3, m) {
         hptt_num_threads = n;
     });
 
+    py::bind_vector<vector<uint32_t>>(m, "VectorUInt");
+    py::bind_map<
+        unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>(
+        m, "MapVUIntPUV");
+    py::bind_map<map_fusing>(m, "MapFusing");
+
+    py::bind_vector<vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                                 py::array_t<double>, py::array_t<uint32_t>>>>(
+        m, "VectorFlat");
+    py::bind_vector<
+        vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                     py::array_t<complex<double>>, py::array_t<uint32_t>>>>(
+        m, "VectorComplexFlat");
+
     py::module m_sz = m.def_submodule(
         "sz", "Non-spin-adapted symmetry class for quantum chemistry.");
-    bind_sparse_tensor<SZ>(m_sz, "SZ");
+    bind_sparse_tensor<SZ>(m_sz, m, "SZ");
     bind_hamiltonian<>(m_sz, "SZ");
 
     // bind extra symmetry here ...
     // py::module m_qpn = m.def_submodule("qpn", "General other symmetry.");
-    // bind_sparse_tensor<QPN>(m_qpn, "QPN");
+    // bind_sparse_tensor<QPN>(m_qpn, m, "QPN");
 
     py::module tensor = m.def_submodule("tensor", "Tensor");
     // double
@@ -605,5 +603,4 @@ PYBIND11_MODULE(block3, m) {
         },
         py::arg("a"), py::arg("b"), py::arg("idxa"), py::arg("idxb"),
         py::arg("alpha") = 1.0, py::arg("beta") = 0.0);
-
 }

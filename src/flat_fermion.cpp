@@ -416,8 +416,8 @@ flat_fermion_tensor_tensordot(
 
 template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
-flat_fermion_tensor_skeleton(
-    const vector<unordered_map<uint32_t, uint32_t>> &infos, uint32_t fdq) {
+flat_fermion_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
+                             uint32_t fdq) {
     int ndim = (int)infos.size();
     size_t nx = 1;
     for (int i = 0; i < ndim; i++) {

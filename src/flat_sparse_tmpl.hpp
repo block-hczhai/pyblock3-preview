@@ -57,8 +57,7 @@ flat_sparse_tensor_kron_add<TMPL_Q, TMPL_FL>(
     const py::array_t<TMPL_FL> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
     const py::array_t<TMPL_FL> &bdata, const py::array_t<uint32_t> &bidxs,
-    const unordered_map<uint32_t, uint32_t> &infol,
-    const unordered_map<uint32_t, uint32_t> &infor);
+    const map_uint_uint<TMPL_Q> &infol, const map_uint_uint<TMPL_Q> &infor);
 
 TMPL_EXTERN template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
                            py::array_t<TMPL_FL>, py::array_t<uint32_t>>
@@ -79,11 +78,10 @@ flat_sparse_tensor_kron_sum_info<TMPL_Q>(const py::array_t<uint32_t> &aqs,
 
 TMPL_EXTERN template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
                            py::array_t<uint32_t>>
-flat_sparse_tensor_skeleton<TMPL_Q>(
-    const vector<unordered_map<uint32_t, uint32_t>> &infos,
-    const string &pattern, uint32_t fdq);
+flat_sparse_tensor_skeleton<TMPL_Q>(const vector<map_uint_uint<TMPL_Q>> &infos,
+                                    const string &pattern, uint32_t fdq);
 
-TMPL_EXTERN template vector<unordered_map<uint32_t, uint32_t>>
+TMPL_EXTERN template vector<map_uint_uint<TMPL_Q>>
 flat_sparse_tensor_get_infos<TMPL_Q>(const py::array_t<uint32_t> &aqs,
                                      const py::array_t<uint32_t> &ashs);
 
