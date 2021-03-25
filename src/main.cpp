@@ -25,6 +25,7 @@
 #include "hamiltonian_ptree.hpp"
 #include "qc_hamiltonian.hpp"
 #include "sz.hpp"
+#include "fermion_symmetry.hpp"
 #include "tensor.hpp"
 #include <cmath>
 #include <pybind11/pybind11.h>
@@ -566,6 +567,19 @@ PYBIND11_MODULE(block3, m) {
         "sz", "Non-spin-adapted symmetry class for quantum chemistry.");
     bind_sparse_tensor<SZ>(m_sz, "SZ");
     bind_hamiltonian<>(m_sz, "SZ");
+
+    py::module m_u11 = m.def_submodule("u11", "U11 symmetry");
+    bind_sparse_tensor<U11>(m_u11, "U11");
+
+    py::module m_u1 = m.def_submodule("u1", "U1 symmetry");
+    bind_sparse_tensor<U1>(m_u1, "U1");
+
+    py::module m_z2 = m.def_submodule("z2", "Z2 symmetry");
+    bind_sparse_tensor<Z2>(m_z2, "Z2");
+
+    py::module m_z4 = m.def_submodule("z4", "Z4 symmetry");
+    bind_sparse_tensor<Z4>(m_z4, "Z4");
+
 
     // bind extra symmetry here ...
     // py::module m_qpn = m.def_submodule("qpn", "General other symmetry.");
