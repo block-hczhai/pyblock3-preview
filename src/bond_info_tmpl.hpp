@@ -26,30 +26,25 @@
 
 #ifdef TMPL_Q
 
-TMPL_EXTERN template
-void bond_info_trans<TMPL_Q>(
-    const vector<unordered_map<uint32_t, uint32_t>> &infos,
-    const string &pattern, vector<vector<pair<TMPL_Q, uint32_t>>> &infox,
-    bool sorted = false);
+TMPL_EXTERN template void bond_info_trans<TMPL_Q>(
+    const vector<map_uint_uint<TMPL_Q>> &infos, const string &pattern,
+    vector<vector<pair<TMPL_Q, uint32_t>>> &infox, bool sorted = false);
 
-TMPL_EXTERN template
-map_fusing
-bond_info_fusing_product<TMPL_Q>(const vector<unordered_map<uint32_t, uint32_t>> &infos,
-                         const string &pattern);
+TMPL_EXTERN template map_fusing
+bond_info_fusing_product<TMPL_Q>(const vector<map_uint_uint<TMPL_Q>> &infos,
+                                 const string &pattern);
 
-TMPL_EXTERN template
-pair<vector<unordered_map<uint32_t, uint32_t>>,
-     vector<unordered_map<uint32_t, uint32_t>>>
+TMPL_EXTERN template pair<vector<map_uint_uint<TMPL_Q>>,
+                          vector<map_uint_uint<TMPL_Q>>>
 bond_info_set_bond_dimension_occ<TMPL_Q>(
-    const vector<unordered_map<uint32_t, uint32_t>> &basis,
-    vector<unordered_map<uint32_t, uint32_t>> &left_dims,
-    vector<unordered_map<uint32_t, uint32_t>> &right_dims, uint32_t vacuum,
-    uint32_t target, int m, const vector<double> &occ, double bias);
+    const vector<map_uint_uint<TMPL_Q>> &basis,
+    vector<map_uint_uint<TMPL_Q>> &left_dims,
+    vector<map_uint_uint<TMPL_Q>> &right_dims, uint32_t vacuum, uint32_t target,
+    int m, const vector<double> &occ, double bias);
 
-TMPL_EXTERN template
-unordered_map<uint32_t, uint32_t>
-tensor_product_ref<TMPL_Q>(const unordered_map<uint32_t, uint32_t> &ma,
-                   const unordered_map<uint32_t, uint32_t> &mb,
-                   const unordered_map<uint32_t, uint32_t> &mcref);
+TMPL_EXTERN template map_uint_uint<TMPL_Q>
+tensor_product_ref<TMPL_Q>(const map_uint_uint<TMPL_Q> &ma,
+                           const map_uint_uint<TMPL_Q> &mb,
+                           const map_uint_uint<TMPL_Q> &mcref);
 
 #endif

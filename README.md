@@ -129,7 +129,7 @@ Adding Extra Symmetry Class
 3. Add the following in `src/main.hpp` after `bind extra symmetry here` line:
 
         py::module m_qpn = m.def_submodule("qpn", "General other symmetry.");
-        bind_sparse_tensor<QPN>(m_qpn, "QPN");
+        bind_sparse_tensor<QPN>(m_qpn, m, "QPN");
     
     If you do not need the default symmetry class `SZ` and you want to save compiling time, the two lines `bind_ ...` for `SZ` can be removed/commented.
 

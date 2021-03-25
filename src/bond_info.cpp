@@ -24,7 +24,7 @@
 #include <stdexcept>
 
 template <typename Q>
-void bond_info_trans(const vector<unordered_map<uint32_t, uint32_t>> &infos,
+void bond_info_trans(const vector<map_uint_uint<Q>> &infos,
                      const string &pattern,
                      vector<vector<pair<Q, uint32_t>>> &infox, bool sorted) {
     int ndim = (int)infos.size();
@@ -46,9 +46,8 @@ void bond_info_trans(const vector<unordered_map<uint32_t, uint32_t>> &infos,
 }
 
 template <typename Q>
-map_fusing
-bond_info_fusing_product(const vector<unordered_map<uint32_t, uint32_t>> &infos,
-                         const string &pattern) {
+map_fusing bond_info_fusing_product(const vector<map_uint_uint<Q>> &infos,
+                                    const string &pattern) {
     int ndim = (int)infos.size();
     size_t nx = 1;
     for (int i = 0; i < ndim; i++)
@@ -80,7 +79,7 @@ template <typename Q>
 inline unordered_map<uint32_t, double>
 tensor_product_no_collect(const unordered_map<uint32_t, double> &ma,
                           const unordered_map<uint32_t, double> &mb,
-                          const unordered_map<uint32_t, uint32_t> &mcref) {
+                          const map_uint_uint<Q> &mcref) {
     unordered_map<uint32_t, double> mc;
     for (auto &a : ma)
         for (auto &b : mb) {
@@ -92,11 +91,10 @@ tensor_product_no_collect(const unordered_map<uint32_t, double> &ma,
 }
 
 template <typename Q>
-unordered_map<uint32_t, uint32_t>
-tensor_product_ref(const unordered_map<uint32_t, uint32_t> &ma,
-                   const unordered_map<uint32_t, uint32_t> &mb,
-                   const unordered_map<uint32_t, uint32_t> &mcref) {
-    unordered_map<uint32_t, uint32_t> mc;
+map_uint_uint<Q> tensor_product_ref(const map_uint_uint<Q> &ma,
+                                    const map_uint_uint<Q> &mb,
+                                    const map_uint_uint<Q> &mcref) {
+    map_uint_uint<Q> mc;
     for (auto &a : ma)
         for (auto &b : mb) {
             uint32_t q = Q::from_q(Q::to_q(a.first) + Q::to_q(b.first));
@@ -107,25 +105,23 @@ tensor_product_ref(const unordered_map<uint32_t, uint32_t> &ma,
 }
 
 template <typename Q>
-pair<vector<unordered_map<uint32_t, uint32_t>>,
-     vector<unordered_map<uint32_t, uint32_t>>>
-bond_info_set_bond_dimension_occ(
-    const vector<unordered_map<uint32_t, uint32_t>> &basis,
-    vector<unordered_map<uint32_t, uint32_t>> &left_dims,
-    vector<unordered_map<uint32_t, uint32_t>> &right_dims, uint32_t vacuum,
-    uint32_t target, int m, const vector<double> &occ, double bias) {
+pair<vector<map_uint_uint<Q>>, vector<map_uint_uint<Q>>>
+bond_info_set_bond_dimension_occ(const vector<map_uint_uint<Q>> &basis,
+                                 vector<map_uint_uint<Q>> &left_dims,
+                                 vector<map_uint_uint<Q>> &right_dims,
+                                 uint32_t vacuum, uint32_t target, int m,
+                                 const vector<double> &occ, double bias) {
     throw runtime_error("Not defined for general symmetry.");
     return std::make_pair(left_dims, right_dims);
 }
 
 template <>
-pair<vector<unordered_map<uint32_t, uint32_t>>,
-     vector<unordered_map<uint32_t, uint32_t>>>
-bond_info_set_bond_dimension_occ<SZ>(
-    const vector<unordered_map<uint32_t, uint32_t>> &basis,
-    vector<unordered_map<uint32_t, uint32_t>> &left_dims,
-    vector<unordered_map<uint32_t, uint32_t>> &right_dims, uint32_t vacuum,
-    uint32_t target, int m, const vector<double> &occ, double bias) {
+pair<vector<map_uint_uint<SZ>>, vector<map_uint_uint<SZ>>>
+bond_info_set_bond_dimension_occ<SZ>(const vector<map_uint_uint<SZ>> &basis,
+                                     vector<map_uint_uint<SZ>> &left_dims,
+                                     vector<map_uint_uint<SZ>> &right_dims,
+                                     uint32_t vacuum, uint32_t target, int m,
+                                     const vector<double> &occ, double bias) {
     // site state probabilities
     int n_sites = basis.size();
     vector<unordered_map<uint32_t, double>> site_probs(n_sites);
@@ -145,7 +141,7 @@ bond_info_set_bond_dimension_occ<SZ>(
         for (auto &p : basis[i])
             site_probs[i][p.first] = probs[SZ::to_q(p.first).n()];
     }
-    vector<unordered_map<uint32_t, uint32_t>> inv_basis(n_sites);
+    vector<map_uint_uint<SZ>> inv_basis(n_sites);
     for (int i = 0; i < n_sites; i++)
         for (auto &p : basis[i])
             inv_basis[i][SZ::from_q(-SZ::to_q(p.first))] = p.second;
@@ -176,8 +172,8 @@ bond_info_set_bond_dimension_occ<SZ>(
                 p.second *= lprobs.count(p.first) ? lprobs[p.first] : 0;
     }
     // adjusted temparary fci dims
-    vector<unordered_map<uint32_t, uint32_t>> left_dims_fci_t = left_dims;
-    vector<unordered_map<uint32_t, uint32_t>> right_dims_fci_t = right_dims;
+    vector<map_uint_uint<SZ>> left_dims_fci_t = left_dims;
+    vector<map_uint_uint<SZ>> right_dims_fci_t = right_dims;
     // left and right block dims
     for (int i = 1; i <= n_sites; i++) {
         left_dims[i].clear();
@@ -193,7 +189,7 @@ bond_info_set_bond_dimension_occ<SZ>(
         }
         if (i != n_sites) {
             auto tmp = tensor_product_ref<SZ>(left_dims[i], basis[i],
-                                          left_dims_fci_t[i + 1]);
+                                              left_dims_fci_t[i + 1]);
             for (auto &p : left_dims_fci_t[i + 1])
                 if (tmp.count(p.first))
                     p.second = min(tmp.at(p.first), p.second);
@@ -215,7 +211,7 @@ bond_info_set_bond_dimension_occ<SZ>(
         }
         if (i != 0) {
             auto tmp = tensor_product_ref<SZ>(inv_basis[i - 1], right_dims[i],
-                                          right_dims_fci_t[i - 1]);
+                                              right_dims_fci_t[i - 1]);
             for (auto &p : right_dims_fci_t[i - 1])
                 if (tmp.count(p.first))
                     p.second = min(tmp.at(p.first), p.second);

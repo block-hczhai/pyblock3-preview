@@ -34,10 +34,23 @@
 
 // add other symmetries here ...
 
-// #include "qpn.hpp"
-// #define TMPL_Q QPN
-// #include NAME_IMPL(TMPL_NAME,_tmpl.hpp)
-// #undef TMPL_Q
+#include "fermion_symmetry.hpp"
+#define TMPL_Q U11
+#include NAME_IMPL(TMPL_NAME,_tmpl.hpp)
+#undef TMPL_Q
+
+#define TMPL_Q U1
+#include NAME_IMPL(TMPL_NAME,_tmpl.hpp)
+#undef TMPL_Q
+
+#define TMPL_Q Z2
+#include NAME_IMPL(TMPL_NAME,_tmpl.hpp)
+#undef TMPL_Q
+
+#define TMPL_Q Z4
+#include NAME_IMPL(TMPL_NAME,_tmpl.hpp)
+#undef TMPL_Q
+
 
 #undef NAME_IMPL
 #undef CAT

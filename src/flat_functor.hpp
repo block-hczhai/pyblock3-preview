@@ -31,7 +31,7 @@
 namespace py = pybind11;
 using namespace std;
 
-template<typename Q>
+template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
 flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
@@ -41,7 +41,7 @@ flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
                         const py::array_t<int> &idxa,
                         const py::array_t<int> &idxb);
 
-template<typename Q>
+template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
 flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<uint32_t> &ashs,
@@ -50,22 +50,21 @@ flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<int> &idxa,
                                       const py::array_t<int> &idxb);
 
-template<typename Q>
+template <typename Q>
 size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
-                               const py::array_t<double> &adata,
-                               const py::array_t<double> &bdata,
-                               py::array_t<double> &cdata);
+                                 const py::array_t<double> &adata,
+                                 const py::array_t<double> &bdata,
+                                 py::array_t<double> &cdata);
 
-template<typename Q>
-tuple<int, int, vector<unordered_map<uint32_t, uint32_t>>,
-      vector<unordered_map<uint32_t, uint32_t>>>
+template <typename Q>
+tuple<int, int, vector<map_uint_uint<Q>>, vector<map_uint_uint<Q>>>
 flat_sparse_tensor_matmul_init(
     const py::array_t<uint32_t> &loqs, const py::array_t<uint32_t> &loshs,
     const py::array_t<uint32_t> &leqs, const py::array_t<uint32_t> &leshs,
     const py::array_t<uint32_t> &roqs, const py::array_t<uint32_t> &roshs,
     const py::array_t<uint32_t> &reqs, const py::array_t<uint32_t> &reshs);
 
-template<typename Q>
+template <typename Q>
 py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
     const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,

@@ -582,10 +582,11 @@ build_mpo_ptree(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         // info_l; info_r to build skelton; physical indices at the end
         // skeleton: +-+-; dq = 0
         // skeleton guarentees that right indices are contiguous
-        vector<unordered_map<uint32_t, uint32_t>> infos = {info_l, info_r,
-                                                           basis, basis};
-        auto skl =
-            flat_sparse_tensor_skeleton<SZ>(infos, "+-+-", SZ::from_q(SZ(0, 0, 0)));
+        vector<map_uint_uint<SZ>> infos = {
+            (map_uint_uint<SZ> &)info_l, (map_uint_uint<SZ> &)info_r,
+            (map_uint_uint<SZ> &)basis, (map_uint_uint<SZ> &)basis};
+        auto skl = flat_sparse_tensor_skeleton<SZ>(infos, "+-+-",
+                                                   SZ::from_q(SZ(0, 0, 0)));
         // separate odd and even
         int n_odd = 0, n_total = get<0>(skl).shape()[0];
         ssize_t size_odd = 0;
@@ -654,7 +655,8 @@ build_mpo_ptree(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         // then just sum data (dgemm)
         // prepare on-site operators
         unordered_map<uint32_t, op_skeleton> sk_map;
-        vector<unordered_map<uint32_t, uint32_t>> op_infos = {basis, basis};
+        vector<map_uint_uint<SZ>> op_infos = {(map_uint_uint<SZ> &)basis,
+                                              (map_uint_uint<SZ> &)basis};
         vector<uint32_t> sk_qs = {
             SZ::from_q(SZ(0, 0, 0)), SZ::from_q(SZ(1, 1, porb[ii])),
             SZ::from_q(SZ(1, -1, porb[ii])), SZ::from_q(SZ(-1, -1, porb[ii])),
@@ -713,8 +715,8 @@ build_mpo_ptree(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         for (int i = ik + 1; i < k; i++) {
                             SZ qx = from_op(term_sorted[itt + i], porb, m_site,
                                             m_op);
-                            uint32_t fqk = SZ::from_q(qi + qx), fqx = SZ::from_q(qx),
-                                     fqi = SZ::from_q(qi);
+                            uint32_t fqk = SZ::from_q(qi + qx),
+                                     fqx = SZ::from_q(qx), fqi = SZ::from_q(qi);
                             if (sk_map.count(fqk) == 0)
                                 sk_map[fqk] = flat_sparse_tensor_skeleton<SZ>(
                                     op_infos, "+-", fqk);
