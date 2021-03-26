@@ -157,7 +157,6 @@ template <> struct less<U11> {
 
 struct ZN {
     int modulus() const { return 1024;}
-    //int _modulus = 1024;
     int _n;
     ZN() : _n(0) {}
     ZN(int _n) : _n(_n%modulus()) {}
@@ -221,6 +220,8 @@ struct Z2:ZN {
     int _n;
     Z2() : _n(0) {}
     Z2(int _n) : _n(_n%modulus()) {}
+    int n() const { return _n; }
+    int parity() const { return _n % 2; }
     bool operator==(Z2 other) const noexcept {
         return _n == other._n;
     }
@@ -267,6 +268,8 @@ struct Z4: ZN {
     int _n;
     Z4() : _n(0) {}
     Z4(int _n) : _n(_n%modulus()) {}
+    int n() const { return _n; }
+    int parity() const { return _n % 2; }
     bool operator==(Z4 other) const noexcept {
         return _n == other._n;
     }

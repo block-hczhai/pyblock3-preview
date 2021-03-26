@@ -27,8 +27,25 @@ import numpy as np
 from pyblock3.algebra.core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
 from pyblock3.algebra.flat import FlatSparseTensor, _flat_sparse_tensor_numpy_func_impls
 from pyblock3.algebra.symmetry import BondInfo
-from pyblock3.algebra.fermion_symmetry import U1, Z4, Z2,_make_z2_phase_array, _compute_swap_phase
+from pyblock3.algebra.fermion_symmetry import U1, Z4, Z2, U11
 import block3.sz as block3
+
+def get_backend(symmetry):
+    if isinstance(symmetry, str):
+        key = symmetry.upper()
+    else:
+        key = symmetry.__name__
+    if key == "U11":
+        import block3.u11 as backend
+    elif key == "U1":
+        import block3.u1 as backend
+    elif key == "Z2":
+        import block3.z2 as backend
+    elif key == "Z4":
+        import block3.z4 as backend
+    else:
+        raise NotImplementedError
+    return backend
 
 DEFAULT_SYMMETRY = U1
 SVD_SCREENING = 1e-10
@@ -181,49 +198,46 @@ def _absorb_svd(u, s, v, absorb):
         v = v * s.reshape((-1, 1))
     return u, None, v
 
-def _svd_preprocess(T, left_idx, right_idx, qpn_info, absorb):
-    symmetry = T.dq.__class__
-    if qpn_info is None:
+def _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb):
+    cls = T.dq.__class__
+    if qpn_partition is None:
         if absorb ==-1:
-            qpn_info = (T.dq, symmetry(0))
+            qpn_partition = (T.dq, cls(0))
         else:
-            qpn_info = (symmetry(0), T.dq)
+            qpn_partition = (cls(0), T.dq)
     else:
-        assert np.sum(qpn_info) == T.dq
+        assert np.sum(qpn_partition) == T.dq
 
     if right_idx is None:
         right_idx = [idim for idim in range(T.ndim) if idim not in left_idx]
     elif left_idx is None:
         left_idx = [idim for idim in range(T.ndim) if idim not in right_idx]
     neworder = list(left_idx) + list(right_idx)
-    if list(neworder) == list(range(T.ndim)):
+    if neworder == list(range(T.ndim)):
         new_T = T
     else:
         new_T = T.transpose(neworder)
-    return new_T, left_idx, right_idx, qpn_info, symmetry
 
-def _run_sparse_fermion_svd(T, left_idx, right_idx=None, qpn_info=None, **opts):
-    absorb = opts.pop("absorb", 0)
-    new_T, left_idx, right_idx, qpn_info, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_info, absorb)
-    if left_idx is not None and len(left_idx) == T.ndim:
-        u, v, s = new_T.expand_dim(axis=new_T.ndim, dq=qpn_info[0]-new_T.dq, direction="right", return_full=True)
-        if absorb is not None:  s = None
-        return u, s, v
-    elif right_idx is not None and len(right_idx) == T.ndim:
-        v, u, s = new_T.expand_dim(axis=0, dq=qpn_info[1]-new_T.dq, direction="left",return_full=True)
-        if absorb is not None:  s = None
-        return u, s, v
+    return new_T, left_idx, right_idx, qpn_partition, cls
 
+def sparse_svd(T, left_idx, right_idx=None, absorb=0, qpn_partition=None, qpn_cutoff_func=None, **opts):
+    new_T, left_idx, right_idx, qpn_partition, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb)
+    if len(left_idx) == T.ndim:
+        raise NotImplementedError
+    elif len(right_idx) == T.ndim:
+        raise NotImplementedError
     split_ax = len(left_idx)
     left_pattern = new_T.pattern[:split_ax]
     right_pattern = new_T.pattern[split_ax:]
     data_map = {}
     for iblk in new_T.blocks:
-        left_q = symmetry.compute(left_pattern, iblk.q_labels[:split_ax], offset=("-", qpn_info[0]))
+        left_q = symmetry._compute(left_pattern, iblk.q_labels[:split_ax], offset=("-", qpn_partition[0]))
+        if callable(qpn_cutoff_func):
+            if not qpn_cutoff_func(left_q):
+                continue
         if left_q not in data_map:
             data_map[left_q] = []
         data_map[left_q].append(iblk)
-
     ublocks = []
     vblocks = []
     sblocks = []
@@ -275,23 +289,26 @@ def _run_sparse_fermion_svd(T, left_idx, right_idx=None, qpn_info=None, **opts):
     v = T.__class__(blocks=vblocks, pattern="+"+new_T.pattern[split_ax:])
     return u, s, v
 
-def _run_flat_fermion_svd(T, left_idx, right_idx=None, qpn_info=None, **opts):
+def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=None, **opts):
     absorb = opts.pop("absorb", 0)
-    new_T, left_idx, right_idx, qpn_info, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_info, absorb)
+    new_T, left_idx, right_idx, qpn_partition, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb)
     if left_idx is not None and len(left_idx) == T.ndim:
-        u, v, s = new_T.expand_dim(axis=new_T.ndim, dq=qpn_info[0]-new_T.dq, direction="right", return_full=True)
-        if absorb is not None:  s = None
-        return u, s, v
+        raise NotImplementedError
     elif right_idx is not None and len(right_idx) == T.ndim:
-        v, u, s = new_T.expand_dim(axis=0, dq=qpn_info[1]-new_T.dq, direction="left",return_full=True)
-        if absorb is not None:  s = None
-        return u, s, v
+        raise NotImplementedError
 
     split_ax = len(left_idx)
-    left_q = symmetry.compute(new_T.pattern[:split_ax], new_T.q_labels[:,:split_ax], offset=("-", qpn_info[0]))
-    right_q = symmetry.compute(new_T.pattern[split_ax:], new_T.q_labels[:,split_ax:], offset=("-", qpn_info[1]), neg=True)
-    aux_q = list(set(np.unique(left_q)) & set(np.unique(right_q)))
+    left_q = symmetry._compute(new_T.pattern[:split_ax], new_T.q_labels[:,:split_ax], offset=("-", qpn_partition[0]))
+    right_q = symmetry._compute(new_T.pattern[split_ax:], new_T.q_labels[:,split_ax:], offset=("-", qpn_partition[1]), neg=True)
 
+    if not callable(qpn_cutoff_func):
+        aux_q = list(set(np.unique(left_q)) & set(np.unique(right_q)))
+    else:
+        tmp_q = list(set(np.unique(left_q)) & set(np.unique(right_q)))
+        aux_q = []
+        for iq in tmp_q:
+            if qpn_cutoff_func(symmetry.from_flat(iq)):
+                aux_q.append(iq)
     full_left = np.hstack([new_T.q_labels[:,:split_ax], left_q.reshape(-1,1)])
     full_right = np.hstack([left_q.reshape(-1,1), new_T.q_labels[:,split_ax:]])
     full = [(tuple(il), tuple(ir)) for il, ir in zip(full_left, full_right)]
@@ -397,163 +414,6 @@ def compute_phase(q_labels, axes, direction="left"):
         counted.append(x)
     return phase
 
-def _fuse_data_map(left_q, right_q, from_parent, to_parent, data_map):
-    if left_q not in to_parent:
-        if right_q not in to_parent:
-            data_map[left_q] = []
-            from_parent[left_q] = [left_q]
-            if right_q != left_q: from_parent[left_q].append(right_q)
-            to_parent[left_q] = to_parent[right_q] = parent = left_q
-        else:
-            parent = to_parent[right_q]
-            from_parent[parent].append(left_q)
-            to_parent[left_q] = parent
-    else:
-        if right_q not in to_parent:
-            to_parent[right_q] = parent = to_parent[left_q]
-            from_parent[parent].append(right_q)
-        else:
-            parent = to_parent[left_q]
-            parent_b = to_parent[right_q]
-            if parent != parent_b:
-                for sub in from_parent[parent_b]:
-                    to_parent[sub] = parent
-                    from_parent[parent].append(sub)
-                data_map[parent] += data_map[parent_b]
-                del data_map[parent_b]
-    return parent
-
-def get_sparse_exponential(T, x):
-    symmetry = T.dq.__class__
-    cre_map = symmetry.operator_cre_map()
-    ann_map = symmetry.operator_ann_map()
-    split_ax = T.ndim//2
-
-    left_pattern = T.pattern[:split_ax]
-    right_pattern = T.pattern[split_ax:]
-    data_map = {}
-    from_parent = {}
-    to_parent = {}
-    for iblk in T.blocks:
-        left_q = iblk.q_labels[:split_ax]
-        right_q = iblk.q_labels[split_ax:]
-        parent = _fuse_data_map(left_q, right_q, from_parent, to_parent, data_map)
-        data_map[parent].append(iblk)
-    blocks = []
-    for slab, datasets in data_map.items():
-        row_len = col_len = 0
-        row_map = {}
-        for iblk in datasets:
-            lq = tuple(iblk.q_labels[:split_ax])
-            rq = tuple(iblk.q_labels[split_ax:])
-            if lq not in row_map:
-                new_row_len = row_len + np.prod(iblk.shape[:split_ax], dtype=int)
-                row_map[lq] = (row_len, new_row_len, iblk.shape[:split_ax])
-                row_len = new_row_len
-            if rq not in row_map:
-                new_row_len = row_len + np.prod(iblk.shape[split_ax:], dtype=int)
-                row_map[rq] = (row_len, new_row_len, iblk.shape[split_ax:])
-                row_len = new_row_len
-        data = np.zeros([row_len, row_len], dtype=T.dtype)
-        for iblk in datasets:
-            lq = tuple(iblk.q_labels[:split_ax])
-            rq = tuple(iblk.q_labels[split_ax:])
-            ist, ied = row_map[lq][:2]
-            jst, jed = row_map[rq][:2]
-            if symmetry is Z2:
-                phase= _make_z2_phase_array(cre_map, ann_map, *iblk.q_labels).reshape(ied-ist, jst-jed)
-            else:
-                phase = _compute_swap_phase(cre_map, ann_map, *iblk.q_labels)
-            data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jed-jst) * phase
-        if data.size ==0:
-            continue
-        el, ev = np.linalg.eigh(data)
-        s = np.diag(np.exp(el*x))
-        tmp = reduce(np.dot, (ev, s, ev.conj().T))
-        for lq, (ist, ied, ish) in row_map.items():
-            for rq, (jst, jed, jsh) in row_map.items():
-                if symmetry is Z2:
-                    phase = _make_z2_phase_array(cre_map, ann_map, *lq, *rq)
-                else:
-                    phase = _compute_swap_phase(cre_map, ann_map, *lq, *rq)
-                chunk = tmp[ist:ied, jst:jed].reshape(ish+jsh) * phase
-                if abs(chunk).max()<SVD_SCREENING:
-                    continue
-                q_labels = lq + rq
-                blocks.append(SubTensor(reduced=chunk, q_labels=q_labels))
-    return T.__class__(blocks=blocks, pattern=T.pattern)
-
-def get_flat_exponential(T, x):
-    symmetry = T.dq.__class__
-    cre_map = symmetry.operator_cre_map()
-    ann_map = symmetry.operator_ann_map()
-    split_ax = T.ndim//2
-
-    left_pattern = T.pattern[:split_ax]
-    right_pattern = T.pattern[split_ax:]
-    data_map = {}
-    from_parent = {}
-    to_parent = {}
-    for iblk in range(T.n_blocks):
-        left_q = tuple(T.q_labels[iblk,:split_ax])
-        right_q = tuple(T.q_labels[iblk,split_ax:])
-        parent = _fuse_data_map(left_q, right_q, from_parent, to_parent, data_map)
-        data_map[parent].append(iblk)
-    datas = []
-    shapes = []
-    qlablst = []
-    for slab, datasets in data_map.items():
-        row_len = col_len = 0
-        row_map = {}
-        for iblk in datasets:
-            lq = tuple(T.q_labels[iblk,:split_ax])
-            rq = tuple(T.q_labels[iblk,split_ax:])
-            if lq not in row_map:
-                new_row_len = row_len + np.prod(T.shapes[iblk,:split_ax], dtype=int)
-                row_map[lq] = (row_len, new_row_len, T.shapes[iblk,:split_ax])
-                row_len = new_row_len
-            if rq not in row_map:
-                new_row_len = row_len + np.prod(T.shapes[iblk,split_ax:], dtype=int)
-                row_map[rq] = (row_len, new_row_len, T.shapes[iblk,split_ax:])
-                row_len = new_row_len
-        data = np.zeros([row_len, row_len], dtype=T.dtype)
-        for iblk in datasets:
-            lq = tuple(T.q_labels[iblk,:split_ax])
-            rq = tuple(T.q_labels[iblk,split_ax:])
-            ist, ied = row_map[lq][:2]
-            jst, jed = row_map[rq][:2]
-            qlabs = [symmetry.from_flat(iq) for iq in T.q_labels[iblk]]
-            if symmetry is Z2:
-                phase= _make_z2_phase_array(cre_map, ann_map, *qlabs).reshape(ied-ist, jst-jed)
-            else:
-                phase = _compute_swap_phase(cre_map, ann_map, *qlabs)
-            data[ist:ied,jst:jed] = T.data[T.idxs[iblk]:T.idxs[iblk+1]].reshape(ied-ist, jed-jst) * phase
-        if data.size ==0:
-            continue
-
-        el, ev = np.linalg.eigh(data)
-        s = np.diag(np.exp(el*x))
-        tmp = reduce(np.dot, (ev, s, ev.conj().T))
-        for lq, (ist, ied, ish) in row_map.items():
-            for rq, (jst, jed, jsh) in row_map.items():
-                q_labels = lq + rq
-                qlabs = [symmetry.from_flat(iq) for iq in q_labels]
-                if symmetry is Z2:
-                    phase = _make_z2_phase_array(cre_map, ann_map, *qlabs)
-                else:
-                    phase = _compute_swap_phase(cre_map, ann_map, *qlabs)
-                chunk = tmp[ist:ied, jst:jed].reshape(tuple(ish)+tuple(jsh)) * phase
-                if abs(chunk).max()<SVD_SCREENING:
-                    continue
-                datas.append(chunk.ravel())
-                shapes.append(tuple(ish)+tuple(jsh))
-                qlablst.append(q_labels)
-    q_labels = np.asarray(qlablst, dtype=np.uint32)
-    shapes = np.asarray(shapes, dtype=np.uint32)
-    datas = np.concatenate(datas)
-    Texp = T.__class__(q_labels, shapes, datas, pattern=T.pattern, symmetry=T.symmetry)
-    return Texp
-
 def eye(bond_info, FLAT=True):
     """Create tensor from BondInfo with Identity matrix."""
     blocks = []
@@ -575,7 +435,7 @@ class SparseFermionTensor(SparseTensor):
     @property
     def dq(self):
         cls = self.blocks[0].q_labels[0].__class__
-        dq = cls.compute(self.pattern, self.blocks[0].q_labels)
+        dq = cls._compute(self.pattern, self.blocks[0].q_labels)
         return dq
 
     @property
@@ -875,8 +735,8 @@ class SparseFermionTensor(SparseTensor):
         pattern = "".join([a.pattern[ix] for ix in axes])
         return a.__class__(blocks=blocks, pattern=pattern)
 
-    def tensor_svd(self, left_idx, right_idx=None, qpn_info=None, **opts):
-        return _run_sparse_fermion_svd(self, left_idx, right_idx=right_idx, qpn_info=qpn_info, **opts)
+    def tensor_svd(self, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=None, **opts):
+        return sparse_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
 
     def to_exponential(self, x):
         return get_sparse_exponential(self,x)
@@ -911,8 +771,8 @@ class FlatFermionTensor(FlatSparseTensor):
     @property
     def dq(self):
         cls = self.symmetry
-        dq = cls.compute(self.pattern, self.q_labels[0][None])[0]
-        x = cls.compute(self.pattern, self.q_labels[0][None])[0]
+        dq = cls._compute(self.pattern, self.q_labels[0][None])[0]
+        x = cls._compute(self.pattern, self.q_labels[0][None])[0]
         return cls.from_flat(int(dq))
 
     @property
@@ -934,7 +794,8 @@ class FlatFermionTensor(FlatSparseTensor):
         axes = list(range(self.ndim))[::-1]
         axes = np.array(axes, dtype=np.int32)
         data = np.zeros_like(self.data)
-        block3.flat_sparse_tensor.transpose(self.shapes, self.data.conj(), self.idxs, axes, data)
+        backend = get_backend(self.symmetry)
+        backend.flat_sparse_tensor.transpose(self.shapes, self.data.conj(), self.idxs, axes, data)
         return self.__class__(self.q_labels[:, axes], self.shapes[:, axes], data, pattern=self.pattern[::-1], idxs=self.idxs, symmetry=self.symmetry)
 
     @staticmethod
@@ -964,7 +825,7 @@ class FlatFermionTensor(FlatSparseTensor):
         idx = self.idxs
         q_labels = np.stack([self.q_labels[:,ix] for ix in axes], axis=1)
         pattern = "".join([self.pattern[ix] for ix in axes])
-        net_q = self.symmetry.compute(pattern, q_labels)
+        net_q = self.symmetry._compute(pattern, q_labels)
         parities = self.symmetry.flat_to_parity(net_q)
         inds = np.where(parities==1)[0]
         for i in inds:
@@ -997,7 +858,7 @@ class FlatFermionTensor(FlatSparseTensor):
         data = self.data.copy()
         if dq.parity!=0:
             if passed_symmetry.size !=0:
-                passed_parity = self.symmetry.compute(self.pattern[:axis], passed_symmetry)
+                passed_parity = self.symmetry._compute(self.pattern[:axis], passed_symmetry)
                 passed_parity = self.symmetry.flat_to_parity(passed_parity) * dq.parity
                 blocks = np.where(passed_parity==1)[0]
                 for iblk in blocks:
@@ -1152,7 +1013,8 @@ class FlatFermionTensor(FlatSparseTensor):
             idxb = np.array(axes[1], dtype=np.int32)
         idxa[idxa < 0] += a.ndim
         idxb[idxb < 0] += b.ndim
-        q_labels, shapes, data, idxs = block3.flat_fermion_tensor.tensordot(
+        backend = get_backend(a.symmetry)
+        q_labels, shapes, data, idxs = backend.flat_fermion_tensor.tensordot(
                     a.q_labels, a.shapes, a.data, a.idxs,
                     b.q_labels, b.shapes, b.data, b.idxs,
                     idxa, idxb)
@@ -1169,13 +1031,14 @@ class FlatFermionTensor(FlatSparseTensor):
         else:
             data = np.zeros_like(a.data)
             axes = np.array(axes, dtype=np.int32)
-            block3.flat_fermion_tensor.transpose(a.q_labels, a.shapes, a.data, a.idxs, axes, data)
+            backend = get_backend(a.symmetry)
+            backend.flat_fermion_tensor.transpose(a.q_labels, a.shapes, a.data, a.idxs, axes, data)
             pattern = "".join([a.pattern[ix] for ix in axes])
             return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, pattern, a.idxs, a.symmetry)
 
-    def tensor_svd(self, left_idx, right_idx=None, qpn_info=None, **opts):
-        return _run_flat_fermion_svd(self, left_idx, right_idx=right_idx, qpn_info=qpn_info, **opts)
+    def tensor_svd(self, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=None, **opts):
+        return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
 
     def to_exponential(self, x):
         return get_flat_exponential(self, x)
