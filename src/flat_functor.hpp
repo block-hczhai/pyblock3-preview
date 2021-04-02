@@ -50,11 +50,11 @@ flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<int> &idxa,
                                       const py::array_t<int> &idxb);
 
-template <typename Q>
+template <typename Q, typename FL>
 size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
-                                 const py::array_t<double> &adata,
-                                 const py::array_t<double> &bdata,
-                                 py::array_t<double> &cdata);
+                                 const py::array_t<FL> &adata,
+                                 const py::array_t<FL> &bdata,
+                                 py::array_t<FL> &cdata);
 
 template <typename Q>
 tuple<int, int, vector<map_uint_uint<Q>>, vector<map_uint_uint<Q>>>
@@ -75,6 +75,14 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
 
 #define TMPL_EXTERN extern
 #define TMPL_NAME flat_functor
+
 #include "symmetry_tmpl.hpp"
+#define TMPL_FL double
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+#define TMPL_FL complex<double>
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+
 #undef TMPL_NAME
 #undef TMPL_EXTERN

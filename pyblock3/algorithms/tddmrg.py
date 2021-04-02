@@ -26,6 +26,13 @@ from .core import SweepAlgorithm, fmt_size
 import os
 import psutil
 
+def _complex_repr(form, x):
+    if x.imag == 0:
+        return "%s" % form % x.real
+    elif x.real == 0:
+        return "%s i" % form % x.imag
+    else:
+        return "%s + %s i" % (form, form) % (x.real, x.imag)
 
 class TDDMRG(SweepAlgorithm):
     """Time-step targetting td-DMRG approach."""
@@ -52,11 +59,12 @@ class TDDMRG(SweepAlgorithm):
                 self.normsqs.append(0)
             if self.iprint >= 1:
                 if n_sub_sweeps == 1:
-                    print("Sweep = %4d | Direction = %8s | DT = %9.2g | BondDim = %4d" % (
-                        iw, "forward" if forward else "backward", dt, self.bdims[iw]))
+                    print("Sweep = %4d | Direction = %8s | DT = %s | BondDim = %4d" % (
+                        iw, "forward" if forward else "backward", _complex_repr("%9.2g", dt), self.bdims[iw]))
                 else:
-                    print("Sweep = %4d (%2d/%2d) | Direction = %8s | DT = %9.2g | BondDim = %4d" % (
-                        iw, isw, n_sub_sweeps, "forward" if forward else "backward", dt, self.bdims[iw]))
+                    print("Sweep = %4d (%2d/%2d) | Direction = %8s | DT = %s | BondDim = %4d" % (
+                        iw, isw, n_sub_sweeps, "forward" if forward else "backward",
+                        _complex_repr("%9.2g", dt), self.bdims[iw]))
             peak_mem = 0
             for i in range(0, mpe.n_sites - dot + 1)[::1 if forward else -1]:
                 eval_ener = i == mpe.n_sites - dot if forward else i == 0
@@ -99,10 +107,10 @@ class TDDMRG(SweepAlgorithm):
                 self.energies[iw] = ener
                 self.normsqs[iw] = norm ** 2
                 if self.iprint >= 2:
-                    print(" %3s Site = %4d-%4d .. Mmps = %4d Nmult = %4d E = %20.12f DW = %5.2E FLOPS = %5.2E Tmult = %8.3f T = %8.3f MEM = %7s" % (
-                        "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, nmult, ener, error, nflop / tmult, tmult, time.perf_counter() - tt, fmt_size(mem)))
-            print("Time elapsed = %10.3f | E = %20.12f | Norm^2 = %20.12f | MEM = %7s" %
-                  (time.perf_counter() - telp, self.energies[iw], self.normsqs[iw], fmt_size(peak_mem)))
+                    print(" %3s Site = %4d-%4d .. Mmps = %4d Nmult = %4d E = %s DW = %5.2E FLOPS = %5.2E Tmult = %8.3f T = %8.3f MEM = %7s" % (
+                        "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, nmult, _complex_repr("%20.12f", ener), error, nflop / tmult, tmult, time.perf_counter() - tt, fmt_size(mem)))
+            print("Time elapsed = %10.3f | E = %s | Norm^2 = %20.12f | MEM = %7s" %
+                  (time.perf_counter() - telp, _complex_repr("%20.12f", self.energies[iw]), self.normsqs[iw], fmt_size(peak_mem)))
             forward = not forward
         return self
 

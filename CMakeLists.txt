@@ -63,6 +63,13 @@ IF("${OMP_LIB}" STREQUAL "SEQ")
     SET(PTHREAD "")
 ELSEIF ("${OMP_LIB}" STREQUAL "GNU")
     FIND_LIBRARY(OMP_LIB_NAME NAMES gomp PATHS /usr/local/lib)
+    IF (NOT OMP_LIB_NAME)
+        EXECUTE_PROCESS(
+            COMMAND ${CMAKE_CXX_COMPILER} -print-search-dirs
+            COMMAND grep "^lib" COMMAND awk -F "=" "{print $2}" COMMAND tr ":" ";"    
+            OUTPUT_VARIABLE OMP_LIB_HINT OUTPUT_STRIP_TRAILING_WHITESPACE)
+        FIND_LIBRARY(OMP_LIB_NAME NAMES gomp PATHS ${OMP_LIB_HINT})
+    ENDIF()
     SET(MKL_OMP_LIB_NAME mkl_gnu_thread)
     SET(PTHREAD pthread)
 ELSE()

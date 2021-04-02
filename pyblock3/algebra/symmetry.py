@@ -186,7 +186,7 @@ class BondFusingInfo(BondInfo):
             qs = [sorted(q.items(), key=lambda x: trans(x[0])) for q in infos]
         if pattern is None:
             pattern = "+" * len(qs)
-        it = np.szeros(tuple(len(q) for q in qs), dtype=int)
+        it = np.zeros(tuple(len(q) for q in qs), dtype=int)
         nit = np.nditer(it, flags=['multi_index'])
         for _ in nit:
             x = nit.multi_index

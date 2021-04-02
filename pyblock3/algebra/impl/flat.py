@@ -74,7 +74,7 @@ def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa
     return (np.array(qs, dtype=np.uint32),
             np.array(shapes, dtype=np.uint32),
             np.concatenate(mats) if len(mats) != 0 else np.array(
-                [], dtype=np.float64),
+                [], dtype=adata.dtype),
             np.array(idxs, dtype=np.uint32))
 
 

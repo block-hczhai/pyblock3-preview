@@ -103,20 +103,36 @@ extern void dgesv(const int *n, const int *nrhs, double *a, const int *lda,
 // QR factorization
 extern void dgeqrf(const int *m, const int *n, double *a, const int *lda,
                    double *tau, double *work, const int *lwork, int *info);
+extern void zgeqrf(const int *m, const int *n, complex<double> *a,
+                   const int *lda, complex<double> *tau, complex<double> *work,
+                   const int *lwork, int *info);
 extern void dorgqr(const int *m, const int *n, const int *k, double *a,
                    const int *lda, const double *tau, double *work,
                    const int *lwork, int *info);
+extern void zungqr(const int *m, const int *n, const int *k, complex<double> *a,
+                   const int *lda, const complex<double> *tau,
+                   complex<double> *work, const int *lwork, int *info);
 
 // LQ factorization
 extern void dgelqf(const int *m, const int *n, double *a, const int *lda,
                    double *tau, double *work, const int *lwork, int *info);
+extern void zgelqf(const int *m, const int *n, complex<double> *a,
+                   const int *lda, complex<double> *tau, complex<double> *work,
+                   const int *lwork, int *info);
 extern void dorglq(const int *m, const int *n, const int *k, double *a,
                    const int *lda, const double *tau, double *work,
                    const int *lwork, int *info);
+extern void zunglq(const int *m, const int *n, const int *k, complex<double> *a,
+                   const int *lda, const complex<double> *tau,
+                   complex<double> *work, const int *lwork, int *info);
 
 // eigenvalue problem
 extern void dsyev(const char *jobz, const char *uplo, const int *n, double *a,
                   const int *lda, double *w, double *work, const int *lwork,
+                  int *info);
+extern void zheev(const char *jobz, const char *uplo, const int *n,
+                  complex<double> *a, const int *lda, double *w,
+                  complex<double> *work, const int *lwork, double *rwork,
                   int *info);
 
 // SVD
@@ -160,6 +176,43 @@ inline void cblas_dgemm_batch(
             dgemm(trb, tra, &n, &m, &k, &alpha, B_Array[i], &ldb, A_Array[i],
                   &lda, &beta, C_Array[i], &ldc);
     }
+}
+
+inline void cblas_zgemm_batch_impl(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const complex<double> *alpha_Array,
+    const complex<double> **A_Array, const int *lda_Array,
+    const complex<double> **B_Array, const int *ldb_Array,
+    const complex<double> *beta_Array, complex<double> **C_Array,
+    const int *ldc_Array, const int group_count, const int *group_size) {
+    assert(Layout == CblasRowMajor);
+    for (int ig = 0, i = 0; ig < group_count; ig++) {
+        const char *tra = TransA_Array[ig] == CblasNoTrans ? "n" : "t";
+        const char *trb = TransB_Array[ig] == CblasNoTrans ? "n" : "t";
+        const int m = M_Array[ig], n = N_Array[ig], k = K_Array[ig];
+        const complex<double> alpha = alpha_Array[ig], beta = beta_Array[ig];
+        const int lda = lda_Array[ig], ldb = ldb_Array[ig], ldc = ldc_Array[ig];
+        const int gsize = group_size[ig];
+        for (int j = 0; j < gsize; j++, i++)
+            zgemm(trb, tra, &n, &m, &k, &alpha, B_Array[i], &ldb, A_Array[i],
+                  &lda, &beta, C_Array[i], &ldc);
+    }
+}
+
+inline void cblas_zgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const void *alpha_Array, const void **A_Array,
+    const int *lda_Array, const void **B_Array, const int *ldb_Array,
+    const void *beta_Array, void **C_Array, const int *ldc_Array,
+    const int group_count, const int *group_size) {
+    cblas_zgemm_batch_impl(
+        Layout, TransA_Array, TransB_Array, M_Array, N_Array, K_Array,
+        (const complex<double> *)alpha_Array, (const complex<double> **)A_Array,
+        lda_Array, (const complex<double> **)B_Array, ldb_Array,
+        (const complex<double> *)beta_Array, (complex<double> **)C_Array,
+        ldc_Array, group_count, group_size);
 }
 
 #endif
@@ -242,6 +295,107 @@ inline void xlacpy(const char *uplo, const int *m, const int *n,
                    const complex<double> *a, const int *lda, complex<double> *b,
                    const int *ldb) {
     zlacpy(uplo, m, n, a, lda, b, ldb);
+}
+
+template <typename FL>
+inline void xgeqrf(const int *m, const int *n, FL *a, const int *lda, FL *tau,
+                   FL *work, const int *lwork, int *info);
+template <>
+inline void xgeqrf(const int *m, const int *n, double *a, const int *lda,
+                   double *tau, double *work, const int *lwork, int *info) {
+    dgeqrf(m, n, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xgeqrf(const int *m, const int *n, complex<double> *a,
+                   const int *lda, complex<double> *tau, complex<double> *work,
+                   const int *lwork, int *info) {
+    zgeqrf(m, n, a, lda, tau, work, lwork, info);
+}
+
+template <typename FL>
+inline void xungqr(const int *m, const int *n, const int *k, FL *a,
+                   const int *lda, const FL *tau, FL *work, const int *lwork,
+                   int *info);
+template <>
+inline void xungqr(const int *m, const int *n, const int *k, double *a,
+                   const int *lda, const double *tau, double *work,
+                   const int *lwork, int *info) {
+    dorgqr(m, n, k, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xungqr(const int *m, const int *n, const int *k, complex<double> *a,
+                   const int *lda, const complex<double> *tau,
+                   complex<double> *work, const int *lwork, int *info) {
+    zungqr(m, n, k, a, lda, tau, work, lwork, info);
+}
+
+template <typename FL>
+inline void xgelqf(const int *m, const int *n, FL *a, const int *lda, FL *tau,
+                   FL *work, const int *lwork, int *info);
+template <>
+inline void xgelqf(const int *m, const int *n, double *a, const int *lda,
+                   double *tau, double *work, const int *lwork, int *info) {
+    dgelqf(m, n, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xgelqf(const int *m, const int *n, complex<double> *a,
+                   const int *lda, complex<double> *tau, complex<double> *work,
+                   const int *lwork, int *info) {
+    zgelqf(m, n, a, lda, tau, work, lwork, info);
+}
+
+template <typename FL>
+inline void xunglq(const int *m, const int *n, const int *k, FL *a,
+                   const int *lda, const FL *tau, FL *work, const int *lwork,
+                   int *info);
+template <>
+inline void xunglq(const int *m, const int *n, const int *k, double *a,
+                   const int *lda, const double *tau, double *work,
+                   const int *lwork, int *info) {
+    dorglq(m, n, k, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xunglq(const int *m, const int *n, const int *k, complex<double> *a,
+                   const int *lda, const complex<double> *tau,
+                   complex<double> *work, const int *lwork, int *info) {
+    zunglq(m, n, k, a, lda, tau, work, lwork, info);
+}
+
+template <typename FL>
+inline void cblas_xgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const FL *alpha_Array, const FL **A_Array,
+    const int *lda_Array, const FL **B_Array, const int *ldb_Array,
+    const FL *beta_Array, FL **C_Array, const int *ldc_Array,
+    const int group_count, const int *group_size);
+template <>
+inline void cblas_xgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const double *alpha_Array, const double **A_Array,
+    const int *lda_Array, const double **B_Array, const int *ldb_Array,
+    const double *beta_Array, double **C_Array, const int *ldc_Array,
+    const int group_count, const int *group_size) {
+    cblas_dgemm_batch(Layout, TransA_Array, TransB_Array, M_Array, N_Array,
+                      K_Array, alpha_Array, A_Array, lda_Array, B_Array,
+                      ldb_Array, beta_Array, C_Array, ldc_Array, group_count,
+                      group_size);
+}
+template <>
+inline void cblas_xgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const complex<double> *alpha_Array,
+    const complex<double> **A_Array, const int *lda_Array,
+    const complex<double> **B_Array, const int *ldb_Array,
+    const complex<double> *beta_Array, complex<double> **C_Array,
+    const int *ldc_Array, const int group_count, const int *group_size) {
+    cblas_zgemm_batch(Layout, TransA_Array, TransB_Array, M_Array, N_Array,
+                      K_Array, (const void *)alpha_Array,
+                      (const void **)A_Array, lda_Array, (const void **)B_Array,
+                      ldb_Array, (const void *)beta_Array, (void **)C_Array,
+                      ldc_Array, group_count, group_size);
 }
 
 template <typename FL>

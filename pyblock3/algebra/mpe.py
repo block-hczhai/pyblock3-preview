@@ -291,7 +291,7 @@ class MPE:
     @property
     def expectation(self):
         """<bra|mpo|ket> for the whole system."""
-        r = np.dot(self.bra, self.mpo @ self.ket)
+        r = np.dot(self.bra.conj(), self.mpo @ self.ket)
         if self.mpi:
             from mpi4py import MPI
             r = self.comm.allreduce(r, op=MPI.SUM)
@@ -351,7 +351,7 @@ class MPE:
                 (20.0 / 81) * k3 + (-2.0 / 81) * k4
             r3 = b + k1 / 6 + k2 / 3 + k3 / 3 + k4 / 6
             g = np.linalg.norm(r3)
-            w = np.dot(r3, fst @ r3) / g ** 2 if eval_ener else 0
+            w = np.dot(r3.conj(), fst @ r3) / g ** 2 if eval_ener else 0
             kets = [self.ket.__class__(tensors=[fst.finalize_vector(x)],
                                        opts=self.ket.opts) for x in [b, r1, r2, r3]]
             nflop = fst.nflop
