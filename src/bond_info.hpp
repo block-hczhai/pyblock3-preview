@@ -20,60 +20,61 @@
 
 #pragma once
 
+#include "sz.hpp"
 #include <algorithm>
 #include <unordered_map>
 #include <vector>
-#include "sz.hpp"
 
 using namespace std;
+
+template <typename Q> struct map_uint_uint : unordered_map<uint32_t, uint32_t> {
+    map_uint_uint() : unordered_map<uint32_t, uint32_t>() {}
+    map_uint_uint(const vector<pair<uint32_t, uint32_t>>::iterator &a,
+                  const vector<pair<uint32_t, uint32_t>>::iterator &b)
+        : unordered_map<uint32_t, uint32_t>(a, b) {}
+};
 
 typedef unordered_map<
     uint32_t, pair<uint32_t, unordered_map<vector<uint32_t>,
                                            pair<uint32_t, vector<uint32_t>>>>>
     map_fusing;
 
-template<typename Q>
-void bond_info_trans(
-    const vector<unordered_map<uint32_t, uint32_t>> &infos,
-    const string &pattern, vector<vector<pair<Q, uint32_t>>> &infox,
-    bool sorted = false);
+template <typename Q>
+void bond_info_trans(const vector<map_uint_uint<Q>> &infos,
+                     const string &pattern,
+                     vector<vector<pair<Q, uint32_t>>> &infox,
+                     bool sorted = false);
 
+template <typename Q>
+map_fusing bond_info_fusing_product(const vector<map_uint_uint<Q>> &infos,
+                                    const string &pattern);
 
-template<typename Q>
-map_fusing
-bond_info_fusing_product(const vector<unordered_map<uint32_t, uint32_t>> &infos,
-                         const string &pattern);
+template <typename Q>
+pair<vector<map_uint_uint<Q>>, vector<map_uint_uint<Q>>>
+bond_info_set_bond_dimension_occ(const vector<map_uint_uint<Q>> &basis,
+                                 vector<map_uint_uint<Q>> &left_dims,
+                                 vector<map_uint_uint<Q>> &right_dims,
+                                 uint32_t vacuum, uint32_t target, int m,
+                                 const vector<double> &occ, double bias);
 
-template<typename Q>
-pair<vector<unordered_map<uint32_t, uint32_t>>,
-     vector<unordered_map<uint32_t, uint32_t>>>
-bond_info_set_bond_dimension_occ(
-    const vector<unordered_map<uint32_t, uint32_t>> &basis,
-    vector<unordered_map<uint32_t, uint32_t>> &left_dims,
-    vector<unordered_map<uint32_t, uint32_t>> &right_dims, uint32_t vacuum,
-    uint32_t target, int m, const vector<double> &occ, double bias);
+template <>
+pair<vector<map_uint_uint<SZ>>, vector<map_uint_uint<SZ>>>
+bond_info_set_bond_dimension_occ<SZ>(const vector<map_uint_uint<SZ>> &basis,
+                                     vector<map_uint_uint<SZ>> &left_dims,
+                                     vector<map_uint_uint<SZ>> &right_dims,
+                                     uint32_t vacuum, uint32_t target, int m,
+                                     const vector<double> &occ, double bias);
 
-template<>
-pair<vector<unordered_map<uint32_t, uint32_t>>,
-     vector<unordered_map<uint32_t, uint32_t>>>
-bond_info_set_bond_dimension_occ<SZ>(
-    const vector<unordered_map<uint32_t, uint32_t>> &basis,
-    vector<unordered_map<uint32_t, uint32_t>> &left_dims,
-    vector<unordered_map<uint32_t, uint32_t>> &right_dims, uint32_t vacuum,
-    uint32_t target, int m, const vector<double> &occ, double bias);
-
-template<typename Q>
-unordered_map<uint32_t, uint32_t>
-tensor_product_ref(const unordered_map<uint32_t, uint32_t> &ma,
-                   const unordered_map<uint32_t, uint32_t> &mb,
-                   const unordered_map<uint32_t, uint32_t> &mcref);
+template <typename Q>
+map_uint_uint<Q> tensor_product_ref(const map_uint_uint<Q> &ma,
+                                    const map_uint_uint<Q> &mb,
+                                    const map_uint_uint<Q> &mcref);
 
 #define TMPL_EXTERN extern
 #define TMPL_NAME bond_info
 #include "symmetry_tmpl.hpp"
 #undef TMPL_NAME
 #undef TMPL_EXTERN
-
 
 inline size_t q_labels_hash(const uint32_t *qs, int nctr, const int *idxs,
                             const int inc) noexcept {

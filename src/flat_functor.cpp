@@ -23,7 +23,7 @@
 #include <cstring>
 #include <map>
 
-template<typename Q>
+template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
       py::array_t<uint32_t>>
 flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
@@ -139,7 +139,7 @@ flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
 
-template<typename Q>
+template <typename Q>
 size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
                                  const py::array_t<double> &adata,
                                  const py::array_t<double> &bdata,
@@ -180,9 +180,8 @@ size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
     return nflop;
 }
 
-template<typename Q>
-tuple<int, int, vector<unordered_map<uint32_t, uint32_t>>,
-      vector<unordered_map<uint32_t, uint32_t>>>
+template <typename Q>
+tuple<int, int, vector<map_uint_uint<Q>>, vector<map_uint_uint<Q>>>
 flat_sparse_tensor_matmul_init(
     const py::array_t<uint32_t> &loqs, const py::array_t<uint32_t> &loshs,
     const py::array_t<uint32_t> &leqs, const py::array_t<uint32_t> &leshs,
@@ -194,8 +193,8 @@ flat_sparse_tensor_matmul_init(
     int n_blocks_r = (int)roqs.shape()[0] + (int)reqs.shape()[0];
     int ndimr =
         roqs.shape()[0] != 0 ? (int)roqs.shape()[1] : (int)reqs.shape()[1];
-    vector<unordered_map<uint32_t, uint32_t>> lqs(ndiml);
-    vector<unordered_map<uint32_t, uint32_t>> rqs(ndimr);
+    vector<map_uint_uint<Q>> lqs(ndiml);
+    vector<map_uint_uint<Q>> rqs(ndimr);
     if (loqs.shape()[0] != 0) {
         const ssize_t asi = loqs.strides()[0] / sizeof(uint32_t),
                       asj = loqs.strides()[1] / sizeof(uint32_t);
@@ -233,8 +232,8 @@ flat_sparse_tensor_matmul_init(
                     reshs.data()[j * asi + i * asj];
     }
     int dl = (ndiml - 2) / 2, dr = (ndimr - 2) / 2;
-    vector<unordered_map<uint32_t, uint32_t>> vinfos(dl + dr + 2);
-    vector<unordered_map<uint32_t, uint32_t>> cinfos(dl + dr + 2);
+    vector<map_uint_uint<Q>> vinfos(dl + dr + 2);
+    vector<map_uint_uint<Q>> cinfos(dl + dr + 2);
     cinfos[0] = lqs[0];
     vinfos[0] = lqs[0];
     for (int i = 0; i < dl; i++) {
@@ -251,7 +250,7 @@ flat_sparse_tensor_matmul_init(
     return std::make_tuple(dl, dr, cinfos, vinfos);
 }
 
-template<typename Q>
+template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
 flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<uint32_t> &ashs,
@@ -410,7 +409,7 @@ flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
     return std::make_tuple(cqs, cshs, cidxs);
 }
 
-template<typename Q>
+template <typename Q>
 py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
     const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,

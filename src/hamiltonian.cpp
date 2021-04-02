@@ -48,8 +48,8 @@ typedef tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
     op_skeleton;
 
 inline void op_matmul(const op_skeleton &ska, const op_skeleton &skb,
-               const op_skeleton &skc, const double *pa, const double *pb,
-               double *pc) {
+                      const op_skeleton &skc, const double *pa,
+                      const double *pb, double *pc) {
     int na = get<0>(ska).shape()[0], nb = get<0>(skb).shape()[0],
         nc = get<0>(skc).shape()[0];
     const uint32_t *pqa = get<0>(ska).data(), *pqb = get<0>(skb).data(),
@@ -395,20 +395,24 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         if (lrv.first.first == 0)
                             svds[iq][2][lrv.first.second] += lrv.second;
                         else
-                            mat[(lrv.first.first - 1) * szr + lrv.first.second] += lrv.second;
+                            mat[(lrv.first.first - 1) * szr +
+                                lrv.first.second] += lrv.second;
                     szl--;
                     svds[iq][1][0] = 1;
                     svds[iq][0][0] = 1;
                     dgesvd("S", "S", &szr, &szl, mat.data(), &szr,
-                        svds[iq][1].data() + 1, svds[iq][2].data() + szr, &szr,
-                        svds[iq][0].data() + 1 + szm, &szm, work.data(), &lwork, &info);
+                           svds[iq][1].data() + 1, svds[iq][2].data() + szr,
+                           &szr, svds[iq][0].data() + 1 + szm, &szm,
+                           work.data(), &lwork, &info);
                     szl++;
                 } else {
                     for (auto &lrv : matvs)
-                        mat[lrv.first.first * szr + lrv.first.second] += lrv.second;
+                        mat[lrv.first.first * szr + lrv.first.second] +=
+                            lrv.second;
                     dgesvd("S", "S", &szr, &szl, mat.data(), &szr,
-                        svds[iq][1].data(), svds[iq][2].data(), &szr,
-                        svds[iq][0].data(), &szm, work.data(), &lwork, &info);
+                           svds[iq][1].data(), svds[iq][2].data(), &szr,
+                           svds[iq][0].data(), &szm, work.data(), &lwork,
+                           &info);
                 }
                 res_s_sum += accumulate(svds[iq][1].begin(), svds[iq][1].end(),
                                         0, plus<double>());
@@ -468,10 +472,11 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         // info_l; info_r to build skelton; physical indices at the end
         // skeleton: +-+-; dq = 0
         // skeleton guarentees that right indices are contiguous
-        vector<unordered_map<uint32_t, uint32_t>> infos = {info_l, info_r,
-                                                           basis, basis};
-        auto skl =
-            flat_sparse_tensor_skeleton<SZ>(infos, "+-+-", SZ::from_q(SZ(0, 0, 0)));
+        vector<map_uint_uint<SZ>> infos = {
+            (map_uint_uint<SZ> &)info_l, (map_uint_uint<SZ> &)info_r,
+            (map_uint_uint<SZ> &)basis, (map_uint_uint<SZ> &)basis};
+        auto skl = flat_sparse_tensor_skeleton<SZ>(infos, "+-+-",
+                                                   SZ::from_q(SZ(0, 0, 0)));
         // separate odd and even
         int n_odd = 0, n_total = get<0>(skl).shape()[0];
         ssize_t size_odd = 0;
@@ -540,7 +545,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
         // then just sum data (dgemm)
         // prepare on-site operators
         unordered_map<uint32_t, op_skeleton> sk_map;
-        vector<unordered_map<uint32_t, uint32_t>> op_infos = {basis, basis};
+        vector<map_uint_uint<SZ>> op_infos = {(map_uint_uint<SZ> &)basis,
+                                              (map_uint_uint<SZ> &)basis};
         vector<uint32_t> sk_qs = {
             SZ::from_q(SZ(0, 0, 0)), SZ::from_q(SZ(1, 1, porb[ii])),
             SZ::from_q(SZ(1, -1, porb[ii])), SZ::from_q(SZ(-1, -1, porb[ii])),
@@ -609,8 +615,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         for (int i = ik + 1; i < k; i++) {
                             SZ qx = from_op(term_sorted[itt + i], porb, m_site,
                                             m_op);
-                            uint32_t fqk = SZ::from_q(qi + qx), fqx = SZ::from_q(qx),
-                                     fqi = SZ::from_q(qi);
+                            uint32_t fqk = SZ::from_q(qi + qx),
+                                     fqx = SZ::from_q(qx), fqi = SZ::from_q(qi);
                             if (sk_map.count(fqk) == 0)
                                 sk_map[fqk] = flat_sparse_tensor_skeleton<SZ>(
                                     op_infos, "+-", fqk);
@@ -679,7 +685,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
                         for (auto &vl : vls.second) {
                             int il = vl.second, ip = vl.first.first;
                             int ipp = ip_idx[ip].first, ipr = ip_idx[ip].second;
-                            uint64_t ql = SZ::from_q(left_q[ip]), qr = SZ::from_q(q);
+                            uint64_t ql = SZ::from_q(left_q[ip]),
+                                     qr = SZ::from_q(q);
                             int npr = (int)info_l.at(ql);
                             double *pr =
                                 left_q[ip].is_fermion() == q.is_fermion() ? pe

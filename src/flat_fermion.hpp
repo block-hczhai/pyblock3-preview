@@ -51,8 +51,8 @@ flat_fermion_tensor_tensordot(
 
 template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
-flat_fermion_tensor_skeleton(
-    const vector<unordered_map<uint32_t, uint32_t>> &infos, uint32_t fdq);
+flat_fermion_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
+                             uint32_t fdq);
 
 #define TMPL_EXTERN extern
 #define TMPL_NAME flat_fermion

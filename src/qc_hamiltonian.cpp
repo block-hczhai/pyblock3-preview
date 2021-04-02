@@ -130,10 +130,12 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
         basis[SZ::from_q(SZ(1, 1, v_orb_sym[ii]))] = 1;
         basis[SZ::from_q(SZ(1, -1, v_orb_sym[ii]))] = 1;
         basis[SZ::from_q(SZ(2, 0, 0))] = 1;
-        vector<unordered_map<uint32_t, uint32_t>> xinfos = {
-            infos.at(ii), infos.at(ii + 1), basis, basis};
-        auto skl =
-            flat_sparse_tensor_skeleton<SZ>(xinfos, "+-+-", SZ::from_q(SZ(0, 0, 0)));
+        vector<map_uint_uint<SZ>> xinfos = {
+            (map_uint_uint<SZ> &)infos.at(ii),
+            (map_uint_uint<SZ> &)infos.at(ii + 1), (map_uint_uint<SZ> &)basis,
+            (map_uint_uint<SZ> &)basis};
+        auto skl = flat_sparse_tensor_skeleton<SZ>(xinfos, "+-+-",
+                                                   SZ::from_q(SZ(0, 0, 0)));
         // separate odd and even
         int n_odd = 0, n_total = get<0>(skl).shape()[0];
         ssize_t size_odd = 0;
@@ -196,7 +198,8 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
             }
         // site operators
         unordered_map<uint32_t, op_skeleton> sk_map;
-        vector<unordered_map<uint32_t, uint32_t>> op_infos = {basis, basis};
+        vector<map_uint_uint<SZ>> op_infos = {(map_uint_uint<SZ> &)basis,
+                                              (map_uint_uint<SZ> &)basis};
         vector<uint32_t> sk_qs;
         int ipg = v_orb_sym[ii];
         sk_qs.push_back(SZ::from_q(vacuum));
@@ -263,18 +266,20 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
         for (uint8_t s = 0; s < 4; s++) {
             skt = sk_map[SZ::from_q(SZ(-1, -sz[s & 1], ipg))];
             op_prims[s][OpNames::R].resize(get<0>(skt).shape()[0]);
-            op_matmul(sk_map[SZ::from_q(SZ(0, sz_minus[(s >> 1) | (s & 2)], 0))],
-                      skd[s & 1], skt,
-                      op_prims[(s >> 1) | (s & 2)][OpNames::B].data(),
-                      op_prims[s & 1][OpNames::D].data(),
-                      op_prims[s][OpNames::R].data());
+            op_matmul(
+                sk_map[SZ::from_q(SZ(0, sz_minus[(s >> 1) | (s & 2)], 0))],
+                skd[s & 1], skt,
+                op_prims[(s >> 1) | (s & 2)][OpNames::B].data(),
+                op_prims[s & 1][OpNames::D].data(),
+                op_prims[s][OpNames::R].data());
             skt = sk_map[SZ::from_q(SZ(1, sz[s & 1], ipg))];
             op_prims[s][OpNames::RD].resize(get<0>(skt).shape()[0]);
-            op_matmul(skc[s & 1],
-                      sk_map[SZ::from_q(SZ(0, sz_minus[(s >> 1) | (s & 2)], 0))],
-                      skt, op_prims[s & 1][OpNames::C].data(),
-                      op_prims[(s >> 1) | (s & 2)][OpNames::B].data(),
-                      op_prims[s][OpNames::RD].data());
+            op_matmul(
+                skc[s & 1],
+                sk_map[SZ::from_q(SZ(0, sz_minus[(s >> 1) | (s & 2)], 0))], skt,
+                op_prims[s & 1][OpNames::C].data(),
+                op_prims[(s >> 1) | (s & 2)][OpNames::B].data(),
+                op_prims[s][OpNames::RD].data());
         }
 
         int m = ii, i, j, k, s;
@@ -429,8 +434,9 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
             if (!rdt_map.count((ql << 32) | qr))
                 continue;
             size_t pir = rdt_map.at((ql << 32) | qr);
-            double *pr =
-                SZ::to_q(ql).is_fermion() == SZ::to_q(qr).is_fermion() ? pe : po;
+            double *pr = SZ::to_q(ql).is_fermion() == SZ::to_q(qr).is_fermion()
+                             ? pe
+                             : po;
             shared_ptr<OpExpr<SZ>> x = pmat->data[i];
             switch (x->get_type()) {
             case OpTypes::Zero:

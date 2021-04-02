@@ -65,8 +65,7 @@ flat_sparse_tensor_kron_add(
     const py::array_t<FL> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
     const py::array_t<FL> &bdata, const py::array_t<uint32_t> &bidxs,
-    const unordered_map<uint32_t, uint32_t> &infol,
-    const unordered_map<uint32_t, uint32_t> &infor);
+    const map_uint_uint<Q> &infol, const map_uint_uint<Q> &infor);
 
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
@@ -85,12 +84,11 @@ map_fusing flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
 
 template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
-flat_sparse_tensor_skeleton(
-    const vector<unordered_map<uint32_t, uint32_t>> &infos,
-    const string &pattern, uint32_t fdq);
+flat_sparse_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
+                            const string &pattern, uint32_t fdq);
 
 template <typename Q>
-vector<unordered_map<uint32_t, uint32_t>>
+vector<map_uint_uint<Q>>
 flat_sparse_tensor_get_infos(const py::array_t<uint32_t> &aqs,
                              const py::array_t<uint32_t> &ashs);
 
