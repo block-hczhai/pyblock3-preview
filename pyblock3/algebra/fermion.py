@@ -456,7 +456,7 @@ class SparseFermionTensor(SparseTensor):
     def dagger(self):
         axes = list(range(self.ndim))[::-1]
         blocks = [np.transpose(block.conj(), axes=axes) for block in self.blocks]
-        return self.__class__(blocks=blocks, pattern=self.pattern[::-1])
+        return self.__class__(blocks=blocks, pattern=_flip_pattern(self.pattern[::-1]))
 
     @staticmethod
     @implements(np.copy)
@@ -796,7 +796,7 @@ class FlatFermionTensor(FlatSparseTensor):
         data = np.zeros_like(self.data)
         backend = get_backend(self.symmetry)
         backend.flat_sparse_tensor.transpose(self.shapes, self.data.conj(), self.idxs, axes, data)
-        return self.__class__(self.q_labels[:, axes], self.shapes[:, axes], data, pattern=self.pattern[::-1], idxs=self.idxs, symmetry=self.symmetry)
+        return self.__class__(self.q_labels[:, axes], self.shapes[:, axes], data, pattern=_flip_pattern(self.pattern[::-1]), idxs=self.idxs, symmetry=self.symmetry)
 
     @staticmethod
     @implements(np.copy)
