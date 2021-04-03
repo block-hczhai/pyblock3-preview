@@ -36,7 +36,7 @@ def _complex_repr(form, x):
 
 class TDDMRG(SweepAlgorithm):
     """Time-step targetting td-DMRG approach."""
-    def __init__(self, mpe, bdims, iprint=2):
+    def __init__(self, mpe, bdims, iprint=2, **kwargs):
         self.mpe = mpe
         self.bdims = bdims
         self.contract = True
@@ -44,9 +44,9 @@ class TDDMRG(SweepAlgorithm):
         self.iprint = iprint
         self.energies = []
         self.normsqs = []
-        super().__init__()
+        super().__init__(**kwargs)
 
-    def solve(self, dt, n_sweeps=10, n_sub_sweeps=2, dot=2, forward=True):
+    def solve(self, dt, n_sweeps=10, n_sub_sweeps=2, dot=2, forward=True, normalize=True):
         mpe = self.mpe
         if len(self.bdims) < n_sweeps:
             self.bdims += [self.bdims[-1]] * (n_sweeps - len(self.bdims))
@@ -84,7 +84,8 @@ class TDDMRG(SweepAlgorithm):
                             nmult += xnmult
                             nflop += xnflop
                             eff.ket = eff.bra = kets[-1]
-                        eff.ket /= np.linalg.norm(eff.ket)
+                        if normalize:
+                            eff.ket /= np.linalg.norm(eff.ket)
                     else:
                         ener, norm, kets, eff, nmult, nflop = eff.rk4(dt=dt, fast=self.fast, eval_ener=eval_ener)
                     tmult = time.perf_counter() - tx

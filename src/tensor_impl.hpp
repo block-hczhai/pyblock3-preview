@@ -141,6 +141,12 @@ extern void dgesvd(const char *jobu, const char *jobvt, const int *m,
                    const int *n, double *a, const int *lda, double *s,
                    double *u, const int *ldu, double *vt, const int *ldvt,
                    double *work, const int *lwork, int *info);
+extern void zgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, complex<double> *a, const int *lda, double *s,
+                   complex<double> *u, const int *ldu, complex<double> *vt,
+                   const int *ldvt, complex<double> *work, const int *lwork,
+                   double *rwork, int *info);
+
 // matrix copy
 // mat [b] = mat [a]
 extern void dlacpy(const char *uplo, const int *m, const int *n,
@@ -359,6 +365,30 @@ inline void xunglq(const int *m, const int *n, const int *k, complex<double> *a,
                    const int *lda, const complex<double> *tau,
                    complex<double> *work, const int *lwork, int *info) {
     zunglq(m, n, k, a, lda, tau, work, lwork, info);
+}
+
+template <typename FL>
+inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, FL *a, const int *lda, double *s, FL *u,
+                   const int *ldu, FL *vt, const int *ldvt, FL *work,
+                   const int *lwork, int *info);
+template <>
+inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, double *a, const int *lda, double *s,
+                   double *u, const int *ldu, double *vt, const int *ldvt,
+                   double *work, const int *lwork, int *info) {
+    dgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, work, lwork, info);
+}
+template <>
+inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, complex<double> *a, const int *lda, double *s,
+                   complex<double> *u, const int *ldu, complex<double> *vt,
+                   const int *ldvt, complex<double> *work, const int *lwork,
+                   int *info) {
+    double *rwork = new double[5 * min(*m, *n)];
+    zgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, work, lwork, rwork,
+           info);
+    delete[] rwork;
 }
 
 template <typename FL>

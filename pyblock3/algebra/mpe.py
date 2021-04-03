@@ -149,7 +149,7 @@ class MPE:
         t = time.perf_counter()
         r = np.tensordot(r, self.ket[i], axes=(
             [*range(du + 2, du + dd + 3)], [*range(0, dd + 1)]))
-        r = np.tensordot(self.bra[i], r, axes=(
+        r = np.tensordot(self.bra[i].conj(), r, axes=(
             [*range(0, du + 1)], [*range(1, du + 2)]))
         r = r.transpose((1, 0, 3, 2))
         self.t_rot += time.perf_counter() - t
@@ -178,7 +178,7 @@ class MPE:
         t = time.perf_counter()
         r = np.tensordot(r, self.ket[i], axes=(
             [*range(du + 2, du + dd + 3)], [*range(1, dd + 2)]))
-        r = np.tensordot(self.bra[i], r, axes=(
+        r = np.tensordot(self.bra[i].conj(), r, axes=(
             [*range(1, du + 2)], [*range(1, du + 2)]))
         r = r.transpose((1, 0, 3, 2))
         self.t_rot += time.perf_counter() - t
@@ -385,8 +385,8 @@ class MPE:
     def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2, forward=True):
         return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot, forward=forward)
 
-    def tddmrg(self, bdims, dt, n_sweeps=10, n_sub_sweeps=2, dot=2, iprint=2, forward=True):
-        return TDDMRG(self, bdims, iprint=iprint).solve(dt, n_sweeps, n_sub_sweeps, dot, forward=forward)
+    def tddmrg(self, bdims, dt, n_sweeps=10, n_sub_sweeps=2, dot=2, iprint=2, forward=True, normalize=True, **kwargs):
+        return TDDMRG(self, bdims, iprint=iprint, **kwargs).solve(dt, n_sweeps, n_sub_sweeps, dot, forward=forward, normalize=normalize)
 
     def linear(self, bdims, noises=None, cg_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2):
         return Linear(self, bdims, noises, cg_thrds, iprint=iprint).solve(n_sweeps, tol, dot)

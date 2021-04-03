@@ -103,7 +103,7 @@ def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
     info = linfo & rinfo
     mats = {}
     for q in info:
-        mats[q] = np.zeros((linfo[q], rinfo[q]))
+        mats[q] = np.zeros((linfo[q], rinfo[q]), dtype=adata.dtype)
     items = {}
     xqls = [tuple(SZ.from_flat(q) for q in aq)
             for ia, aq in enumerate(aqs[:, :idx])]
