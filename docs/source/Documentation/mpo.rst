@@ -2,6 +2,13 @@
 MPO Construction
 ================
 
+References:
+
+* Knowles, P. J., Handy, N. C. A determinant based full configuration interaction program. *Computer Physics Communications* 1989, **54**, 75-83.
+* Chan, G. K.-L.; Keselman, A.; Nakatani, N.; Li, Z.; White, S. R. Matrix product operators, matrix product states, and ab initio density matrix renormalization group  algorithms. *The Journal of Chemical Physics* 2016, **145**, 014102.
+* Ren, J., Li, W., Jiang, T., & Shuai, Z. A general automatic method for optimal construction of matrix product operators using bipartite graph theory. *The Journal of Chemical Physics* 2020, **153**, 084118.
+* Hubig, C., McCulloch, I. P., & Schollwöck, U. Generic construction of efficient matrix product operators. *Physical Review B* 2017, **95**, 035129.
+
 From FCIDUMP
 ------------
 

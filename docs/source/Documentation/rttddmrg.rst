@@ -2,6 +2,10 @@
 Real-Time Time-Dependent DMRG (RT-TD-DMRG)
 ==========================================
 
+References:
+
+* Ronca, E., Li, Z., Jimenez-Hoyos, C. A., Chan, G. K. L. Time-step targeting time-dependent and dynamical density matrix renormalization group algorithms with ab initio Hamiltonians. *Journal of Chemical Theory and Computation* 2017, **13**, 5560-5571.
+
 Here we use RT-TD-DMRG and Fast Fourier Transform (FFT) to calculate the same quantity
 defined in previous section, namely,
 the Green's function for H10 (STO6G) (for a wide range of frequencies):
