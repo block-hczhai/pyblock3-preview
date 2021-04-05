@@ -12,3 +12,4 @@ pyblock3 Usage
    det
    ancilla
    green
+   rttddmrg

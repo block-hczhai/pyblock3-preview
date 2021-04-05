@@ -20,12 +20,8 @@ np.random.seed(1000)
 fd = '../data/H10.STO6G.R1.8.FCIDUMP'
 # fd = '../my_test/n2/N2.FCIDUMP'
 # fd = '../data/CR2.SVP.FCIDUMP'
-occ = None
 ket_bond_dim = 500
-bra_bond_dim = 750
-
-# occf = '../data/CR2.SVP.OCC'
-# occ = [float(x) for x in open(occf, 'r').readline().split()]
+bra_bond_dim = 500
 
 hamil = Hamiltonian(FCIDUMP(pg='d2h').read(fd), flat=True)
 
@@ -39,7 +35,7 @@ mpo, _ = mpo.compress(left=True, cutoff=1E-9, norm_cutoff=1E-9)
 print('MPO (compressed) = ', mpo.show_bond_dims())
 print('compress mpo time = ', time.perf_counter() - tx)
 
-mps = hamil.build_mps(ket_bond_dim, occ=occ)
+mps = hamil.build_mps(ket_bond_dim)
 print('MPS = ', mps.show_bond_dims())
 
 bdims = [500]
@@ -53,7 +49,6 @@ print("Energy = %20.12f" % ener)
 
 isite = 4
 mpo.const -= ener
-omega, eta = -0.17, 0.05
 
 dop = OpElement(OpNames.D, (isite, 0), q_label=SZ(-1, -1, hamil.orb_sym[isite]))
 bra = hamil.build_mps(bra_bond_dim, target=SZ.to_flat(
@@ -95,3 +90,5 @@ def gf_fft(eta, dt, rtgf):
     Y_imag = Y.imag * dt
 
     return frq, Y_real, Y_imag
+
+frq, yreal, yimag = gf_fft(eta, dt, rtgf)
