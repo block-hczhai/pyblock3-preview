@@ -26,6 +26,7 @@
 #include "qc_hamiltonian.hpp"
 #include "sz.hpp"
 #include "tensor.hpp"
+#include "tensor_einsum.hpp"
 #include <cmath>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl_bind.h>
@@ -721,6 +722,26 @@ PYBIND11_MODULE(block3, m) {
     // bind_sparse_tensor<QPN>(m_qpn, m, "QPN");
 
     py::module tensor = m.def_submodule("tensor", "Tensor");
+
+    tensor.def("einsum", [](const string &script, py::args &args) {
+        bool has_complex = false;
+        for (int ia = 0; ia < args.size(); ia++)
+            if (py::isinstance<py::array_t<complex<double>>>(args[ia]))
+                has_complex = true;
+        if (has_complex) {
+            vector<py::array_t<complex<double>>> arrs(args.size());
+            for (int ia = 0; ia < args.size(); ia++)
+                arrs[ia] = args[ia].cast<py::array_t<complex<double>>>();
+            return tensor_einsum<complex<double>>(script, arrs)
+                .cast<py::object>();
+        } else {
+            vector<py::array_t<double>> arrs(args.size());
+            for (int ia = 0; ia < args.size(); ia++)
+                arrs[ia] = args[ia].cast<py::array_t<double>>();
+            return tensor_einsum<double>(script, arrs).cast<py::object>();
+        }
+    });
+
     // double
     tensor.def("transpose", &tensor_transpose<double>, py::arg("x"),
                py::arg("perm"), py::arg("alpha") = 1.0, py::arg("beta") = 0.0);
