@@ -109,7 +109,7 @@ def Hubbard(t=1, u=1, mu=0., fac=None, symmetry=DEFAULT_SYMMETRY):
         q1, ix1, d1 = state_map[s1]
         q2, ix2, d2 = state_map[s2]
         val = (pn_dict[s1]==2) * faca * u + pn_dict[s1] * faca * mu +\
-              (pn_dict[s2]==2) * facb * u + pn_dict[s1] * facb * mu
+              (pn_dict[s2]==2) * facb * u + pn_dict[s2] * facb * mu
         if (q1, q2, q1, q2) not in block_dict:
             block_dict[(q1, q2, q1, q2)] = np.zeros([d1, d2, d1, d2])
         dat = block_dict[(q1, q2, q1, q2)]
