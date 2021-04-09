@@ -29,6 +29,7 @@ Features
     * MPS compression
     * Green's function (DDMRG++)
     * Imaginary time evolution (time-step targeting approach)
+    * Real time evolution (time-step targeting approach)
     * Finite-temperature DMRG (ancilla approach)
 
 Installation

@@ -144,6 +144,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         return self.q_labels.nbytes + self.shapes.nbytes + self.data.nbytes + self.idxs.nbytes
 
     def item(self):
+        if len(self.data) == 0:
+            return 0
         return self.data.item()
 
     def to_sparse(self):
