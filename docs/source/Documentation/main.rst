@@ -10,6 +10,7 @@ pyblock3 Usage
    mpo
    mps
    det
+   1pdm
    ancilla
    green
    rttddmrg
