@@ -42,6 +42,10 @@ class U11:
     def flat_to_qpn(cls, x):
         return (x // 131072) % 16384 - 8192, (x // 8) % 16384 - 8192
 
+    @classmethod
+    def flip_flat(cls, flat_array):
+        return 2147614720 - flat_array
+
     def to_flat(self):
         return self.qpn_to_flat(self.n, self.sz)
 
@@ -147,6 +151,10 @@ class U1:
     def flat_to_qpn(cls, x):
         return x // 131072 - 8192
 
+    @classmethod
+    def flip_flat(cls, flat_array):
+        return 2147483648 - flat_array
+
     def to_flat(self):
         return self.qpn_to_flat(self.n)
 
@@ -226,6 +234,10 @@ class Z2(U1):
     @classmethod
     def flat_to_qpn(cls, x):
         return x % cls._modulus
+
+    @classmethod
+    def flip_flat(cls, flat_array):
+        return (-flat_array) % cls._modulus
 
 class Z4(Z2):
     '''

@@ -29,6 +29,7 @@ from pyblock3.algebra.flat import FlatSparseTensor, _flat_sparse_tensor_numpy_fu
 from pyblock3.algebra.symmetry import BondInfo
 from pyblock3.algebra.fermion_symmetry import U1, Z4, Z2, U11
 import block3.sz as block3
+from pyblock3.algebra.fermion_setting import DEFAULT_SYMMETRY, SVD_SCREENING
 
 def get_backend(symmetry):
     if isinstance(symmetry, str):
@@ -46,9 +47,6 @@ def get_backend(symmetry):
     else:
         raise NotImplementedError
     return backend
-
-DEFAULT_SYMMETRY = U1
-SVD_SCREENING = 1e-10
 
 def method_alias(name):
     def ff(f):
@@ -89,13 +87,12 @@ def _contract_patterns(patterna, patternb, idxa, idxb):
     conc_b = "".join([patternb[ix] for ix in idxb])
     out_b = "".join([ip for ix, ip in enumerate(patternb) if ix not in idxb])
 
-    if conc_a == conc_b:
-        out = out_a + _flip_pattern(out_b)
-    elif conc_a == _flip_pattern(conc_b):
-        out = out_a + out_b
-    else:
-        raise ValueError("Input patterns not valid for contractions")
-    return out
+    b_flip_axes = []
+    if conc_a != _flip_pattern(conc_b):
+        for ind, ixa, ixb in zip(idxb, conc_a, conc_b):
+            if ixa == ixb:
+                b_flip_axes.append(ind)
+    return out_a + out_b, b_flip_axes
 
 def _trim_singular_vals(s, cutoff, cutoff_mode):
     """Find the number of singular values to keep of ``s`` given ``cutoff`` and
@@ -399,7 +396,31 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
     return u, s, v
 
 def symmetry_compatible(a, b):
-    return a.pattern == b.pattern or a.pattern==_flip_pattern(b.pattern)
+    if a.pattern == b.pattern:
+        return 1
+    elif a.pattern == _flip_pattern(b.pattern):
+        return 2
+    else:
+        return False
+
+def _adjust_block(block, flip_axes):
+    if len(flip_axes)==0:
+        return block
+    else:
+        new_q_labels = list(block.q_labels)
+        for ix in flip_axes:
+            new_q_labels[ix] = - block.q_labels[ix]
+        new_block = SubTensor(reduced=np.asarray(block), q_labels=tuple(new_q_labels))
+        return new_block
+
+def _adjust_q_labels(symmetry, q_labels, flip_axes):
+    if len(flip_axes)==0:
+        return q_labels
+    else:
+        new_q_labels = q_labels.copy()
+        for ix in flip_axes:
+            new_q_labels[:,ix] = symmetry.flip_flat(q_labels[:,ix])
+        return new_q_labels
 
 def compute_phase(q_labels, axes, direction="left"):
     plist = [qpn.parity for qpn in q_labels]
@@ -589,11 +610,11 @@ class SparseFermionTensor(SparseTensor):
             blocks = [np.add(block, b) for block in a.blocks]
             return a.__class__(blocks=blocks, pattern=a.pattern)
         else:
-            if not symmetry_compatible(a, b):
-                raise ValueError("Tensors must have same symmetry for addtion")
+            flip_axes = [ix for ix in range(b.ndim) if a.pattern[ix]!=b.pattern[ix]]
 
             blocks_map = {block.q_labels: block for block in a.blocks}
-            for block in b.blocks:
+            for iblock in b.blocks:
+                block = _adjust_block(iblock, flip_axes)
                 if block.q_labels in blocks_map:
                     mb = blocks_map[block.q_labels]
                     blocks_map[block.q_labels] = np.add(mb, block)
@@ -615,11 +636,10 @@ class SparseFermionTensor(SparseTensor):
             blocks = [np.subtract(block, b) for block in a.blocks]
             return a.__class__(blocks=blocks, pattern=a.pattern)
         else:
-            if not symmetry_compatible(a, b):
-                raise ValueError("Tensors must have same symmetry for subtraction")
-
+            flip_axes = [ix for ix in range(b.ndim) if a.pattern[ix]!=b.pattern[ix]]
             blocks_map = {block.q_labels: block for block in a.blocks}
-            for block in b.blocks:
+            for iblock in b.blocks:
+                block = _adjust_block(iblock, flip_axes)
                 if block.q_labels in blocks_map:
                     mb = blocks_map[block.q_labels]
                     blocks_map[block.q_labels] = np.subtract(mb, block)
@@ -656,7 +676,7 @@ class SparseFermionTensor(SparseTensor):
                     blocks = [block * b for block in a.blocks]
                 else:
                     blocks = self._tensordot(a, b, axes=([-1], [0])).blocks
-                out_pattern = _contract_patterns(a.pattern, b.pattern, [a.ndim-1], [0])
+                out_pattern, _ = _contract_patterns(a.pattern, b.pattern, [a.ndim-1], [0])
             elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
@@ -692,13 +712,14 @@ class SparseFermionTensor(SparseTensor):
         idxa = [x if x >= 0 else a.ndim + x for x in idxa]
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
 
-        out_pattern = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
+        out_pattern, b_flip_axes = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
         out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
         out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
         assert len(idxa) == len(idxb)
 
         map_idx_b = {}
-        for block in b.blocks:
+        for iblock in b.blocks:
+            block = _adjust_block(iblock, b_flip_axes)
             ctrq = tuple(block.q_labels[id] for id in idxb)
             outq = tuple(block.q_labels[id] for id in out_idx_b)
             if ctrq not in map_idx_b:
@@ -905,10 +926,10 @@ class FlatFermionTensor(FlatSparseTensor):
         elif a.n_blocks == 0:
             return b
         else:
-            if not symmetry_compatible(a, b):
-                raise ValueError("Tensors must have same symmetry for addition")
+            flip_axes = [ix for ix in range(b.ndim) if a.pattern[ix]!=b.pattern[ix]]
+            q_labels_b = _adjust_q_labels(b.symmetry, b.q_labels, flip_axes)
             q_labels, shapes, data, idxs = block3.flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
-                                                a.idxs, b.q_labels, b.shapes, b.data, b.idxs)
+                                                a.idxs, q_labels_b, b.shapes, b.data, b.idxs)
             return a.__class__(q_labels, shapes, data, a.pattern, idxs, a.symmetry)
 
     def add(self, b):
@@ -928,10 +949,10 @@ class FlatFermionTensor(FlatSparseTensor):
         elif a.n_blocks == 0:
             return b
         else:
-            if not symmetry_compatible(a, b):
-                raise ValueError("Tensors must have same symmetry for subtraction")
+            flip_axes = [ix for ix in range(b.ndim) if a.pattern[ix]!=b.pattern[ix]]
+            q_labels_b = _adjust_q_labels(b.symmetry, b.q_labels, flip_axes)
             q_labels, shapes, data, idxs = block3.flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
-                                                a.idxs, b.q_labels, b.shapes, -b.data, b.idxs)
+                                                a.idxs, q_labels_b, b.shapes, -b.data, b.idxs)
             return a.__class__(q_labels, shapes, data, a.pattern, idxs, a.symmetry)
 
     def subtract(self, b):
@@ -967,7 +988,7 @@ class FlatFermionTensor(FlatSparseTensor):
                 else:
                     c = self._tensordot(a, b, axes=([-1], [0]))
                     shs, qs, data, idxs = c.shapes, c.q_labels, c.data, c.idxs
-                    out_pattern = _contract_patterns(a.pattern, b.pattern, [a.ndim-1], [0])
+                    out_pattern, _ = _contract_patterns(a.pattern, b.pattern, [a.ndim-1], [0])
                     symmetry = a.symmetry
             elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
                 a, b = inputs
@@ -1013,12 +1034,14 @@ class FlatFermionTensor(FlatSparseTensor):
             idxb = np.array(axes[1], dtype=np.int32)
         idxa[idxa < 0] += a.ndim
         idxb[idxb < 0] += b.ndim
+        out_pattern, b_flip_axes = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
+        q_labels_b = _adjust_q_labels(b.symmetry, b.q_labels, b_flip_axes)
         backend = get_backend(a.symmetry)
         q_labels, shapes, data, idxs = backend.flat_fermion_tensor.tensordot(
                     a.q_labels, a.shapes, a.data, a.idxs,
-                    b.q_labels, b.shapes, b.data, b.idxs,
+                    q_labels_b, b.shapes, b.data, b.idxs,
                     idxa, idxb)
-        out_pattern = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
+
         return a.__class__(q_labels, shapes, data, out_pattern, idxs, a.symmetry)
 
     @staticmethod
