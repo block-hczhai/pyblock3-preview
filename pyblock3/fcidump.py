@@ -77,6 +77,12 @@ class FCIDUMP:
         self.general = False
         self.orb_sym = [0] * self.n_sites if orb_sym is None else orb_sym
         self.mu = mu
+        if self.mu != 0 and self.h1e is not None:
+            if not self.uhf:
+                self.h1e = self.h1e - self.mu * np.identity(self.n_sites)
+            else:
+                self.h1e[0] = self.h1e[0] - self.mu * np.identity(self.n_sites)
+                self.h1e[1] = self.h1e[1] - self.mu * np.identity(self.n_sites)
 
     def t(self, s, i, j):
         return self.h1e[s][i, j] if self.uhf else self.h1e[i, j]
