@@ -298,27 +298,27 @@ class MPE:
         return r
 
     @staticmethod
-    def _eigs(x, iprint=False, fast=False, conv_thrd=1E-7):
+    def _eigs(x, iprint=False, fast=False, conv_thrd=1E-7, max_iter=500):
         """Return ground-state energy and ground-state effective MPE."""
         if fast and x.ket.n_sites == 1 and x.mpo.n_sites == 2:
             from .flat_functor import FlatSparseFunctor
             pattern = '++' + '+' * (x.ket[0].ndim - 4) + '-+'
             fst = FlatSparseFunctor(x.mpo, pattern=pattern, mpi=x.mpi)
             w, v, ndav = davidson(
-                fst, [fst.prepare_vector(x.ket[0])], k=1, iprint=iprint, conv_thrd=conv_thrd, mpi=x.mpi)
+                fst, [fst.prepare_vector(x.ket[0])], k=1, max_iter=max_iter, iprint=iprint, conv_thrd=conv_thrd, mpi=x.mpi)
             v = [x.ket.__class__(
                 tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
             nflop = fst.nflop
         else:
             w, v, ndav = davidson(
-                x.mpo, [x.ket], k=1, iprint=iprint, conv_thrd=conv_thrd, mpi=x.mpi)
+                x.mpo, [x.ket], k=1, max_iter=max_iter, iprint=iprint, conv_thrd=conv_thrd, mpi=x.mpi)
             nflop = 0
         mpe = x.copy_shell(bra=v[0], mpo=x.mpo, ket=v[0])
         return w[0], mpe, ndav, nflop
 
-    def eigs(self, iprint=False, fast=False, conv_thrd=1E-7):
+    def eigs(self, iprint=False, fast=False, conv_thrd=1E-7, max_iter=500):
         """Return ground-state energy and ground-state effective MPE."""
-        return self._eigs(self, iprint=iprint, fast=fast, conv_thrd=conv_thrd)
+        return self._eigs(self, iprint=iprint, fast=fast, conv_thrd=conv_thrd, max_iter=max_iter)
 
     def multiply(self, fast=False):
         if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
@@ -382,8 +382,8 @@ class MPE:
         mpe = self.copy_shell(bra=r, mpo=self.mpo, ket=x)
         return rw + iw * 1j, mpe, ncg
 
-    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, dot=2, iprint=2, forward=True):
-        return DMRG(self, bdims, noises, dav_thrds, iprint=iprint).solve(n_sweeps, tol, dot, forward=forward)
+    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, max_iter=500, dot=2, iprint=2, forward=True):
+        return DMRG(self, bdims, noises, dav_thrds, max_iter=max_iter, iprint=iprint).solve(n_sweeps, tol, dot, forward=forward)
 
     def tddmrg(self, bdims, dt, n_sweeps=10, n_sub_sweeps=2, dot=2, iprint=2, forward=True, normalize=True, **kwargs):
         return TDDMRG(self, bdims, iprint=iprint, **kwargs).solve(dt, n_sweeps, n_sub_sweeps, dot, forward=forward, normalize=normalize)

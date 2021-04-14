@@ -30,11 +30,12 @@ import psutil
 class DMRG(SweepAlgorithm):
     """Density Matrix Renormalization Group (DMRG)."""
 
-    def __init__(self, mpe, bdims, noises=None, dav_thrds=None, iprint=2):
+    def __init__(self, mpe, bdims, noises=None, dav_thrds=None, max_iter=500, iprint=2):
         self.mpe = mpe
         self.bdims = bdims
         self.noises = noises
         self.dav_thrds = dav_thrds
+        self.max_iter = max_iter
         if self.noises is None:
             self.noises = [1E-6, 1E-7, 0.0]
         if self.dav_thrds is None:
@@ -86,7 +87,7 @@ class DMRG(SweepAlgorithm):
                     eff.ket[:] = [reduce(pbalg.hdot, eff.ket[:])]
                     tx = time.perf_counter()
                     ener, eff, ndav, nflop = eff.eigs(
-                        iprint=self.iprint >= 3, fast=self.fast, conv_thrd=self.dav_thrds[iw])
+                        iprint=self.iprint >= 3, fast=self.fast, conv_thrd=self.dav_thrds[iw], max_iter=self.max_iter)
                     tdav = time.perf_counter() - tx
                     if dot == 2:
                         tx = time.perf_counter()
@@ -98,7 +99,7 @@ class DMRG(SweepAlgorithm):
                 else:
                     tx = time.perf_counter()
                     ener, eff, ndav, nflop = eff.eigs(
-                        iprint=self.iprint >= 3, fast=self.fast, conv_thrd=self.dav_thrds[iw])
+                        iprint=self.iprint >= 3, fast=self.fast, conv_thrd=self.dav_thrds[iw], max_iter=self.max_iter)
                     tdav = time.perf_counter() - tx
                     cket, error = eff.ket.compress(
                         left=True, cutoff=self.cutoff, max_bond_dim=self.bdims[iw])
