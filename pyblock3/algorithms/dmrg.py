@@ -75,6 +75,7 @@ class DMRG(SweepAlgorithm):
                 print("Sweep = %4d | Direction = %8s | BondDim = %4d | Noise = %5.2E | DavThrd = %5.2E" % (
                     iw, "forward" if forward else "backward", self.bdims[iw], self.noises[iw], self.dav_thrds[iw]))
             peak_mem = 0
+            dw = 0
             for i in range(0, mpe.n_sites - dot + 1)[::1 if forward else -1]:
                 tt = time.perf_counter()
                 mpe.build_envs(i, i + dot)
@@ -111,11 +112,12 @@ class DMRG(SweepAlgorithm):
                     print(" %3s Site = %4d-%4d .. Mmps = %4d Ndav = %4d E = %20.12f DW = %5.2E FLOPS = %5.2E Tdav = %8.3f T = %8.3f MEM = %7s" % (
                         "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, ndav, ener, error, nflop / tdav, tdav, time.perf_counter() - tt, fmt_size(mem)))
                     tdav_tot += tdav
+                dw = max(dw, error)
             de = 0 if iw == 0 else abs(
                 self.energies[iw] - self.energies[iw - 1])
             if self.iprint >= 0:
-                print("Time elapsed = %10.3f | E = %20.12f | DE = %5.2E | MEM = %7s" %
-                      (time.perf_counter() - telp, self.energies[iw], de, fmt_size(peak_mem)))
+                print("Time elapsed = %10.3f | E = %20.12f | DE = %5.2E | MDW = %5.2E | MEM = %7s" %
+                      (time.perf_counter() - telp, self.energies[iw], de, dw, fmt_size(peak_mem)))
                 print("Time sweep = %10.3f | Time davidson = %10.3f | Time decomp = %10.3f" % (time.perf_counter() - tswp, tdav_tot, tdec_tot))
             if iw > 0 and de < tol and self.noises[iw] == self.noises[-1]:
                 break

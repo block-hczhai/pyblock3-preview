@@ -66,6 +66,7 @@ class TDDMRG(SweepAlgorithm):
                         iw, isw, n_sub_sweeps, "forward" if forward else "backward",
                         _complex_repr("%9.2g", dt), self.bdims[iw]))
             peak_mem = 0
+            dw = 0
             for i in range(0, mpe.n_sites - dot + 1)[::1 if forward else -1]:
                 eval_ener = i == mpe.n_sites - dot if forward else i == 0
                 advance = isw == n_sub_sweeps - 1 and eval_ener
@@ -110,8 +111,9 @@ class TDDMRG(SweepAlgorithm):
                 if self.iprint >= 2:
                     print(" %3s Site = %4d-%4d .. Mmps = %4d Nmult = %4d E = %s DW = %5.2E FLOPS = %5.2E Tmult = %8.3f T = %8.3f MEM = %7s" % (
                         "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, nmult, _complex_repr("%20.12f", ener), error, nflop / tmult, tmult, time.perf_counter() - tt, fmt_size(mem)))
-            print("Time elapsed = %10.3f | E = %s | Norm^2 = %20.12f | MEM = %7s" %
-                  (time.perf_counter() - telp, _complex_repr("%20.12f", self.energies[iw]), self.normsqs[iw], fmt_size(peak_mem)))
+                dw = max(dw, abs(error))
+            print("Time elapsed = %10.3f | E = %s | MDW = %5.2E | Norm^2 = %20.12f | MEM = %7s" %
+                  (time.perf_counter() - telp, _complex_repr("%20.12f", self.energies[iw]), dw, self.normsqs[iw], fmt_size(peak_mem)))
             forward = not forward
         return self
 
