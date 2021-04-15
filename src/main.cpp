@@ -578,6 +578,9 @@ PYBIND11_MODULE(block3, m) {
     py::module m_z4 = m.def_submodule("z4", "Z4 symmetry");
     bind_sparse_tensor<Z4>(m_z4, m, "Z4");
 
+    py::module m_z22 = m.def_submodule("z22", "Z22 symmetry");
+    bind_sparse_tensor<Z22>(m_z22, m, "Z22");
+
 
     // bind extra symmetry here ...
     // py::module m_qpn = m.def_submodule("qpn", "General other symmetry.");

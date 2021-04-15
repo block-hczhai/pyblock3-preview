@@ -310,3 +310,58 @@ template <> struct less<Z4> {
 };
 
 }
+
+struct Z22:U11 {
+    int _n, _sz;
+    Z22() : _n(0), _sz(0) {}
+    Z22(int _n, int _sz) : _n(_n % 2), _sz(_sz% 2) {}
+    int n() const { return _n; }
+    int sz() const { return _sz; }
+    int parity() const { return _n % 2; }
+    bool operator==(Z22 other) const noexcept {
+        return _n == other._n && _sz == other._sz;
+    }
+    bool operator!=(Z22 other) const noexcept {
+        return _n != other._n || _sz != other._sz;
+    }
+    bool operator<(Z22 other) const noexcept {
+        if (_n != other._n)
+            return _n < other._n;
+        else
+            return _sz < other._sz;
+    }
+    Z22 operator-() const noexcept { return Z22(-_n, -_sz); }
+    Z22 operator-(Z22 other) const noexcept { return *this + (-other); }
+    Z22 operator+(Z22 other) const noexcept {
+        return Z22(_n + other._n, _sz + other._sz);
+    }
+    Z22 operator[](int i) const noexcept { return *this; }
+    size_t hash() const noexcept {
+        return (size_t)(((size_t)_n << 24) | ((size_t)_sz << 8));
+    }
+    static Z22 to_q(uint32_t x) noexcept {
+        return Z22((int)(x/2), (int)(x % 2));
+    }
+    static uint32_t from_q(Z22 x) {
+        return (uint32_t)(x.n()*2 + x.sz()) ;
+    }
+
+    friend ostream &operator<<(ostream &os, Z22 c) {
+        os << c.to_str();
+        return os;
+    }
+};
+
+namespace std {
+
+template <> struct hash<Z22> {
+    size_t operator()(const Z22 &s) const noexcept { return s.hash(); }
+};
+
+template <> struct less<Z22> {
+    bool operator()(const Z22 &lhs, const Z22 &rhs) const noexcept {
+        return lhs < rhs;
+    }
+};
+
+} // namespace std

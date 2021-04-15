@@ -1,11 +1,12 @@
-from pyblock3.algebra.core import SubTensor
-from pyblock3.algebra.fermion import SparseFermionTensor
-from pyblock3.algebra.fermion_setting import DEFAULT_SYMMETRY, SVD_SCREENING
-from pyblock3.algebra import fermion_encoding
 import numpy as np
 from itertools import product
 from functools import reduce
+from .core import SubTensor
+from .fermion import SparseFermionTensor
+from . import fermion_encoding
+from . import fermion_setting as setting
 
+SVD_SCREENING = setting.SVD_SCREENING
 cre_map = fermion_encoding.cre_map
 ann_map = fermion_encoding.ann_map
 sz_dict = fermion_encoding.sz_dict
@@ -13,7 +14,9 @@ pn_dict = fermion_encoding.pn_dict
 
 hop_map = {0:(1,2), 1:(0,3), 2:(0,3), 3:(1,2)}
 
-def _compute_swap_phase(*states):
+def _compute_swap_phase(*states, fermion=None):
+    fermion = setting.dispatch_settings(fermion=fermion)
+    if not fermion: return 1
     nops = len(states) //2
     cre_string = [cre_map[ikey] for ikey in states[:nops]]
     ann_string = [ann_map[ikey] for ikey in states[nops:]]
@@ -36,10 +39,11 @@ def _compute_swap_phase(*states):
         full_string[nops+ix] = ib
     return phase
 
-def measure_SZ(symmetry=DEFAULT_SYMMETRY):
+def measure_SZ(symmetry=None, flat=None):
+    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
-    for key in sz_dict.keys():#.items():
+    for key in sz_dict.keys():
         qlab, ind, dim = state_map[key]
         if key not in block_dict:
             dat = np.zeros([dim, dim])
@@ -47,9 +51,14 @@ def measure_SZ(symmetry=DEFAULT_SYMMETRY):
         dat = block_dict[key][0]
         dat[ind, ind] += sz_dict[key]
     blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
-    return SparseFermionTensor(blocks=blocks, pattern="+-").to_flat()
+    T = SparseFermionTensor(blocks=blocks, pattern="+-")
+    if flat:
+        return T.to_flat()
+    else:
+        return T
 
-def ParticleNumber(symmetry=DEFAULT_SYMMETRY):
+def ParticleNumber(symmetry=None, flat=None):
+    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
     for key in pn_dict.keys():
@@ -60,9 +69,14 @@ def ParticleNumber(symmetry=DEFAULT_SYMMETRY):
         dat = block_dict[key][0]
         dat[ind, ind] +=  pn_dict[key]
     blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
-    return SparseFermionTensor(blocks=blocks, pattern="+-").to_flat()
+    T = SparseFermionTensor(blocks=blocks, pattern="+-")
+    if flat:
+        return T.to_flat()
+    else:
+        return T
 
-def onsite_U(u=1, symmetry=DEFAULT_SYMMETRY):
+def onsite_U(u=1, symmetry=None, flat=None):
+    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
     for key, pn in pn_dict.items():
@@ -73,9 +87,14 @@ def onsite_U(u=1, symmetry=DEFAULT_SYMMETRY):
         dat = block_dict[key][0]
         dat[ind, ind] += (pn==2) * u
     blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
-    return SparseFermionTensor(blocks=blocks, pattern="+-").to_flat()
+    T = SparseFermionTensor(blocks=blocks, pattern="+-")
+    if flat:
+        return T.to_flat()
+    else:
+        return T
 
-def H1(h=1, symmetry=DEFAULT_SYMMETRY):
+def H1(h=1, symmetry=None, flat=None):
+    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
 
@@ -96,9 +115,14 @@ def H1(h=1, symmetry=DEFAULT_SYMMETRY):
                 phase = _compute_swap_phase(s1, s2, s3, s4)
                 dat[ix1, ix2, ix3, ix4] += phase * h
     blocks = [SubTensor(reduced=dat, q_labels=qlab) for qlab, dat in block_dict.items()]
-    return SparseFermionTensor(blocks=blocks, pattern="++--").to_flat()
+    T = SparseFermionTensor(blocks=blocks, pattern="++--")
+    if flat:
+        return T.to_flat()
+    else:
+        return T
 
-def Hubbard(t=1, u=1, mu=0., fac=None, symmetry=DEFAULT_SYMMETRY):
+def Hubbard(t=1, u=1, mu=0., fac=None, symmetry=None, flat=None):
+    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
     if fac is None:
         fac = (1, 1)
     faca, facb = fac
@@ -130,7 +154,11 @@ def Hubbard(t=1, u=1, mu=0., fac=None, symmetry=DEFAULT_SYMMETRY):
                 dat[ix1, ix2, ix3, ix4] += phase * -t
 
     blocks = [SubTensor(reduced=dat, q_labels=qlab) for qlab, dat in block_dict.items()]
-    return SparseFermionTensor(blocks=blocks, pattern="++--").to_flat()
+    T = SparseFermionTensor(blocks=blocks, pattern="++--")
+    if flat:
+        return T.to_flat()
+    else:
+        return T
 
 def _fuse_data_map(left_q, right_q, from_parent, to_parent, data_map):
     if left_q not in to_parent:
@@ -174,12 +202,23 @@ def make_phase_dict(state_map, ndim):
         phase_dict[qlabs][inds] = _compute_swap_phase(*states)
     return phase_dict
 
+def get_exponential(T, x):
+    if setting.DEFAULT_FLAT:
+        return get_flat_exponential(T, x)
+    else:
+        return get_sparse_exponential(T, x)
+
 def get_flat_exponential(T, x):
     symmetry = T.dq.__class__
-    state_map = fermion_encoding.get_state_map(T.symmetry)
-    phase_dict = make_phase_dict(state_map, T.ndim)
+    if setting.DEFAULT_FERMION:
+        state_map = fermion_encoding.get_state_map(T.symmetry)
+        phase_dict = make_phase_dict(state_map, T.ndim)
+    def get_phase(qlabels):
+        if setting.DEFAULT_FERMION:
+            return phase_dict[qlabels]
+        else:
+            return 1
     split_ax = T.ndim//2
-
     left_pattern = T.pattern[:split_ax]
     right_pattern = T.pattern[split_ax:]
     data_map = {}
@@ -214,7 +253,9 @@ def get_flat_exponential(T, x):
             ist, ied = row_map[lq][:2]
             jst, jed = row_map[rq][:2]
             qlabs = tuple([symmetry.from_flat(iq) for iq in T.q_labels[iblk]])
-            phase = phase_dict[qlabs].reshape(ied-ist, jed-jst)
+            phase = get_phase(qlabs)
+            if isinstance(phase, np.ndarray):
+                phase = phase.reshape(ied-ist, jed-jst)
             data[ist:ied,jst:jed] = T.data[T.idxs[iblk]:T.idxs[iblk+1]].reshape(ied-ist, jed-jst) * phase
         if data.size ==0:
             continue
@@ -225,7 +266,7 @@ def get_flat_exponential(T, x):
             for rq, (jst, jed, jsh) in row_map.items():
                 q_labels = lq + rq
                 qlabs = tuple([symmetry.from_flat(iq) for iq in q_labels])
-                phase = phase_dict[qlabs]
+                phase = get_phase(qlabs)
                 chunk = tmp[ist:ied, jst:jed].reshape(tuple(ish)+tuple(jsh)) * phase
                 if abs(chunk).max()<SVD_SCREENING:
                     continue
@@ -236,4 +277,67 @@ def get_flat_exponential(T, x):
     shapes = np.asarray(shapes, dtype=np.uint32)
     datas = np.concatenate(datas)
     Texp = T.__class__(q_labels, shapes, datas, pattern=T.pattern, symmetry=T.symmetry)
+    return Texp
+
+def get_sparse_exponential(T, x):
+    symmetry = T.dq.__class__
+    if setting.DEFAULT_FERMION:
+        state_map = fermion_encoding.get_state_map(symmetry)
+        phase_dict = make_phase_dict(state_map, T.ndim)
+    def get_phase(qlabels):
+        if setting.DEFAULT_FERMION:
+            return phase_dict[qlabels]
+        else:
+            return 1
+    split_ax = T.ndim//2
+    left_pattern = T.pattern[:split_ax]
+    right_pattern = T.pattern[split_ax:]
+    data_map = {}
+    from_parent = {}
+    to_parent = {}
+    blocks = []
+    for iblk in T.blocks:
+        left_q = iblk.q_labels[:split_ax]
+        right_q = iblk.q_labels[split_ax:]
+        parent = _fuse_data_map(left_q, right_q, from_parent, to_parent, data_map)
+        data_map[parent].append(iblk)
+
+    for slab, datasets in data_map.items():
+        row_len = col_len = 0
+        row_map = {}
+        for iblk in datasets:
+            lq = iblk.q_labels[:split_ax]
+            rq = iblk.q_labels[split_ax:]
+            if lq not in row_map:
+                new_row_len = row_len + np.prod(iblk.shape[:split_ax], dtype=int)
+                row_map[lq] = (row_len, new_row_len, iblk.shape[:split_ax])
+                row_len = new_row_len
+            if rq not in row_map:
+                new_row_len = row_len + np.prod(iblk.shape[split_ax:], dtype=int)
+                row_map[rq] = (row_len, new_row_len, iblk.shape[split_ax:])
+                row_len = new_row_len
+        data = np.zeros([row_len, row_len], dtype=T.dtype)
+        for iblk in datasets:
+            lq = iblk.q_labels[:split_ax]
+            rq = iblk.q_labels[split_ax:]
+            ist, ied = row_map[lq][:2]
+            jst, jed = row_map[rq][:2]
+            phase = get_phase(iblk.q_labels)
+            if isinstance(phase, np.ndarray):
+                phase = phase.reshape(ied-ist, jed-jst)
+            data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jed-jst) * phase
+        if data.size ==0:
+            continue
+        el, ev = np.linalg.eigh(data)
+        s = np.diag(np.exp(el*x))
+        tmp = reduce(np.dot, (ev, s, ev.conj().T))
+        for lq, (ist, ied, ish) in row_map.items():
+            for rq, (jst, jed, jsh) in row_map.items():
+                q_labels = lq + rq
+                phase = get_phase(q_labels)
+                chunk = tmp[ist:ied, jst:jed].reshape(tuple(ish)+tuple(jsh)) * phase
+                if abs(chunk).max()<SVD_SCREENING:
+                    continue
+                blocks.append(SubTensor(reduced=chunk, q_labels=q_labels))
+    Texp = T.__class__(blocks=blocks, pattern=T.pattern)
     return Texp

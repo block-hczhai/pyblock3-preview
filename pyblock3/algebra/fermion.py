@@ -24,14 +24,23 @@ Author: Yang Gao
 import numbers
 from functools import reduce
 import numpy as np
-from pyblock3.algebra.core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
-from pyblock3.algebra.flat import FlatSparseTensor, _flat_sparse_tensor_numpy_func_impls
-from pyblock3.algebra.symmetry import BondInfo
-from pyblock3.algebra.fermion_symmetry import U1, Z4, Z2, U11
-import block3.sz as block3
-from pyblock3.algebra.fermion_setting import DEFAULT_SYMMETRY, SVD_SCREENING
+import block3.sz as _block3
+from .core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
+from .flat import FlatSparseTensor, _flat_sparse_tensor_numpy_func_impls
+from .fermion_symmetry import U1, Z4, Z2, U11, Z22
+from . import fermion_setting as setting
+
+SVD_SCREENING = setting.SVD_SCREENING
 
 def get_backend(symmetry):
+    """Get the C++ backend for the input symmetry
+
+    Parameters
+    ----------
+    symmetry : str or symmetry object
+    """
+    if not setting.DEFAULT_FERMION:
+        return _block3
     if isinstance(symmetry, str):
         key = symmetry.upper()
     else:
@@ -44,8 +53,10 @@ def get_backend(symmetry):
         import block3.z2 as backend
     elif key == "Z4":
         import block3.z4 as backend
+    elif key == "Z22":
+        import block3.z22 as backend
     else:
-        raise NotImplementedError
+        raise NotImplementedError("symmetry %s not supported"%key)
     return backend
 
 def method_alias(name):
@@ -74,14 +85,21 @@ _sparse_fermion_tensor_numpy_func_impls = _sparse_tensor_numpy_func_impls.copy()
 _numpy_func_impls = _sparse_fermion_tensor_numpy_func_impls
 
 def _gen_default_pattern(obj):
+    """Generate a default algebraic pattern
+    """
     ndim = obj if isinstance(obj, int) else len(obj)
-    return "+" * (ndim-1) + '-'
+    pattern = "+" * (ndim-1) + '-'
+    return pattern
 
 def _flip_pattern(pattern):
+    """Flip the algebraic pattern, eg, "+" -> "-" and "-" -> "+"
+    """
     flip_dict = {"+":"-", "-":"+"}
     return "".join([flip_dict[ip] for ip in pattern])
 
 def _contract_patterns(patterna, patternb, idxa, idxb):
+    """Get the output pattern from contracting two input patterns. Return the axes that needs to be flipped for the second pattern if the two patterns does not fit directly
+    """
     conc_a = "".join([patterna[ix] for ix in idxa])
     out_a = "".join([ip for ix, ip in enumerate(patterna) if ix not in idxa])
     conc_b = "".join([patternb[ix] for ix in idxb])
@@ -395,14 +413,6 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
     v = T.__class__(qv, shv, vdata, pattern="+"+new_T.pattern[split_ax:], symmetry=T.symmetry)
     return u, s, v
 
-def symmetry_compatible(a, b):
-    if a.pattern == b.pattern:
-        return 1
-    elif a.pattern == _flip_pattern(b.pattern):
-        return 2
-    else:
-        return False
-
 def _adjust_block(block, flip_axes):
     if len(flip_axes)==0:
         return block
@@ -423,6 +433,7 @@ def _adjust_q_labels(symmetry, q_labels, flip_axes):
         return new_q_labels
 
 def compute_phase(q_labels, axes, direction="left"):
+    if not setting.DEFAULT_FERMION: return 1
     plist = [qpn.parity for qpn in q_labels]
     counted = []
     phase = 1
@@ -435,13 +446,14 @@ def compute_phase(q_labels, axes, direction="left"):
         counted.append(x)
     return phase
 
-def eye(bond_info, FLAT=True):
+def eye(bond_info, flat=None):
     """Create tensor from BondInfo with Identity matrix."""
+    flat = setting.dispatch_settings(flat=flat)
     blocks = []
     for sh, qs in SparseFermionTensor._skeleton((bond_info, bond_info)):
         blocks.append(SubTensor(reduced=np.eye(sh[0]), q_labels=qs))
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    if FLAT:
+    if flat:
         T = T.to_flat()
     return T
 
@@ -496,6 +508,7 @@ class SparseFermionTensor(SparseTensor):
         return self.__class__(blocks=blks, pattern=self.pattern)
 
     def _local_flip(self, axes):
+        if not setting.DEFAULT_FERMION: return
         if isinstance(axes, int):
             axes = [axes]
         else:
@@ -506,6 +519,7 @@ class SparseFermionTensor(SparseTensor):
                 blk *= -1
 
     def _global_flip(self):
+        if not setting.DEFAULT_FERMION: return
         for blk in self.blocks:
             blk *= -1
 
@@ -568,37 +582,6 @@ class SparseFermionTensor(SparseTensor):
         for sh, qs in SparseFermionTensor._skeleton((bond_info, bond_info), pattern=pattern):
             blocks.append(SubTensor(reduced=np.eye(sh[0]), q_labels=qs))
         return SparseFermionTensor(blocks=blocks, pattern=pattern)
-
-    def expand_dim(self, axis=0, dq=None, direction="left", return_full=False):
-        if dq is None:
-            dq = self.blocks[0].q_labels.__class__(0)
-        assert direction in ["left", "right"]
-        blocks=[]
-        for iblk in self.blocks:
-            shape = iblk.shape
-            new_shape = shape[:axis] + (1,) + shape[axis:]
-            if direction=="left":
-                passed_symmetry = iblk.q_labels[:axis]
-            else:
-                passed_symmetry = iblk.q_labels[axis:]
-            if len(passed_symmetry) >0:
-                passed_parity = np.sum(passed_symmetry).parity
-            else:
-                passed_parity = 0
-            phase = -1 if passed_parity * dq.parity==1 else 1
-            dat = np.asarray(iblk).reshape(new_shape) * phase
-            qpn = iblk.q_labels[:axis] + (dq,) + iblk.q_labels[axis:]
-            blocks.append(SubTensor(reduced=dat, q_labels=qpn))
-        pattern = self.pattern[:axis] + "+" + self.pattern[axis:]
-        new_T = self.__class__(blocks=blocks, pattern=pattern)
-
-        if return_full:
-            comp = self.__class__(
-                    blocks=[SubTensor(reduced=np.ones(1), q_labels=(dq,))], pattern="-")
-            identity = self.__class__.eye(BondInfo({dq:1}))
-            return new_T, comp, identity
-        else:
-            return new_T
 
     @staticmethod
     @implements(np.add)
@@ -760,7 +743,8 @@ class SparseFermionTensor(SparseTensor):
         return sparse_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
 
     def to_exponential(self, x):
-        return get_sparse_exponential(self,x)
+        from pyblock3.algebra.fermion_ops import get_sparse_exponential
+        return get_flat_exponential(self, x)
 
 _flat_fermion_tensor_numpy_func_impls = _flat_sparse_tensor_numpy_func_impls.copy()
 [_flat_fermion_tensor_numpy_func_impls.pop(key) for key in NEW_METHODS]
@@ -768,7 +752,7 @@ _numpy_func_impls = _flat_fermion_tensor_numpy_func_impls
 
 class FlatFermionTensor(FlatSparseTensor):
 
-    def __init__(self, q_labels, shapes, data, pattern=None, idxs=None, symmetry=DEFAULT_SYMMETRY):
+    def __init__(self, q_labels, shapes, data, pattern=None, idxs=None, symmetry=None):
         self.n_blocks = len(q_labels)
         self.ndim = q_labels.shape[1] if self.n_blocks != 0 else 0
         self.shapes = shapes
@@ -787,7 +771,7 @@ class FlatFermionTensor(FlatSparseTensor):
         if self.n_blocks != 0:
             assert shapes.shape == (self.n_blocks, self.ndim)
             assert q_labels.shape == (self.n_blocks, self.ndim)
-        self.symmetry = symmetry
+        self.symmetry = setting.dispatch_settings(symmetry=symmetry)
 
     @property
     def dq(self):
@@ -839,6 +823,7 @@ class FlatFermionTensor(FlatSparseTensor):
         return self.__class__(self.q_labels, self.shapes, self.data.conj(), pattern=self.pattern, idxs=self.idxs, symmetry=self.symmetry)
 
     def _local_flip(self, axes):
+        if not setting.DEFAULT_FERMION: return
         if isinstance(axes, int):
             ax = [axes]
         else:
@@ -853,6 +838,7 @@ class FlatFermionTensor(FlatSparseTensor):
             self.data[idx[i]:idx[i+1]] *=-1
 
     def _global_flip(self):
+        if not setting.DEFAULT_FERMION: return
         self.data *= -1
 
     def to_sparse(self):
@@ -862,38 +848,6 @@ class FlatFermionTensor(FlatSparseTensor):
             blocks[i] = SubTensor(
                 self.data[self.idxs[i]:self.idxs[i + 1]].reshape(self.shapes[i]), q_labels=qs)
         return SparseFermionTensor(blocks=blocks, pattern=self.pattern)
-
-    def expand_dim(self, axis=0, dq=None, direction="left", return_full=False):
-        if dq is None:
-            dq = self.symmetry(0)
-        const = dq.to_flat()
-        q_labels = self.q_labels
-        qpn = np.insert(q_labels, axis, const, axis=1)
-        shapes = np.insert(self.shapes, axis, 1, axis=1)
-        pattern = self.pattern[:axis] + "+" + self.pattern[axis:]
-        if direction=="left":
-            passed_symmetry = self.q_labels[:,:axis]
-        else:
-            passed_symmetry = self.q_labels[:,axis:]
-
-        data = self.data.copy()
-        if dq.parity!=0:
-            if passed_symmetry.size !=0:
-                passed_parity = self.symmetry._compute(self.pattern[:axis], passed_symmetry)
-                passed_parity = self.symmetry.flat_to_parity(passed_parity) * dq.parity
-                blocks = np.where(passed_parity==1)[0]
-                for iblk in blocks:
-                    ist, ied = self.idxs[iblk], self.idxs[iblk+1]
-                    data[ist:ied] *= -1
-
-        new_T = self.__class__(qpn, shapes, data, pattern=pattern, symmetry=self.symmetry)
-        if return_full:
-            bond = BondInfo({dq:1})
-            comp = SparseFermionTensor.ones((bond,), pattern="-").to_flat()
-            identity = SparseFermionTensor.eye(bond).to_flat()
-            return new_T, comp, identity
-        else:
-            return new_T
 
     @staticmethod
     def from_sparse(spt):
@@ -928,7 +882,7 @@ class FlatFermionTensor(FlatSparseTensor):
         else:
             flip_axes = [ix for ix in range(b.ndim) if a.pattern[ix]!=b.pattern[ix]]
             q_labels_b = _adjust_q_labels(b.symmetry, b.q_labels, flip_axes)
-            q_labels, shapes, data, idxs = block3.flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
+            q_labels, shapes, data, idxs = _block3.flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
                                                 a.idxs, q_labels_b, b.shapes, b.data, b.idxs)
             return a.__class__(q_labels, shapes, data, a.pattern, idxs, a.symmetry)
 
@@ -951,7 +905,7 @@ class FlatFermionTensor(FlatSparseTensor):
         else:
             flip_axes = [ix for ix in range(b.ndim) if a.pattern[ix]!=b.pattern[ix]]
             q_labels_b = _adjust_q_labels(b.symmetry, b.q_labels, flip_axes)
-            q_labels, shapes, data, idxs = block3.flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
+            q_labels, shapes, data, idxs = _block3.flat_sparse_tensor.add(a.q_labels, a.shapes, a.data,
                                                 a.idxs, q_labels_b, b.shapes, -b.data, b.idxs)
             return a.__class__(q_labels, shapes, data, a.pattern, idxs, a.symmetry)
 
@@ -1037,10 +991,16 @@ class FlatFermionTensor(FlatSparseTensor):
         out_pattern, b_flip_axes = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
         q_labels_b = _adjust_q_labels(b.symmetry, b.q_labels, b_flip_axes)
         backend = get_backend(a.symmetry)
-        q_labels, shapes, data, idxs = backend.flat_fermion_tensor.tensordot(
-                    a.q_labels, a.shapes, a.data, a.idxs,
-                    q_labels_b, b.shapes, b.data, b.idxs,
-                    idxa, idxb)
+        if setting.DEFAULT_FERMION:
+            q_labels, shapes, data, idxs = backend.flat_fermion_tensor.tensordot(
+                        a.q_labels, a.shapes, a.data, a.idxs,
+                        q_labels_b, b.shapes, b.data, b.idxs,
+                        idxa, idxb)
+        else:
+            q_labels, shapes, data, idxs = backend.flat_sparse_tensor.tensordot(
+                        a.q_labels, a.shapes, a.data, a.idxs,
+                        q_labels_b, b.shapes, b.data, b.idxs,
+                        idxa, idxb)
 
         return a.__class__(q_labels, shapes, data, out_pattern, idxs, a.symmetry)
 
@@ -1055,7 +1015,10 @@ class FlatFermionTensor(FlatSparseTensor):
             data = np.zeros_like(a.data)
             axes = np.array(axes, dtype=np.int32)
             backend = get_backend(a.symmetry)
-            backend.flat_fermion_tensor.transpose(a.q_labels, a.shapes, a.data, a.idxs, axes, data)
+            if setting.DEFAULT_FERMION:
+                backend.flat_fermion_tensor.transpose(a.q_labels, a.shapes, a.data, a.idxs, axes, data)
+            else:
+                backend.flat_sparse_tensor.transpose(a.shapes, a.data, a.idxs, axes, data)
             pattern = "".join([a.pattern[ix] for ix in axes])
             return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, pattern, a.idxs, a.symmetry)
@@ -1064,4 +1027,5 @@ class FlatFermionTensor(FlatSparseTensor):
         return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
 
     def to_exponential(self, x):
+        from pyblock3.algebra.fermion_ops import get_flat_exponential
         return get_flat_exponential(self, x)

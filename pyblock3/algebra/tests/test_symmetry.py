@@ -1,22 +1,30 @@
 import unittest
 import numpy as np
-from pyblock3.algebra.fermion_symmetry import U11, U1, Z4, Z2
+from pyblock3.algebra.fermion_symmetry import U11, U1, Z4, Z2, Z22
 from itertools import product
 
 class TestAlgebras(unittest.TestCase):
-    def test_U11_numerics(self):
+    def test_U11_Z22_numerics(self):
         for na in range(-5,5):
             for sa in range(-na, na):
                 syma = U11(na, sa)
+                z22a = Z22(na, sa)
                 for nb in range(-5,5):
                     for sb in range(-nb, nb):
                         symb = U11(nb, sb)
+                        z22b = Z22(nb, sb)
                         out_add = syma + symb
+                        z22_add = z22a + z22b
                         assert out_add.n == (na+nb)
                         assert out_add.sz == (sa+sb)
+                        assert z22_add.n == (na+nb) % 2
+                        assert z22_add.sz == (sa+sb) % 2
                         out_sub = syma - symb
+                        z22_sub = z22a - z22b
                         assert out_sub.n == (na-nb)
                         assert out_sub.sz == (sa-sb)
+                        assert z22_sub.n == (na-nb) % 2
+                        assert z22_sub.sz == (sa-sb) %2
 
     def test_z4_z2_u1_numerics(self):
         for za in range(-10,10):
@@ -40,11 +48,14 @@ class TestAlgebras(unittest.TestCase):
                 assert z2_sub.n == (za-zb) % 2
                 assert u1_sub.n == (za-zb)
 
-    def test_U11_flat(self):
+    def test_U11_Z22_flat(self):
         for n in range(-10,10):
             for sz in range(-n, n):
                 sym1 = U11(n, sz)
                 sym2 = U11.from_flat(sym1.to_flat())
+                assert sym1==sym2
+                sym1 = Z22(n, sz)
+                sym2 = Z22.from_flat(sym1.to_flat())
                 assert sym1==sym2
 
     def test_z4_z2_u1_flat(self):
@@ -80,6 +91,28 @@ class TestAlgebras(unittest.TestCase):
                 outs -= s
         assert out.n == outn
         assert out.sz == outs
+
+    def test_Z22_compute(self):
+        ndim = 10
+        sign_array = np.random.randint(0,2,ndim)
+        sign_map = {0:"+", 1:"-"}
+        pattern = "".join([sign_map[ix] for ix in sign_array])
+        na = np.random.randint(0,10,ndim)
+        sa = np.random.randint(-5,5,ndim)
+        Z22arrs = [Z22(n, s) for n, s in zip(na, sa)]
+        out = Z22._compute(pattern, Z22arrs)
+
+        outn = 0
+        outs = 0
+        for p, n, s in zip(sign_array, na, sa):
+            if p==0:
+                outn += n
+                outs += s
+            else:
+                outn -= n
+                outs -= s
+        assert out.n == outn % 2
+        assert out.sz == outs % 2
 
     def test_z4_z2_u1_compute(self):
         ndim = 10
@@ -131,6 +164,27 @@ class TestAlgebras(unittest.TestCase):
             outb = U11.from_flat(out[i])
             assert outa == outb
             assert -(outa - U11(1,-1)) == U11.from_flat(outneg[i])
+
+    def test_Z22_compute_flat(self):
+        nblks = 30
+        ndim = 5
+        sign_array = np.random.randint(0,2,ndim)
+        sign_map = {0:"+", 1:"-"}
+        pattern = "".join([sign_map[ix] for ix in sign_array])
+
+        na = np.random.randint(0,10,nblks*ndim).reshape(nblks, ndim)
+        sa = np.random.randint(-5,5,nblks*ndim).reshape(nblks, ndim)
+
+        Z22lsts = [[Z22(na[nb,nd], sa[nb,nd]) for nd in range(ndim)] for nb in range(nblks)]
+        Z22arrs = [[Z22lsts[nb][nd].to_flat() for nd in range(ndim)] for nb in range(nblks)]
+        Z22arrs = np.asarray(Z22arrs, dtype=int)
+        out = Z22._compute(pattern, Z22arrs)
+        outneg = Z22._compute(pattern, Z22arrs, offset=("-", Z22(1,-1)), neg=True)
+        for i in range(nblks):
+            outa = Z22._compute(pattern, Z22lsts[i])
+            outb = Z22.from_flat(out[i])
+            assert outa == outb
+            assert -(outa - Z22(1,-1)) == Z22.from_flat(outneg[i])
 
     def test_z4_z2_compute_flat(self):
         nblks = 30

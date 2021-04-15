@@ -51,6 +51,10 @@
 #include NAME_IMPL(TMPL_NAME,_tmpl.hpp)
 #undef TMPL_Q
 
+#define TMPL_Q Z22
+#include NAME_IMPL(TMPL_NAME,_tmpl.hpp)
+#undef TMPL_Q
+
 
 #undef NAME_IMPL
 #undef CAT
