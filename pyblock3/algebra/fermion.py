@@ -503,6 +503,18 @@ class SparseFermionTensor(SparseTensor):
     def parity(self):
         return self.dq.parity
 
+    def get_bond_info(self, ax):
+        bond = dict()
+        ipattern = self.pattern[ax]
+        for iblk in self:
+            q = iblk.q_labels[ax]
+            dim = iblk.shape[ax]
+            if ipattern == "+":
+                bond.update({q:dim})
+            else:
+                bond.update({-q:dim})
+        return BondInfo(bond)
+
     def conj(self):
         blks = [iblk.conj() for iblk in self.blocks]
         return self.__class__(blocks=blks, pattern=self.pattern)
@@ -818,6 +830,16 @@ class FlatFermionTensor(FlatSparseTensor):
     @property
     def shape(self):
         return tuple(np.amax(self.shapes, axis=0))
+
+    def get_bond_info(self, ax):
+        ipattern = self.pattern[ax]
+        if ipattern=="+":
+            sz = [self.symmetry.from_flat(ix) for ix in self.data.q_labels[:,ax]]
+        else:
+            sz = [-self.symmetry.from_flat(ix) for ix in self.data.q_labels[:,ax]]
+        sp = self.data.shapes[:,dim_or_ind]
+        bond = dict(zip(sz, sp))
+        return BondInfo(bond)
 
     def conj(self):
         return self.__class__(self.q_labels, self.shapes, self.data.conj(), pattern=self.pattern, idxs=self.idxs, symmetry=self.symmetry)
