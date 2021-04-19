@@ -89,6 +89,22 @@ class TestU11(unittest.TestCase):
                 self.assertAlmostEqual((out-Tf).norm(), 0, 8)
                 assert (u.dq==dq) and (v.dq==Tf.dq-dq)
 
+    def test_qr(self):
+        bond = self.bond
+        left_idx=[3,1]
+        for dq in self.svd_dq_iterator:
+            T = rand((bond,)*4, pattern="++--", dq=dq).to_flat()
+            q, r = T.tensor_qr(left_idx=left_idx, mod="qr")
+            self.assertTrue(q.dq==dq)
+            self.assertTrue(r.dq==dq.__class__(0))
+            out = np.tensordot(q, r, axes=((-1,),(0,))).transpose((2,1,3,0))
+            self.assertAlmostEqual((out-T).norm(), 0, 8)
+            l, q = T.tensor_qr(left_idx=left_idx, mod="lq")
+            self.assertTrue(q.dq==dq)
+            self.assertTrue(l.dq==dq.__class__(0))
+            out = np.tensordot(l, q, axes=((-1,),(0,))).transpose((2,1,3,0))
+            self.assertAlmostEqual((out-T).norm(), 0, 8)
+
 class TestZ22(TestU11):
     def setUp(self):
         bond = BondInfo({Z22(0):2, Z22(0,1):3, Z22(1,0):4, Z22(1,1):5})
@@ -146,5 +162,5 @@ class TestZ2(TestU11):
         self.T1f = self.T1.to_flat()
 
 if __name__ == "__main__":
-    print("Full Tests for Fermionic Numerics")
+    print("Full Tests for fermion CPP backend")
     unittest.main()

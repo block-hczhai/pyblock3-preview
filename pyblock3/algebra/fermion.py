@@ -174,7 +174,7 @@ def _renorm_singular_vals(s, n_chi, renorm_power):
     return ((s_tot_keep + s_tot_lose) / s_tot_keep)**(1 / renorm_power)
 
 def _trim_and_renorm_SVD(U, s, VH, **svdopts):
-    cutoff = svdopts.pop("cutoff", -1.0)
+    cutoff = svdopts.pop("cutoff", 1e-12)
     cutoff_mode = svdopts.pop("cutoff_mode", 3)
     max_bond = svdopts.pop("max_bond", -1)
     renorm_power = svdopts.pop("renorm_power", 0)
@@ -213,6 +213,18 @@ def _absorb_svd(u, s, v, absorb):
         v = v * s.reshape((-1, 1))
     return u, None, v
 
+def _index_partition(T, left_idx, right_idx):
+    if right_idx is None:
+        right_idx = [idim for idim in range(T.ndim) if idim not in left_idx]
+    elif left_idx is None:
+        left_idx = [idim for idim in range(T.ndim) if idim not in right_idx]
+    neworder = list(left_idx) + list(right_idx)
+    if neworder == list(range(T.ndim)):
+        new_T = T
+    else:
+        new_T = T.transpose(neworder)
+    return new_T, left_idx, right_idx
+
 def _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb):
     cls = T.dq.__class__
     if qpn_partition is None:
@@ -223,16 +235,7 @@ def _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb):
     else:
         assert np.sum(qpn_partition) == T.dq
 
-    if right_idx is None:
-        right_idx = [idim for idim in range(T.ndim) if idim not in left_idx]
-    elif left_idx is None:
-        left_idx = [idim for idim in range(T.ndim) if idim not in right_idx]
-    neworder = list(left_idx) + list(right_idx)
-    if neworder == list(range(T.ndim)):
-        new_T = T
-    else:
-        new_T = T.transpose(neworder)
-
+    new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
     return new_T, left_idx, right_idx, qpn_partition, cls
 
 def sparse_svd(T, left_idx, right_idx=None, absorb=0, qpn_partition=None, qpn_cutoff_func=None, **opts):
@@ -413,6 +416,152 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
     v = T.__class__(qv, shv, vdata, pattern="+"+new_T.pattern[split_ax:], symmetry=T.symmetry)
     return u, s, v
 
+def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
+    assert mod in ["qr", "lq"]
+    new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
+    if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
+        raise NotImplementedError
+    symmetry = T.dq.__class__
+    dq = {"lq": symmetry(0),
+          "qr": T.dq}[mod]
+    split_ax = len(left_idx)
+    left_pattern = new_T.pattern[:split_ax]
+    data_map = {}
+    for iblk in new_T.blocks:
+        left_q = symmetry._compute(left_pattern, iblk.q_labels[:split_ax], offset=("-", dq))
+        if left_q not in data_map:
+            data_map[left_q] = []
+        data_map[left_q].append(iblk)
+    qblocks = []
+    rblocks = []
+    for slab, datasets in data_map.items():
+        row_len = col_len = 0
+        row_map = {}
+        col_map = {}
+        for iblk in datasets:
+            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
+            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
+            if lq not in row_map:
+                new_row_len = row_len + np.prod(iblk.shape[:split_ax], dtype=int)
+                row_map[lq] = (row_len, new_row_len, iblk.shape[:split_ax])
+                row_len = new_row_len
+            if rq not in col_map:
+                new_col_len = col_len + np.prod(iblk.shape[split_ax:], dtype=int)
+                col_map[rq] = (col_len, new_col_len, iblk.shape[split_ax:])
+                col_len = new_col_len
+        data = np.zeros([row_len, col_len], dtype=T.dtype)
+        for iblk in datasets:
+            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
+            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
+            ist, ied = row_map[lq][:2]
+            jst, jed = col_map[rq][:2]
+            data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jst-jed)
+        if data.size ==0:
+            continue
+        if mod=="qr":
+            q, r = np.linalg.qr(data)
+        else:
+            r, q = np.linalg.qr(data.T)
+            q, r = q.T, r.T
+
+        for lq, (lst, led, lsh) in row_map.items():
+            if abs(q[lst:led]).max()<SVD_SCREENING:
+                continue
+            qblocks.append(SubTensor(reduced=q[lst:led].reshape(tuple(lsh)+(-1,)), q_labels=lq))
+
+        for rq, (rst, red, rsh) in col_map.items():
+            if abs(r[:,rst:red]).max()<SVD_SCREENING:
+                continue
+            rblocks.append(SubTensor(reduced=r[:,rst:red].reshape((-1,)+tuple(rsh)), q_labels=rq))
+    q = T.__class__(blocks=qblocks, pattern=new_T.pattern[:split_ax]+"-")
+    r = T.__class__(blocks=rblocks, pattern="+"+new_T.pattern[split_ax:])
+    return q, r
+
+def flat_qr(T, left_idx, right_idx=None, mod="qr"):
+    assert mod in ["qr", "lq"]
+    new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
+    if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
+        raise NotImplementedError
+    symmetry = T.dq.__class__
+    dq = {"lq": symmetry(0),
+          "qr": T.dq}[mod]
+    split_ax = len(left_idx)
+    left_q = symmetry._compute(new_T.pattern[:split_ax], new_T.q_labels[:,:split_ax], offset=("-", dq))
+    aux_q = list(set(np.unique(left_q)) )
+    full_left = np.hstack([new_T.q_labels[:,:split_ax], left_q.reshape(-1,1)])
+    full_right = np.hstack([left_q.reshape(-1,1), new_T.q_labels[:,split_ax:]])
+    full = [(tuple(il), tuple(ir)) for il, ir in zip(full_left, full_right)]
+
+    qdata = []
+    rdata = []
+    qq = []
+    qr = []
+    shq = []
+    shr = []
+    row_shapes = np.prod(new_T.shapes[:,:split_ax], axis=1, dtype=int)
+    col_shapes = np.prod(new_T.shapes[:,split_ax:], axis=1, dtype=int)
+    for slab in aux_q:
+        blocks = np.where(left_q == slab)[0]
+        row_map = {}
+        col_map = {}
+        row_len = 0
+        col_len = 0
+        alldatas = {}
+        for iblk in blocks:
+            lq, rq = full[iblk]
+            if lq not in row_map:
+                new_row_len = row_shapes[iblk] + row_len
+                row_map[lq] = (row_len, new_row_len, new_T.shapes[iblk,:split_ax])
+                ist, ied = row_len, new_row_len
+                row_len = new_row_len
+            else:
+                ist, ied = row_map[lq][:2]
+            if rq not in col_map:
+                new_col_len = col_shapes[iblk] + col_len
+                col_map[rq] = (col_len, new_col_len, new_T.shapes[iblk,split_ax:])
+                jst, jed = col_len, new_col_len
+                col_len = new_col_len
+            else:
+                jst, jed = col_map[rq][:2]
+            xst, xed = new_T.idxs[iblk], new_T.idxs[iblk+1]
+            alldatas[(ist,ied,jst,jed)] = new_T.data[xst:xed].reshape(ied-ist, jed-jst)
+
+        data = np.zeros([row_len, col_len], dtype=new_T.dtype)
+        if data.size == 0: continue
+        for (ist, ied, jst, jed), val in alldatas.items():
+            data[ist:ied,jst:jed] = val
+
+        if mod=="qr":
+            q, r = np.linalg.qr(data)
+        else:
+            r, q = np.linalg.qr(data.T)
+            q, r = q.T, r.T
+
+        for lq, (lst, led, lsh) in row_map.items():
+            if abs(q[lst:led]).max()<SVD_SCREENING:
+                continue
+            qdata.append(q[lst:led].ravel())
+            qq.append(lq)
+            shq.append(tuple(lsh)+(q.shape[-1],))
+
+        for rq, (rst, red, rsh) in col_map.items():
+            if abs(r[:,rst:red]).max()<SVD_SCREENING:
+                continue
+            rdata.append(r[:,rst:red].ravel())
+            qr.append(rq)
+            shr.append((r.shape[0],)+tuple(rsh))
+
+    qq = np.asarray(qq, dtype=np.uint32)
+    shq = np.asarray(shq, dtype=np.uint32)
+    qdata = np.concatenate(qdata)
+
+    qr = np.asarray(qr, dtype=np.uint32)
+    shr = np.asarray(shr, dtype=np.uint32)
+    rdata = np.concatenate(rdata)
+    q = T.__class__(qq, shq, qdata, pattern=new_T.pattern[:split_ax]+"-", symmetry=T.symmetry)
+    r = T.__class__(qr, shr, rdata, pattern="+"+new_T.pattern[split_ax:], symmetry=T.symmetry)
+    return q, r
+
 def _adjust_block(block, flip_axes):
     if len(flip_axes)==0:
         return block
@@ -490,6 +639,11 @@ class SparseFermionTensor(SparseTensor):
         axes = list(range(self.ndim))[::-1]
         blocks = [np.transpose(block.conj(), axes=axes) for block in self.blocks]
         return self.__class__(blocks=blocks, pattern=_flip_pattern(self.pattern[::-1]))
+
+    @property
+    def shape(self):
+        shapes = [iblk.shape for iblk in self]
+        return tuple(np.amax(shapes, axis=0))
 
     @staticmethod
     @implements(np.copy)
@@ -753,6 +907,9 @@ class SparseFermionTensor(SparseTensor):
 
     def tensor_svd(self, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=None, **opts):
         return sparse_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
+
+    def tensor_qr(self, left_idx, right_idx=None, mod="qr"):
+        return sparse_qr(self, left_idx, right_idx=right_idx, mod=mod)
 
     def to_exponential(self, x):
         from pyblock3.algebra.fermion_ops import get_sparse_exponential
@@ -1047,6 +1204,9 @@ class FlatFermionTensor(FlatSparseTensor):
 
     def tensor_svd(self, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=None, **opts):
         return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
+
+    def tensor_qr(self, left_idx, right_idx=None, mod="qr"):
+        return flat_qr(self, left_idx, right_idx=right_idx, mod=mod)
 
     def to_exponential(self, x):
         from pyblock3.algebra.fermion_ops import get_flat_exponential
