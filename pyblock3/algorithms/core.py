@@ -105,13 +105,12 @@ class SweepAlgorithm:
         if self.decomp_type == DecompositionTypes.DensityMatrix:
             if forward:
                 dm = np.tensordot(
-                    wfn[0].conj(), wfn[0], axes=((-3, -2, -1), ) * 2)
-                dm = dm.real
+                    wfn[0].conj(), wfn[0], axes=((-3, -2, -1), ) * 2).real
                 if isinstance(wfns, list):
                     dm = dm * weights[0]
                     for ex_wfn, w in zip(wfns[1:], weights[1:]):
                         dm = dm + w * np.tensordot(
-                            ex_wfn[0].conj(), ex_wfn[0], axes=((-3, -2, -1), ) * 2)
+                            ex_wfn[0].conj(), ex_wfn[0], axes=((-3, -2, -1), ) * 2).real
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
                 if not self.mpi or self.mrank == 0:
                     lsr = dm.tensor_svd(idx=3, pattern='+++---')
@@ -121,13 +120,12 @@ class SweepAlgorithm:
                         l.conj(), wfn[0], axes=((0, 1, 2), ) * 2)]
             else:
                 dm = np.tensordot(
-                    wfn[0].conj(), wfn[0], axes=((0, 1, 2), ) * 2)
-                dm = dm.real
+                    wfn[0].conj(), wfn[0], axes=((0, 1, 2), ) * 2).real
                 if isinstance(wfns, list):
                     dm = dm * weights[0]
                     for ex_wfn, w in zip(wfns[1:], weights[1:]):
                         dm = dm + w * np.tensordot(
-                            ex_wfn[0].conj(), ex_wfn[0], axes=((0, 1, 2), ) * 2)
+                            ex_wfn[0].conj(), ex_wfn[0], axes=((0, 1, 2), ) * 2).real
                 dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
                 if not self.mpi or self.mrank == 0:
                     lsr = dm.tensor_svd(idx=3, pattern='-+-+-+')

@@ -112,8 +112,9 @@ class TDDMRG(SweepAlgorithm):
                     print(" %3s Site = %4d-%4d .. Mmps = %4d Nmult = %4d E = %s DW = %5.2E FLOPS = %5.2E Tmult = %8.3f T = %8.3f MEM = %7s" % (
                         "<--" if iw % 2 else "-->", i, i + dot - 1, mmps, nmult, _complex_repr("%20.12f", ener), error, nflop / tmult, tmult, time.perf_counter() - tt, fmt_size(mem)))
                 dw = max(dw, abs(error))
-            print("Time elapsed = %10.3f | E = %s | MDW = %5.2E | Norm^2 = %20.12f | MEM = %7s" %
-                  (time.perf_counter() - telp, _complex_repr("%20.12f", self.energies[iw]), dw, self.normsqs[iw], fmt_size(peak_mem)))
+            if self.iprint > 0:
+                print("Time elapsed = %10.3f | E = %s | MDW = %5.2E | Norm^2 = %20.12f | MEM = %7s" %
+                    (time.perf_counter() - telp, _complex_repr("%20.12f", self.energies[iw]), dw, self.normsqs[iw], fmt_size(peak_mem)))
             forward = not forward
         return self
 

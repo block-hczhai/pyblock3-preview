@@ -137,7 +137,7 @@ class SubTensor(np.ndarray):
     @staticmethod
     @implements(np.real)
     def _real(x):
-        return SubTensor(reduced=np.asarray(x).real, q_labels=x.q_labels)
+        return SubTensor(reduced=np.ascontiguousarray(np.asarray(x).real), q_labels=x.q_labels)
 
     @property
     def real(self):
@@ -146,7 +146,7 @@ class SubTensor(np.ndarray):
     @staticmethod
     @implements(np.imag)
     def _imag(x):
-        return SubTensor(reduced=np.asarray(x).imag, q_labels=x.q_labels)
+        return SubTensor(reduced=np.ascontiguousarray(np.asarray(x).imag), q_labels=x.q_labels)
 
     @property
     def imag(self):

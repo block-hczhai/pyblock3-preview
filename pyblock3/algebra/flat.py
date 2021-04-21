@@ -256,7 +256,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     @implements(np.real)
     def _real(x):
         return x.__class__(q_labels=x.q_labels, shapes=x.shapes,
-                           data=x.data.real, idxs=x.idxs)
+                           data=np.ascontiguousarray(x.data.real), idxs=x.idxs)
 
     @property
     def real(self):
@@ -266,7 +266,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     @implements(np.imag)
     def _imag(x):
         return x.__class__(q_labels=x.q_labels, shapes=x.shapes,
-                           data=x.data.imag, idxs=x.idxs)
+                           data=np.ascontiguousarray(x.data.imag), idxs=x.idxs)
 
     @property
     def imag(self):
@@ -339,6 +339,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         if out is not None:
             out[0].shapes[...] = shs
             out[0].q_labels[...] = qs
+            assert data.dtype == out[0].data.dtype
             out[0].data[...] = data
             out[0].idxs[...] = idxs
         return self.__class__(q_labels=qs, shapes=shs, data=data, idxs=idxs)
