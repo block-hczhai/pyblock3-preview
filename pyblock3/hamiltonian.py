@@ -119,14 +119,20 @@ class Hamiltonian:
             impo = impo.to_flat()
         return impo
     
-    def build_ancilla_mpo(self, mpo):
+    def build_ancilla_mpo(self, mpo, left=False):
         tensors = []
         for m in range(self.n_sites):
-            tensors.append(mpo.tensors[m])
             infos = mpo.tensors[m].infos
-            a = np.diag(mpo.tensors[m].__class__.ones((infos[-1], )))
-            b = np.diag(mpo.tensors[m].__class__.ones((self.basis[m], )))
-            tensors.append(np.transpose(np.tensordot(a, b, axes=0), axes=(0, 2, 3, 1)))
+            if not left:
+                a = np.diag(mpo.tensors[m].__class__.ones((infos[-1], )))
+                b = np.diag(mpo.tensors[m].__class__.ones((self.basis[m], )))
+                tensors.append(mpo.tensors[m])
+                tensors.append(np.transpose(np.tensordot(a, b, axes=0), axes=(0, 2, 3, 1)))
+            else:
+                a = np.diag(mpo.tensors[m].__class__.ones((infos[0], )))
+                b = np.diag(mpo.tensors[m].__class__.ones((self.basis[m], )))
+                tensors.append(np.transpose(np.tensordot(a, b, axes=0), axes=(0, 2, 3, 1)))
+                tensors.append(mpo.tensors[m])
         return MPS(tensors=tensors, const=mpo.const, opts=mpo.opts)
 
     def build_qc_mpo(self):
