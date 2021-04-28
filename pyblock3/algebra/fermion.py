@@ -862,7 +862,6 @@ class SparseFermionTensor(SparseTensor):
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
 
         out_pattern, b_flip_axes = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
-        #print(idxa, idxb)
         out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
         out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
         assert len(idxa) == len(idxb)
@@ -1170,7 +1169,6 @@ class FlatFermionTensor(FlatSparseTensor):
         idxa[idxa < 0] += a.ndim
         idxb[idxb < 0] += b.ndim
 
-        print(a.q_labels.shape, b.q_labels.shape)
         out_pattern, b_flip_axes = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
         q_labels_b = _adjust_q_labels(b.symmetry, b.q_labels, b_flip_axes)
         backend = get_backend(a.symmetry)
