@@ -862,6 +862,7 @@ class SparseFermionTensor(SparseTensor):
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
 
         out_pattern, b_flip_axes = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
+        #print(idxa, idxb)
         out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
         out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
         assert len(idxa) == len(idxb)
@@ -892,7 +893,8 @@ class SparseFermionTensor(SparseTensor):
                         blocks_map[outq] = mat * phase
                     else:
                         blocks_map[outq] += mat * phase
-
+        if len(out_idx_a) == 0 and len(out_idx_b) == 0:
+            return np.asarray(list(blocks_map.values())[0])
         return a.__class__(blocks=list(blocks_map.values()), pattern=out_pattern)
 
     @staticmethod
@@ -1167,6 +1169,8 @@ class FlatFermionTensor(FlatSparseTensor):
             idxb = np.array(axes[1], dtype=np.int32)
         idxa[idxa < 0] += a.ndim
         idxb[idxb < 0] += b.ndim
+
+        print(a.q_labels.shape, b.q_labels.shape)
         out_pattern, b_flip_axes = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
         q_labels_b = _adjust_q_labels(b.symmetry, b.q_labels, b_flip_axes)
         backend = get_backend(a.symmetry)
@@ -1181,6 +1185,8 @@ class FlatFermionTensor(FlatSparseTensor):
                         q_labels_b, b.shapes, b.data, b.idxs,
                         idxa, idxb)
 
+        if len(idxa) == a.ndim and len(idxb) == b.ndim:
+            return data[0]
         return a.__class__(q_labels, shapes, data, out_pattern, idxs, a.symmetry)
 
     @staticmethod
