@@ -28,6 +28,7 @@ import block3.sz as _block3
 from .core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
 from .flat import FlatSparseTensor, _flat_sparse_tensor_numpy_func_impls
 from .fermion_symmetry import U1, Z4, Z2, U11, Z22
+from .symmetry import BondInfo
 from . import fermion_setting as setting
 
 SVD_SCREENING = setting.SVD_SCREENING
@@ -992,10 +993,10 @@ class FlatFermionTensor(FlatSparseTensor):
     def get_bond_info(self, ax):
         ipattern = self.pattern[ax]
         if ipattern=="+":
-            sz = [self.symmetry.from_flat(ix) for ix in self.data.q_labels[:,ax]]
+            sz = [self.symmetry.from_flat(ix) for ix in self.q_labels[:,ax]]
         else:
-            sz = [-self.symmetry.from_flat(ix) for ix in self.data.q_labels[:,ax]]
-        sp = self.data.shapes[:,dim_or_ind]
+            sz = [-self.symmetry.from_flat(ix) for ix in self.q_labels[:,ax]]
+        sp = self.shapes[:,ax]
         bond = dict(zip(sz, sp))
         return BondInfo(bond)
 
