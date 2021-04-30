@@ -894,7 +894,7 @@ class SparseFermionTensor(SparseTensor):
                     else:
                         blocks_map[outq] += mat * phase
         if len(out_idx_a) == 0 and len(out_idx_b) == 0:
-            return np.asarray(list(blocks_map.values())[0])
+            return np.asarray(list(blocks_map.values())[0]).item()
         return a.__class__(blocks=list(blocks_map.values()), pattern=out_pattern)
 
     @staticmethod
