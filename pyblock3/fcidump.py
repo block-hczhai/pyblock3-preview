@@ -33,11 +33,13 @@ PointGroup = {
     "c1": [8, 0]
 }
 
+
 @nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :]))
 def parallelize_h1e(n_sites, mrank, msize, h1e):
     for i in range(0, n_sites):
         if mrank != i % msize:
             h1e[i, :] = 0.0
+
 
 @nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :, :, :]))
 def parallelize_g2e(n_sites, mrank, msize, g2e):
@@ -60,6 +62,7 @@ def parallelize_g2e(n_sites, mrank, msize, g2e):
                         else:
                             if mrank != (ii * (ii + 1) // 2 + jj) % msize:
                                 g2e[i, j, k, l] = 0
+
 
 class FCIDUMP:
 
@@ -97,7 +100,7 @@ class FCIDUMP:
                 return self.g2e[1][k, l, i, j]
         else:
             return self.g2e[i, j, k, l]
-    
+
     def parallelize(self, mpi=True):
         if not mpi:
             return self
@@ -194,8 +197,10 @@ class FCIDUMP:
                 np.zeros((self.n_sites, self.n_sites)),
                 np.zeros((self.n_sites, self.n_sites)))
             self.g2e = (
-                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)),
-                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites,
+                          self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites,
+                          self.n_sites, self.n_sites)),
                 np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)))
             ip = 0
             for i, j, k, l, d in data:
@@ -223,3 +228,139 @@ class FCIDUMP:
                 self.h1e[0] -= self.mu * np.identity(self.n_sites)
                 self.h1e[1] -= self.mu * np.identity(self.n_sites)
         return self
+
+    def write(self, filename, tol=1E-13):
+        """
+        Write FCI options and integrals to FCIDUMP file.
+
+        Args:
+            filename : str
+            tol : threshold for terms written into file
+        """
+        with open(filename, 'w') as fout:
+            fout.write(' &FCI NORB=%4d,NELEC=%2d,MS2=%d,\n' %
+                       (self.n_sites, self.n_elec, self.twos))
+            if self.orb_sym is not None and len(self.orb_sym) > 0:
+                fout.write('  ORBSYM=%s,\n' % ','.join(
+                    [str(PointGroup[self.pg].index(x)) for x in self.orb_sym]))
+            else:
+                fout.write('  ORBSYM=%s\n' % ('1,' * self.n_sites))
+            fout.write('  ISYM=%d,\n' % PointGroup[self.pg].index(self.ipg))
+            if isinstance(self.h1e, tuple) and len(self.h1e) == 2:
+                fout.write('  IUHF=1,\n')
+                assert isinstance(self.g2e, tuple)
+            if self.general:
+                fout.write('  IGENERAL=1,\n')
+            fout.write(' &END\n')
+            output_format = '%20.16f%4d%4d%4d%4d\n'
+            npair = self.n_sites * (self.n_sites + 1) // 2
+            nmo = self.n_sites
+
+            def write_eri(fout, eri):
+                assert eri.ndim in [1, 2, 4]
+                if eri.ndim == 4:
+                    # general
+                    assert(eri.size == nmo ** 4)
+                    for i in range(nmo):
+                        for j in range(nmo):
+                            for k in range(nmo):
+                                for l in range(nmo):
+                                    if abs(eri[i, j, k, l]) > tol:
+                                        fout.write(output_format % (
+                                            eri[i, j, k, l], i + 1, j + 1, k + 1, l + 1))
+                elif eri.ndim == 2:
+                    # 4-fold symmetry
+                    assert eri.size == npair ** 2
+                    ij = 0
+                    for i in range(nmo):
+                        for j in range(0, i + 1):
+                            kl = 0
+                            for k in range(0, nmo):
+                                for l in range(0, k + 1):
+                                    if abs(eri[ij, kl]) > tol:
+                                        fout.write(output_format % (
+                                            eri[ij, kl], i + 1, j + 1, k + 1, l + 1))
+                                    kl += 1
+                            ij += 1
+                else:
+                    # 8-fold symmetry
+                    assert eri.size == npair * (npair + 1) // 2
+                    ij = 0
+                    ijkl = 0
+                    for i in range(nmo):
+                        for j in range(0, i + 1):
+                            kl = 0
+                            for k in range(0, i + 1):
+                                for l in range(0, k + 1):
+                                    if ij >= kl:
+                                        if abs(eri[ijkl]) > tol:
+                                            fout.write(output_format % (
+                                                eri[ijkl], i + 1, j + 1, k + 1, l + 1))
+                                        ijkl += 1
+                                    kl += 1
+                            ij += 1
+
+            def write_h1e(fout, hx):
+                h = hx.reshape(nmo, nmo)
+                for i in range(nmo):
+                    for j in range(0, i + 1):
+                        if abs(h[i, j]) > tol:
+                            fout.write(output_format %
+                                       (h[i, j], i + 1, j + 1, 0, 0))
+            
+            def fold_eri(eri, fold=1):
+                if fold == 1:
+                    return eri
+                elif fold == 8:
+                    xeri = np.zeros((npair * (npair + 1) // 2, ))
+                    ij = 0
+                    ijkl = 0
+                    for i in range(nmo):
+                        for j in range(0, i + 1):
+                            kl = 0
+                            for k in range(0, i + 1):
+                                for l in range(0, k + 1):
+                                    if ij >= kl:
+                                        xeri[ijkl] = eri[i, j, k, l]
+                                        ijkl += 1
+                                    kl += 1
+                            ij += 1
+                    return xeri
+                elif fold == 4:
+                    xeri = np.zeros((npair, npair))
+                    ij = 0
+                    for i in range(nmo):
+                        for j in range(0, i + 1):
+                            kl = 0
+                            for k in range(0, nmo):
+                                for l in range(0, k + 1):
+                                    xeri[ij, kl] = eri[i, j, k, l]
+                                    kl += 1
+                            ij += 1
+
+            if isinstance(self.g2e, tuple):
+                assert len(self.g2e) == 3
+                vaa, vab, vbb = self.g2e
+                if not self.general:
+                    vaa = fold_eri(vaa, 8)
+                    vab = fold_eri(vab, 4)
+                    vbb = fold_eri(vbb, 8)
+                    assert vaa.ndim == vbb.ndim == 1 and vab.ndim == 2
+                else:
+                    assert vaa.ndim == 4 and vbb.ndim == 4 and vab.ndim == 4
+                for eri in [vaa, vbb, vab]:
+                    write_eri(fout, eri)
+                    fout.write(output_format % (0, 0, 0, 0, 0))
+                assert len(self.h1e) == 2
+                for hx in self.h1e:
+                    write_h1e(fout, hx)
+                    fout.write(output_format % (0, 0, 0, 0, 0))
+                fout.write(output_format % (self.const_e, 0, 0, 0, 0))
+            else:
+                if not self.general:
+                    eri = fold_eri(self.g2e, 8)
+                else:
+                    eri = self.g2e
+                write_eri(fout, eri)
+                write_h1e(fout, self.h1e)
+                fout.write(output_format % (self.const_e, 0, 0, 0, 0))
