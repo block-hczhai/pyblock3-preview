@@ -72,7 +72,7 @@ class OpElement(OpExpr):
             Type of the operator.
         site_index : () or tuple(int..)
             Site indices of the operator.
-        factor : float
+        factor : float / complex
             scalar factor.
         q_label : SZ
             Quantum label of the operator.
@@ -81,7 +81,8 @@ class OpElement(OpExpr):
 
     def __init__(self, name, site_index, factor=1, q_label=None):
         assert isinstance(site_index, tuple)
-        factor = float(factor)
+        if not isinstance(factor, complex):
+            factor = float(factor)
         self.name = name
         self.site_index = site_index
         self.factor = factor
@@ -220,13 +221,15 @@ class OpString(OpExpr):
         self.ops.sort(key=lambda x: x.site_index[0])
 
     def __repr__(self):
-        if self.factor != 1:
+        if self.factor == 1:
+            return " ".join([repr(x) for x in self.ops])
+        elif isinstance(self.factor, float):
             return '(%10.5f %r)' % (self.factor, abs(self))
         else:
-            return " ".join([repr(x) for x in self.ops])
+            return '(%10.5f + %10.5fj %r)' % (self.factor.real, self.factor.imag, abs(self))
 
     def __truediv__(self, other):
-        if isinstance(other, float):
+        if isinstance(other, float) or isinstance(other, complex):
             return OpString(self.ops, self.factor / other)
         else:
             return NotImplemented
@@ -242,7 +245,7 @@ class OpString(OpExpr):
             return OpString(self.ops + [other], self.factor)
         elif other == 0:
             return 0
-        elif isinstance(other, float) or isinstance(other, int):
+        elif isinstance(other, float) or isinstance(other, complex) or isinstance(other, int):
             return OpString(self.ops, self.factor * other) if abs(self.factor * other) > 1E-12 else 0
         elif isinstance(other, OpString):
             return OpString(self.ops + other.ops, self.factor * other.factor)
@@ -254,7 +257,7 @@ class OpString(OpExpr):
             return OpString([other] + self.ops, self.factor)
         elif other == 0:
             return 0
-        elif isinstance(other, float) or isinstance(other, int):
+        elif isinstance(other, float) or isinstance(other, complex) or isinstance(other, int):
             return OpString(self.ops, self.factor * other) if abs(self.factor * other) > 1E-12 else 0
         else:
             return NotImplemented
@@ -329,7 +332,7 @@ class OpSum(OpExpr):
             return NotImplemented
 
     def __truediv__(self, other):
-        if isinstance(other, float):
+        if isinstance(other, float) or isinstance(other, complex):
             return OpSum([x / other for x in self.strings])
         else:
             return NotImplemented

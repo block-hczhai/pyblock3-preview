@@ -371,6 +371,7 @@ class SymbolicSparseTensor:
         lr_map = []
         mats = []
         npm = len(self.mat.data)
+        dtype = float
         for ip, op in enumerate(self.mat.data):
             qll = self.lop[ip].q_label
             if op == 0:
@@ -385,6 +386,8 @@ class SymbolicSparseTensor:
             else:
                 assert False
             for term in terms:
+                if term == 0:
+                    continue
                 k = 0
                 for op in term.ops:
                     if op == i_op or op.site_index[0] <= idx:
@@ -414,13 +417,15 @@ class SymbolicSparseTensor:
                     mpr[r] = ir
                 else:
                     ir = mpr[r]
+                if isinstance(term.factor, complex):
+                    dtype = complex
                 mats[iq].append((il, ir, term.factor))
         mqlr = [None] * len(mats)
         m, mq = 0, len(q_map)
         for (ql, qr), iq in q_map.items():
             matvs = mats[iq]
             mpl, mpr = lr_map[iq]
-            mat = np.zeros((len(mpl), len(mpr)), dtype=float)
+            mat = np.zeros((len(mpl), len(mpr)), dtype=dtype)
             for il, ir, v in matvs:
                 mat[il, ir] += v
             l, s, r = np.linalg.svd(mat, full_matrices=False)
@@ -502,9 +507,12 @@ class SymbolicSparseTensor:
                 for block in oe.to_sparse():
                     qx = (dq - ql, *block.q_labels, qr)
                     sh = (nl, *block.shape, nr)
+                    dtype = block.dtype
+                    if isinstance(factor, complex):
+                        dtype = complex
                     if qx not in map_blocks[ioe]:
                         map_blocks[ioe][qx] = block.__class__.zeros(
-                            shape=sh, q_labels=qx)
+                            shape=sh, q_labels=qx, dtype=dtype)
                     map_blocks[ioe][qx][il, ..., ir] += factor * \
                         np.asarray(block)
 
