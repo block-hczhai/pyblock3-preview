@@ -157,7 +157,7 @@ def _trim_singular_vals(s, cutoff, cutoff_mode):
                 break
             n_chi -= 1
 
-    return n_chi
+    return min(np.sum(s > SVD_SCREENING), n_chi)
 
 def _renorm_singular_vals(s, n_chi, renorm_power):
     """Find the normalization constant for ``s`` such that the new sum squared
@@ -295,13 +295,9 @@ def sparse_svd(T, left_idx, right_idx=None, absorb=0, qpn_partition=None, qpn_cu
             u, s, v= _absorb_svd(u, s, v, absorb)
 
         for lq, (lst, led, lsh) in row_map.items():
-            if abs(u[lst:led]).max()<SVD_SCREENING:
-                continue
             ublocks.append(SubTensor(reduced=u[lst:led].reshape(tuple(lsh)+(-1,)), q_labels=lq))
 
         for rq, (rst, red, rsh) in col_map.items():
-            if abs(v[:,rst:red]).max()<SVD_SCREENING:
-                continue
             vblocks.append(SubTensor(reduced=v[:,rst:red].reshape((-1,)+tuple(rsh)), q_labels=rq))
     if absorb is None:
         s = T.__class__(blocks=sblocks, pattern="+-")
@@ -389,15 +385,11 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
             u, s, v= _absorb_svd(u, s, v, absorb)
 
         for lq, (lst, led, lsh) in row_map.items():
-            if abs(u[lst:led]).max()<SVD_SCREENING:
-                continue
             udata.append(u[lst:led].ravel())
             qu.append(lq)
             shu.append(tuple(lsh)+(u.shape[-1],))
 
         for rq, (rst, red, rsh) in col_map.items():
-            if abs(v[:,rst:red]).max()<SVD_SCREENING:
-                continue
             vdata.append(v[:,rst:red].ravel())
             qv.append(rq)
             shv.append((v.shape[0],)+tuple(rsh))
@@ -468,13 +460,9 @@ def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
             q, r = q.T, r.T
 
         for lq, (lst, led, lsh) in row_map.items():
-            if abs(q[lst:led]).max()<SVD_SCREENING:
-                continue
             qblocks.append(SubTensor(reduced=q[lst:led].reshape(tuple(lsh)+(-1,)), q_labels=lq))
 
         for rq, (rst, red, rsh) in col_map.items():
-            if abs(r[:,rst:red]).max()<SVD_SCREENING:
-                continue
             rblocks.append(SubTensor(reduced=r[:,rst:red].reshape((-1,)+tuple(rsh)), q_labels=rq))
     q = T.__class__(blocks=qblocks, pattern=new_T.pattern[:split_ax]+"-")
     r = T.__class__(blocks=rblocks, pattern="+"+new_T.pattern[split_ax:])
@@ -541,15 +529,11 @@ def flat_qr(T, left_idx, right_idx=None, mod="qr"):
             q, r = q.T, r.T
 
         for lq, (lst, led, lsh) in row_map.items():
-            if abs(q[lst:led]).max()<SVD_SCREENING:
-                continue
             qdata.append(q[lst:led].ravel())
             qq.append(lq)
             shq.append(tuple(lsh)+(q.shape[-1],))
 
         for rq, (rst, red, rsh) in col_map.items():
-            if abs(r[:,rst:red]).max()<SVD_SCREENING:
-                continue
             rdata.append(r[:,rst:red].ravel())
             qr.append(rq)
             shr.append((r.shape[0],)+tuple(rsh))
