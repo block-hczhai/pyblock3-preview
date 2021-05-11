@@ -157,7 +157,7 @@ def _trim_singular_vals(s, cutoff, cutoff_mode):
                 break
             n_chi -= 1
 
-    return max(n_chi, 1)
+    return n_chi
 
 def _renorm_singular_vals(s, n_chi, renorm_power):
     """Find the normalization constant for ``s`` such that the new sum squared
@@ -287,6 +287,7 @@ def sparse_svd(T, left_idx, right_idx=None, absorb=0, qpn_partition=None, qpn_cu
 
         u, s, v = np.linalg.svd(data, full_matrices=False)
         u, s, v = _trim_and_renorm_SVD(u, s, v, **opts)
+        if s.size ==0: continue
         if absorb is None:
             s = np.diag(s)
             sblocks.append(SubTensor(reduced=s, q_labels=(slab, slab)))
@@ -350,7 +351,6 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
         col_map = {}
         row_len = 0
         col_len = 0
-        qs.append([slab, slab])
         alldatas = {}
         for iblk in blocks:
             lq, rq = full[iblk]
@@ -379,6 +379,8 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
             continue
         u, s, v = np.linalg.svd(data, full_matrices=False)
         u, s, v = _trim_and_renorm_SVD(u, s, v, **opts)
+        if s.size == 0: continue
+        qs.append([slab, slab])
         if absorb is None:
             s = np.diag(s)
             shs.append(s.shape)
