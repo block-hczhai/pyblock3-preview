@@ -113,7 +113,7 @@ def _contract_patterns(patterna, patternb, idxa, idxb):
                 b_flip_axes.append(ind)
     return out_a + out_b, b_flip_axes
 
-def _trim_singular_vals(s, cutoff, cutoff_mode):
+def _trim_singular_vals(s_data, cutoff, cutoff_mode, max_bond=None):
     """Find the number of singular values to keep of ``s`` given ``cutoff`` and
     ``cutoff_mode``.
     Parameters
@@ -131,11 +131,28 @@ def _trim_singular_vals(s, cutoff, cutoff_mode):
             - 5: ['sum1'], trim s.t. ``sum(s_trim**1) < cutoff``.
             - 6: ['rsum1'], trim s.t. ``sum(s_trim**1) < sum(s**1) * cutoff``.
     """
-    if cutoff_mode == 1:
-        n_chi = np.sum(s > cutoff)
+    if cutoff_mode in (1, 2):
+        s = None
+        if cutoff_mode == 1:
+            n_chis = [np.sum(sblk>cutoff) for sblk in s_data]
+        else:
+            s = np.concatenate(s_data)
+            smax = s.max()
+            n_chis = [np.sum(sblk>cutoff*smax) for sblk in s_data]
 
-    elif cutoff_mode == 2:
-        n_chi = np.sum(s > cutoff * s[0])
+        if max_bond is not None and max_bond>0:
+            n_chi = np.sum(n_chis)
+            extra_bonds = n_chi - max_bond
+            if extra_bonds >0:
+                if s is None:
+                    s = np.concatenate(s_data)
+                s_ind = np.argsort(s)
+                ind_map = []
+                for ix, sblk in enumerate(s_data):
+                    ind_map += [ix,] * sblk.size
+                for i in range(extra_bonds):
+                    ind = s_ind[i+s.size-n_chi]
+                    n_chis[ind_map[ind]] -= 1
 
     elif cutoff_mode in (3, 4, 5, 6):
         if cutoff_mode in (3, 4):
@@ -144,64 +161,61 @@ def _trim_singular_vals(s, cutoff, cutoff_mode):
             p = 1
 
         target = cutoff
+
+        s = np.concatenate(s_data) ** p
         if cutoff_mode in (4, 6):
-            target *= np.sum(s**p)
+            target *= np.sum(s)
+        s_ind = np.argsort(s)
+        s_sorted = np.cumsum(np.sort(s))
+        ind_map = []
+        for ix, sblk in enumerate(s_data):
+            ind_map += [ix,] * sblk.size
 
-        n_chi = s.size
-        ssum = 0.0
-        for i in range(s.size - 1, -1, -1):
-            s2 = s[i]**p
-            if not np.isnan(s2):
-                ssum += s2
-            if ssum > target:
-                break
-            n_chi -= 1
+        n_chis = [sblk.size for sblk in s_data]
+        ncut = np.sum(s_sorted<=target)
+        if max_bond is not None and max_bond>0:
+            ncut = max(ncut, s.size-max_bond)
+        for i in range(ncut):
+            group_ind = ind_map[s_ind[i]]
+            n_chis[group_ind] -= 1
+    return n_chis
 
-    return min(np.sum(s > SVD_SCREENING), n_chi)
-
-def _renorm_singular_vals(s, n_chi, renorm_power):
+def _renorm_singular_vals(s_data, n_chis, renorm_power):
     """Find the normalization constant for ``s`` such that the new sum squared
     of the ``n_chi`` largest values equals the sum squared of all the old ones.
     """
     s_tot_keep = 0.0
     s_tot_lose = 0.0
-    for i in range(s.size):
-        s2 = s[i]**renorm_power
-        if not np.isnan(s2):
-            if i < n_chi:
-                s_tot_keep += s2
-            else:
-                s_tot_lose += s2
+    for sblk, n_chi in zip(s_data, n_chis):
+        for i in range(sblk.size):
+            s2 = sblk[i]**renorm_power
+            if not np.isnan(s2):
+                if i < n_chi:
+                    s_tot_keep += s2
+                else:
+                    s_tot_lose += s2
+
     return ((s_tot_keep + s_tot_lose) / s_tot_keep)**(1 / renorm_power)
 
-def _trim_and_renorm_SVD(U, s, VH, **svdopts):
+def _trim_and_renorm_SVD(s_data, uv_data, **svdopts):
     cutoff = svdopts.pop("cutoff", 1e-12)
     cutoff_mode = svdopts.pop("cutoff_mode", 3)
-    max_bond = svdopts.pop("max_bond", -1)
+    max_bond = svdopts.pop("max_bond", None)
     renorm_power = svdopts.pop("renorm_power", 0)
+    n_chis = _trim_singular_vals(s_data, cutoff, cutoff_mode, max_bond)
+    n_chi = np.sum(n_chis)
+    all_size = np.sum([iblk.size for iblk in s_data])
+    if n_chi < all_size and renorm_power > 0:
+        renorm_fac = _renorm_singular_vals(s_data, n_chis, renorm_power)
+        for sblk in s_data:
+            sblk *= renorm_fac
 
-    if cutoff > 0.0:
-        n_chi = _trim_singular_vals(s, cutoff, cutoff_mode)
+    for ix, n_chi in enumerate(n_chis):
+        s_data[ix] = s_data[ix][:n_chi]
+        U, VH = uv_data[ix]
+        uv_data[ix] = (U[...,:n_chi], VH[:n_chi,...])
 
-        if max_bond > 0:
-            n_chi = min(n_chi, max_bond)
-
-        if n_chi < s.size:
-            if renorm_power > 0:
-                s = s[:n_chi] * _renorm_singular_vals(s, n_chi, renorm_power)
-            else:
-                s = s[:n_chi]
-
-            U = U[..., :n_chi]
-            VH = VH[:n_chi, ...]
-
-    elif max_bond != -1:
-        U = U[..., :max_bond]
-        s = s[:max_bond]
-        VH = VH[:max_bond, ...]
-
-    s = np.ascontiguousarray(s)
-    return U, s, VH
+    return s_data, uv_data
 
 def _absorb_svd(u, s, v, absorb):
     if absorb == -1:
@@ -239,73 +253,7 @@ def _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb):
     new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
     return new_T, left_idx, right_idx, qpn_partition, cls
 
-def sparse_svd(T, left_idx, right_idx=None, absorb=0, qpn_partition=None, qpn_cutoff_func=None, **opts):
-    new_T, left_idx, right_idx, qpn_partition, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb)
-    if len(left_idx) == T.ndim:
-        raise NotImplementedError
-    elif len(right_idx) == T.ndim:
-        raise NotImplementedError
-    split_ax = len(left_idx)
-    left_pattern = new_T.pattern[:split_ax]
-    right_pattern = new_T.pattern[split_ax:]
-    data_map = {}
-    for iblk in new_T.blocks:
-        left_q = symmetry._compute(left_pattern, iblk.q_labels[:split_ax], offset=("-", qpn_partition[0]))
-        if callable(qpn_cutoff_func):
-            if not qpn_cutoff_func(left_q):
-                continue
-        if left_q not in data_map:
-            data_map[left_q] = []
-        data_map[left_q].append(iblk)
-    ublocks = []
-    vblocks = []
-    sblocks = []
-    for slab, datasets in data_map.items():
-        row_len = col_len = 0
-        row_map = {}
-        col_map = {}
-        for iblk in datasets:
-            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
-            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
-            if lq not in row_map:
-                new_row_len = row_len + np.prod(iblk.shape[:split_ax], dtype=int)
-                row_map[lq] = (row_len, new_row_len, iblk.shape[:split_ax])
-                row_len = new_row_len
-            if rq not in col_map:
-                new_col_len = col_len + np.prod(iblk.shape[split_ax:], dtype=int)
-                col_map[rq] = (col_len, new_col_len, iblk.shape[split_ax:])
-                col_len = new_col_len
-        data = np.zeros([row_len, col_len], dtype=T.dtype)
-        for iblk in datasets:
-            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
-            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
-            ist, ied = row_map[lq][:2]
-            jst, jed = col_map[rq][:2]
-            data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jst-jed)
-        if data.size ==0:
-            continue
-
-        u, s, v = np.linalg.svd(data, full_matrices=False)
-        u, s, v = _trim_and_renorm_SVD(u, s, v, **opts)
-        if s.size ==0: continue
-        if absorb is None:
-            s = np.diag(s)
-            sblocks.append(SubTensor(reduced=s, q_labels=(slab, slab)))
-        else:
-            u, s, v= _absorb_svd(u, s, v, absorb)
-
-        for lq, (lst, led, lsh) in row_map.items():
-            ublocks.append(SubTensor(reduced=u[lst:led].reshape(tuple(lsh)+(-1,)), q_labels=lq))
-
-        for rq, (rst, red, rsh) in col_map.items():
-            vblocks.append(SubTensor(reduced=v[:,rst:red].reshape((-1,)+tuple(rsh)), q_labels=rq))
-    if absorb is None:
-        s = T.__class__(blocks=sblocks, pattern="+-")
-    u = T.__class__(blocks=ublocks, pattern=new_T.pattern[:split_ax]+"-")
-    v = T.__class__(blocks=vblocks, pattern="+"+new_T.pattern[split_ax:])
-    return u, s, v
-
-def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=None, **opts):
+def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     absorb = opts.pop("absorb", 0)
     new_T, left_idx, right_idx, qpn_partition, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb)
     if left_idx is not None and len(left_idx) == T.ndim:
@@ -317,30 +265,17 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
     left_q = symmetry._compute(new_T.pattern[:split_ax], new_T.q_labels[:,:split_ax], offset=("-", qpn_partition[0]))
     right_q = symmetry._compute(new_T.pattern[split_ax:], new_T.q_labels[:,split_ax:], offset=("-", qpn_partition[1]), neg=True)
 
-    if not callable(qpn_cutoff_func):
-        aux_q = list(set(np.unique(left_q)) & set(np.unique(right_q)))
-    else:
-        tmp_q = list(set(np.unique(left_q)) & set(np.unique(right_q)))
-        aux_q = []
-        for iq in tmp_q:
-            if qpn_cutoff_func(symmetry.from_flat(iq)):
-                aux_q.append(iq)
+    aux_q = list(set(np.unique(left_q)) & set(np.unique(right_q)))
+
     full_left = np.hstack([new_T.q_labels[:,:split_ax], left_q.reshape(-1,1)])
     full_right = np.hstack([left_q.reshape(-1,1), new_T.q_labels[:,split_ax:]])
     full = [(tuple(il), tuple(ir)) for il, ir in zip(full_left, full_right)]
 
-    udata = []
-    vdata = []
-    sdata = []
-
-    qu = []
-    qv = []
-    qs = []
-    shu = []
-    shv = []
-    shs = []
     row_shapes = np.prod(new_T.shapes[:,:split_ax], axis=1, dtype=int)
     col_shapes = np.prod(new_T.shapes[:,split_ax:], axis=1, dtype=int)
+    s_data =[]
+    uv_data = []
+    all_maps = []
     for slab in aux_q:
         blocks = np.where(left_q == slab)[0]
         row_map = {}
@@ -374,15 +309,47 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
         if data.size==0:
             continue
         u, s, v = np.linalg.svd(data, full_matrices=False)
-        u, s, v = _trim_and_renorm_SVD(u, s, v, **opts)
-        if s.size == 0: continue
-        qs.append([slab, slab])
+        ind = s > SVD_SCREENING
+        s = s[ind]
+        if s.size ==0:
+            continue
+        u = u[:,ind]
+        v = v[ind,:]
+        s_data.append(s)
+        uv_data.append([u,v])
+        all_maps.append([slab, row_map, col_map])
+
+    s_data, uv_data = _trim_and_renorm_SVD(s_data, uv_data, **opts)
+
+    if absorb is not None:
+        for iblk in range(len(uv_data)):
+            s = s_data[iblk]
+            if s.size==0:
+                continue
+            u, v = uv_data[iblk]
+            u, s, v = _absorb_svd(u, s, v, absorb)
+            uv_data[iblk] = (u, v)
+            s_data[iblk] = s
+
+    udata = []
+    vdata = []
+    sdata = []
+
+    qu = []
+    qv = []
+    qs = []
+    shu = []
+    shv = []
+    shs = []
+
+    for s, (u, v), (slab, row_map, col_map) in zip(s_data, uv_data, all_maps):
+        if u.size==0:
+            continue
         if absorb is None:
             s = np.diag(s)
             shs.append(s.shape)
             sdata.append(s.ravel())
-        else:
-            u, s, v= _absorb_svd(u, s, v, absorb)
+            qs.append([slab, slab])
 
         for lq, (lst, led, lsh) in row_map.items():
             udata.append(u[lst:led].ravel())
@@ -399,6 +366,8 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
         shs = np.asarray(shs, dtype=np.uint32)
         sdata = np.concatenate(sdata)
         s = T.__class__(qs, shs, sdata, pattern="+-", symmetry=T.symmetry)
+    else:
+        s = None
 
     qu = np.asarray(qu, dtype=np.uint32)
     shu = np.asarray(shu, dtype=np.uint32)
@@ -409,6 +378,103 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=No
     vdata = np.concatenate(vdata)
     u = T.__class__(qu, shu, udata, pattern=new_T.pattern[:split_ax]+"-", symmetry=T.symmetry)
     v = T.__class__(qv, shv, vdata, pattern="+"+new_T.pattern[split_ax:], symmetry=T.symmetry)
+    return u, s, v
+
+def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
+    absorb = opts.pop("absorb", 0)
+    new_T, left_idx, right_idx, qpn_partition, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb)
+    if len(left_idx) == T.ndim:
+        raise NotImplementedError
+    elif len(right_idx) == T.ndim:
+        raise NotImplementedError
+    split_ax = len(left_idx)
+    left_pattern = new_T.pattern[:split_ax]
+    right_pattern = new_T.pattern[split_ax:]
+    data_map = {}
+    for iblk in new_T.blocks:
+        left_q = symmetry._compute(left_pattern, iblk.q_labels[:split_ax], offset=("-", qpn_partition[0]))
+        if left_q not in data_map:
+            data_map[left_q] = []
+        data_map[left_q].append(iblk)
+
+    s_data =[]
+    uv_data = []
+    all_maps = []
+
+    for slab, datasets in data_map.items():
+        row_len = col_len = 0
+        row_map = {}
+        col_map = {}
+        for iblk in datasets:
+            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
+            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
+            if lq not in row_map:
+                new_row_len = row_len + np.prod(iblk.shape[:split_ax], dtype=int)
+                row_map[lq] = (row_len, new_row_len, iblk.shape[:split_ax])
+                row_len = new_row_len
+            if rq not in col_map:
+                new_col_len = col_len + np.prod(iblk.shape[split_ax:], dtype=int)
+                col_map[rq] = (col_len, new_col_len, iblk.shape[split_ax:])
+                col_len = new_col_len
+        data = np.zeros([row_len, col_len], dtype=T.dtype)
+        for iblk in datasets:
+            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
+            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
+            ist, ied = row_map[lq][:2]
+            jst, jed = col_map[rq][:2]
+            data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jst-jed)
+        if data.size ==0:
+            continue
+
+        u, s, v = np.linalg.svd(data, full_matrices=False)
+        ind = s > SVD_SCREENING
+        s = s[ind]
+        if s.size ==0:
+            continue
+        u = u[:,ind]
+        v = v[ind,:]
+        s_data.append(s)
+        uv_data.append([u,v])
+        all_maps.append([slab, row_map, col_map])
+
+    s_data, uv_data = _trim_and_renorm_SVD(s_data, uv_data, **opts)
+
+    if absorb is not None:
+        for iblk in range(len(uv_data)):
+            s = s_data[iblk]
+            if s.size==0:
+                continue
+            u, v = uv_data[iblk]
+            u, s, v = _absorb_svd(u, s, v, absorb)
+            uv_data[iblk] = (u, v)
+            s_data[iblk] = s
+
+    ublocks = []
+    vblocks = []
+    sblocks = []
+
+    for s, (u, v), (slab, row_map, col_map) in zip(s_data, uv_data, all_maps):
+        if u.size==0:
+            continue
+        if absorb is None:
+            s = np.diag(s)
+            sblocks.append(SubTensor(reduced=s, q_labels=(slab,)*2))
+
+        for lq, (lst, led, lsh) in row_map.items():
+            ublocks.append(SubTensor(reduced=u[lst:led].reshape(tuple(lsh)+(-1,)), q_labels=lq))
+
+        for rq, (rst, red, rsh) in col_map.items():
+            vblocks.append(SubTensor(reduced=v[:,rst:red].reshape((-1,)+tuple(rsh)), q_labels=rq))
+
+    if absorb is None:
+        s = T.__class__(blocks=sblocks, pattern="+-")
+    u = T.__class__(blocks=ublocks, pattern=new_T.pattern[:split_ax]+"-")
+    v = T.__class__(blocks=vblocks, pattern="+"+new_T.pattern[split_ax:])
+    if absorb is not None:
+        out = np.tensordot(u, v, axes=((-1,),(0,)))
+    else:
+        out = np.tensordot(u, s, axes=((-1,),(0,)))
+        out = np.tensordot(out, v, axes=((-1,),(0,)))
     return u, s, v
 
 def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
