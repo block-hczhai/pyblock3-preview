@@ -470,11 +470,6 @@ def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
         s = T.__class__(blocks=sblocks, pattern="+-")
     u = T.__class__(blocks=ublocks, pattern=new_T.pattern[:split_ax]+"-")
     v = T.__class__(blocks=vblocks, pattern="+"+new_T.pattern[split_ax:])
-    if absorb is not None:
-        out = np.tensordot(u, v, axes=((-1,),(0,)))
-    else:
-        out = np.tensordot(u, s, axes=((-1,),(0,)))
-        out = np.tensordot(out, v, axes=((-1,),(0,)))
     return u, s, v
 
 def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
