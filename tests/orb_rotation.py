@@ -59,6 +59,12 @@ ecore = mol.energy_nuc()
 fd = FCIDUMP(pg='c1', n_sites=n_mo, n_elec=na + nb, twos=na - nb, ipg=0, uhf=False,
              h1e=h1e, g2e=g2e, orb_sym=orb_sym, const_e=ecore, mu=0)
 hamil = Hamiltonian(fd, flat=True)
+fd.write("H10.STO6G.R1.8.FCIDUMP.LOWDIN")
+
+fdx = FCIDUMP(pg='c1', n_sites=n_mo, n_elec=na + nb, twos=na - nb, ipg=0, uhf=False,
+             h1e=kappa, g2e=np.zeros((n_mo, n_mo, n_mo, n_mo)), orb_sym=orb_sym, const_e=0.0, mu=0)
+fdx.tgeneral = True
+fdx.write("H10.STO6G.R1.8.ROTATION.LOWDIN")
 
 bond_dim = 500
 bdims = [bond_dim]
@@ -103,6 +109,7 @@ ecore = mol.energy_nuc()
 fd = FCIDUMP(pg='c1', n_sites=n_mo, n_elec=na + nb, twos=na - nb, ipg=0, uhf=False,
              h1e=h1e, g2e=g2e, orb_sym=orb_sym, const_e=ecore, mu=0)
 hamil = Hamiltonian(fd, flat=True)
+fd.write("H10.STO6G.R1.8.FCIDUMP.C1")
 
 mpo2 = hamil.build_qc_mpo()
 mpo2, _ = mpo2.compress(left=True, cutoff=1E-12, norm_cutoff=1E-12)

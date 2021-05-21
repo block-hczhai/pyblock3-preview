@@ -78,6 +78,7 @@ class FCIDUMP:
         self.const_e = const_e
         self.uhf = uhf
         self.general = False
+        self.tgeneral = False
         self.orb_sym = [0] * self.n_sites if orb_sym is None else orb_sym
         self.mu = mu
         if self.mu != 0 and self.h1e is not None:
@@ -159,6 +160,7 @@ class FCIDUMP:
         self.n_elec = int(cont_dict.get('nelec', 0))
         self.uhf = int(cont_dict.get('iuhf', 0)) != 0
         self.general = int(cont_dict.get('igeneral', 0)) != 0
+        self.tgeneral = int(cont_dict.get('itgeneral', 0)) != 0
         self.orb_sym = [PointGroup[self.pg]
                         [int(i)] for i in cont_dict.get('orbsym')]
 
@@ -211,7 +213,8 @@ class FCIDUMP:
                 elif k + l == 0:
                     assert ip == 3 or ip == 4
                     self.h1e[ip - 3][i - 1, j - 1] = d
-                    self.h1e[ip - 3][j - 1, i - 1] = d
+                    if not self.tgeneral:
+                        self.h1e[ip - 3][j - 1, i - 1] = d
                 else:
                     ig = [0, 2, 1][ip]
                     self.g2e[ig][i - 1, j - 1, k - 1, l - 1] = d
@@ -251,6 +254,8 @@ class FCIDUMP:
                 assert isinstance(self.g2e, tuple)
             if self.general:
                 fout.write('  IGENERAL=1,\n')
+            if self.tgeneral:
+                fout.write('  ITGENERAL=1,\n')
             fout.write(' &END\n')
             output_format = '%20.16f%4d%4d%4d%4d\n'
             npair = self.n_sites * (self.n_sites + 1) // 2
@@ -300,10 +305,10 @@ class FCIDUMP:
                                     kl += 1
                             ij += 1
 
-            def write_h1e(fout, hx):
+            def write_h1e(fout, hx, tgen=False):
                 h = hx.reshape(nmo, nmo)
                 for i in range(nmo):
-                    for j in range(0, i + 1):
+                    for j in range(0, nmo if tgen else i + 1):
                         if abs(h[i, j]) > tol:
                             fout.write(output_format %
                                        (h[i, j], i + 1, j + 1, 0, 0))
@@ -353,7 +358,7 @@ class FCIDUMP:
                     fout.write(output_format % (0, 0, 0, 0, 0))
                 assert len(self.h1e) == 2
                 for hx in self.h1e:
-                    write_h1e(fout, hx)
+                    write_h1e(fout, hx, self.tgeneral)
                     fout.write(output_format % (0, 0, 0, 0, 0))
                 fout.write(output_format % (self.const_e, 0, 0, 0, 0))
             else:
@@ -362,5 +367,5 @@ class FCIDUMP:
                 else:
                     eri = self.g2e
                 write_eri(fout, eri)
-                write_h1e(fout, self.h1e)
+                write_h1e(fout, self.h1e, self.tgeneral)
                 fout.write(output_format % (self.const_e, 0, 0, 0, 0))
