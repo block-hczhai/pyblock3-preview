@@ -253,6 +253,7 @@ def _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb):
     new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
     return new_T, left_idx, right_idx, qpn_partition, cls
 
+#@profile
 def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     absorb = opts.pop("absorb", 0)
     new_T, left_idx, right_idx, qpn_partition, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb)
@@ -380,6 +381,7 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     v = T.__class__(qv, shv, vdata, pattern="+"+new_T.pattern[split_ax:], symmetry=T.symmetry)
     return u, s, v
 
+#@profile
 def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     absorb = opts.pop("absorb", 0)
     new_T, left_idx, right_idx, qpn_partition, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb)
@@ -472,6 +474,7 @@ def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     v = T.__class__(blocks=vblocks, pattern="+"+new_T.pattern[split_ax:])
     return u, s, v
 
+#@profile
 def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
     assert mod in ["qr", "lq"]
     new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
@@ -529,6 +532,7 @@ def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
     r = T.__class__(blocks=rblocks, pattern="+"+new_T.pattern[split_ax:])
     return q, r
 
+#@profile
 def flat_qr(T, left_idx, right_idx=None, mod="qr"):
     assert mod in ["qr", "lq"]
     new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
@@ -662,7 +666,7 @@ class SparseFermionTensor(SparseTensor):
             pattern = _gen_default_pattern(self.ndim)
         self._pattern = pattern
         shapes = [iblk.shape for iblk in self]
-        self._shapes = tuple(np.sum(shapes, axis=0))
+        self._shape = tuple(np.sum(shapes, axis=0))
 
     @property
     def dq(self):
@@ -901,6 +905,7 @@ class SparseFermionTensor(SparseTensor):
         return self.__class__(blocks=blocks, pattern=out_pattern)
 
     @staticmethod
+    #@profile
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
         if isinstance(axes, int):
@@ -1208,6 +1213,7 @@ class FlatFermionTensor(FlatSparseTensor):
         return FlatFermionTensor(q_labels=qs, shapes=shs, data=data, pattern=out_pattern, idxs=idxs, symmetry=symmetry)
 
     @staticmethod
+    #@profile
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
         if isinstance(axes, int):
