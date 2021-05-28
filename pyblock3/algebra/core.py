@@ -68,6 +68,8 @@ class SubTensor(np.ndarray):
     """
     def __new__(cls, reduced, q_labels=None):
         obj = np.asarray(reduced).view(cls)
+        if q_labels is not None and not isinstance(q_labels, tuple):
+            q_labels = tuple(q_labels)
         obj.q_labels = q_labels
         return obj
 
