@@ -963,7 +963,7 @@ class SparseFermionTensor(SparseTensor):
 
     def to_exponential(self, x):
         from pyblock3.algebra.fermion_ops import get_sparse_exponential
-        return get_flat_exponential(self, x)
+        return get_sparse_exponential(self, x)
 
 _flat_fermion_tensor_numpy_func_impls = _flat_sparse_tensor_numpy_func_impls.copy()
 [_flat_fermion_tensor_numpy_func_impls.pop(key) for key in NEW_METHODS]
