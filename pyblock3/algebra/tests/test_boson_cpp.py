@@ -6,7 +6,7 @@ from pyblock3.algebra.symmetry import BondInfo, SZ
 from pyblock3.algebra.core import SparseTensor, SubTensor
 from pyblock3.algebra import fermion_setting
 
-fermion_setting.set(flat=True, fermion=False)
+fermion_setting.set_options(flat=True, fermion=False)
 rand = SparseFermionTensor.random
 
 def _get_phase(q_label):
