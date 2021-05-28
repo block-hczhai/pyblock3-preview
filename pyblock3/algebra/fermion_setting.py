@@ -28,7 +28,7 @@ def set_flat(flat):
 def set_fermion(fermion):
     this.DEFAULT_FERMION = fermion
 
-def set(**kwargs):
+def set_options(**kwargs):
     symmetry = kwargs.pop("symmetry", None)
     fermion = kwargs.pop("fermion", None)
     flat = kwargs.pop("flat", None)
