@@ -610,6 +610,19 @@ def flat_qr(T, left_idx, right_idx=None, mod="qr"):
     r = T.__class__(qr, shr, rdata, pattern="+"+new_T.pattern[split_ax:], symmetry=T.symmetry)
     return q, r
 
+def flat_qr_fast(T, left_idx, right_idx=None, mod="qr"):
+    assert mod in ["qr", "lq"]
+    new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
+    if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
+        raise NotImplementedError
+    split_ax = len(left_idx)
+    backend = get_backend(T.symmetry)
+    qq, shq, qdata, qidxs, qr, shr, rdata, ridxs = backend.flat_fermion_tensor.tensor_qr(
+        new_T.q_labels, new_T.shapes, new_T.data, new_T.idxs, split_ax, new_T.pattern, mod == "qr")
+    q = T.__class__(qq, shq, qdata, pattern=new_T.pattern[:split_ax]+"-", idxs=qidxs, symmetry=T.symmetry)
+    r = T.__class__(qr, shr, rdata, pattern="+"+new_T.pattern[split_ax:], idxs=ridxs, symmetry=T.symmetry)
+    return q, r
+
 def _adjust_block(block, flip_axes):
     if len(flip_axes)==0:
         return block
@@ -1260,7 +1273,7 @@ class FlatFermionTensor(FlatSparseTensor):
         return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
 
     def tensor_qr(self, left_idx, right_idx=None, mod="qr"):
-        return flat_qr(self, left_idx, right_idx=right_idx, mod=mod)
+        return flat_qr_fast(self, left_idx, right_idx=right_idx, mod=mod)
 
     def to_exponential(self, x):
         from pyblock3.algebra.fermion_ops import get_flat_exponential

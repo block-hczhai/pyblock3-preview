@@ -34,7 +34,7 @@ struct U1 {
     U1() : _n(0) {}
     U1(int _n) : _n(_n) {}
     int n() const { return _n; }
-    int parity() const { return _n % 2; }
+    int parity() const { return _n & 1; }
     void set_n(int _n) { this->_n = _n; }
     int multiplicity() const noexcept { return 1; }
     int is_fermion() const { return parity(); }
@@ -61,7 +61,7 @@ struct U1 {
         return U1((int)((x >> 17) & 16383) - 8192);
     }
     static uint32_t from_q(U1 x) {
-        return ((uint32_t)(x.n() + 8192U) << 14);
+        return ((uint32_t)(x.n() + 8192U) << 17);
     }
     string to_str() const {
         stringstream ss;
@@ -94,7 +94,7 @@ struct U11 {
     U11(int _n, int _sz) : _n(_n), _sz(_sz) {}
     int n() const { return _n; }
     int sz() const { return _sz; }
-    int parity() const { return _n % 2; }
+    int parity() const { return _n & 1; }
     void set_n(int _n) { this->_n = _n; }
     void set_sz(int _sz) { this->_sz = _sz; }
     int multiplicity() const noexcept { return 1; }
@@ -174,7 +174,7 @@ struct ZN {
     bool operator<(ZN other) const noexcept {
         return _n < other._n;
     }
-    ZN operator-() const noexcept { return ZN(-_n); }
+    ZN operator-() const noexcept { return ZN(modulus() - _n); }
     ZN operator-(ZN other) const noexcept { return *this + (-other); }
     ZN operator+(ZN other) const noexcept {
         return ZN(_n + other._n);
@@ -216,7 +216,7 @@ template <> struct less<ZN> {
 }
 
 struct Z2:ZN {
-    int modulus() const { return 4;}
+    int modulus() const { return 2;}
     int _n;
     Z2() : _n(0) {}
     Z2(int _n) : _n(_n%modulus()) {}
@@ -231,7 +231,7 @@ struct Z2:ZN {
     bool operator<(Z2 other) const noexcept {
         return _n < other._n;
     }
-    Z2 operator-() const noexcept { return Z2(-_n); }
+    Z2 operator-() const noexcept { return Z2(modulus() - _n); }
     Z2 operator-(Z2 other) const noexcept { return *this + (-other); }
     Z2 operator+(Z2 other) const noexcept {
         return Z2(_n + other._n);
@@ -279,7 +279,7 @@ struct Z4: ZN {
     bool operator<(Z4 other) const noexcept {
         return _n < other._n;
     }
-    Z4 operator-() const noexcept { return Z4(-_n); }
+    Z4 operator-() const noexcept { return Z4(modulus() - _n); }
     Z4 operator-(Z4 other) const noexcept { return *this + (-other); }
     Z4 operator+(Z4 other) const noexcept {
         return Z4(_n + other._n);
@@ -330,7 +330,7 @@ struct Z22:U11 {
         else
             return _sz < other._sz;
     }
-    Z22 operator-() const noexcept { return Z22(-_n, -_sz); }
+    Z22 operator-() const noexcept { return Z22(2 -_n, 2 -_sz); }
     Z22 operator-(Z22 other) const noexcept { return *this + (-other); }
     Z22 operator+(Z22 other) const noexcept {
         return Z22(_n + other._n, _sz + other._sz);

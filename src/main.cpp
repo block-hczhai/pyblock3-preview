@@ -18,6 +18,7 @@
  *
  */
 
+#include "fermion_symmetry.hpp"
 #include "flat_fermion.hpp"
 #include "flat_functor.hpp"
 #include "flat_sparse.hpp"
@@ -25,7 +26,6 @@
 #include "hamiltonian_ptree.hpp"
 #include "qc_hamiltonian.hpp"
 #include "sz.hpp"
-#include "fermion_symmetry.hpp"
 #include "tensor.hpp"
 #include <cmath>
 #include <pybind11/pybind11.h>
@@ -465,6 +465,16 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
         py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
         py::arg("idxa"), py::arg("idxb"));
+    flat_fermion_tensor.def(
+        "tensor_qr",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs,
+           const py::object idx, const string &pattern, bool is_qr) {
+            return flat_fermion_tensor_qr<Q, double>(
+                aqs, ashs, adata, aidxs, idx.cast<int>(), pattern, is_qr);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("idx"), py::arg("pattern"), py::arg("is_qr"));
 
     // complex double
     flat_fermion_tensor.def(
@@ -490,6 +500,16 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
         py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
         py::arg("idxa"), py::arg("idxb"));
+    flat_fermion_tensor.def(
+        "tensor_qr",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs,
+           const py::object idx, const string &pattern, bool is_qr) {
+            return flat_fermion_tensor_qr<Q, complex<double>>(
+                aqs, ashs, adata, aidxs, idx.cast<int>(), pattern, is_qr);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("idx"), py::arg("pattern"), py::arg("is_qr"));
 
     // mixed C x D
     flat_fermion_tensor.def(
@@ -580,7 +600,6 @@ PYBIND11_MODULE(block3, m) {
 
     py::module m_z22 = m.def_submodule("z22", "Z22 symmetry");
     bind_sparse_tensor<Z22>(m_z22, m, "Z22");
-
 
     // bind extra symmetry here ...
     // py::module m_qpn = m.def_submodule("qpn", "General other symmetry.");
