@@ -911,8 +911,8 @@ class SparseFermionTensor(SparseTensor):
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
 
         out_pattern, b_flip_axes = _contract_patterns(a.pattern, b.pattern, idxa, idxb)
-        out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
-        out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
+        out_idx_a = sorted(list(set(range(0, a.ndim)) - set(idxa)))
+        out_idx_b = sorted(list(set(range(0, b.ndim)) - set(idxb)))
         assert len(idxa) == len(idxb)
 
         map_idx_b = {}
