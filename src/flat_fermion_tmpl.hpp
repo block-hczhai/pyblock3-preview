@@ -40,6 +40,17 @@ flat_fermion_tensor_tensordot<TMPL_Q, TMPL_FL>(
     const py::array_t<TMPL_FL> &bdata, const py::array_t<uint32_t> &bidxs,
     const py::array_t<int> &idxa, const py::array_t<int> &idxb);
 
+TMPL_EXTERN template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                           py::array_t<TMPL_FL>, py::array_t<uint32_t>,
+                           py::array_t<uint32_t>, py::array_t<uint32_t>,
+                           py::array_t<TMPL_FL>, py::array_t<uint32_t>>
+flat_fermion_tensor_qr<TMPL_Q, TMPL_FL>(const py::array_t<uint32_t> &aqs,
+                                        const py::array_t<uint32_t> &ashs,
+                                        const py::array_t<TMPL_FL> &adata,
+                                        const py::array_t<uint32_t> &aidxs,
+                                        int idx, const string &pattern,
+                                        bool is_qr);
+
 #else
 
 TMPL_EXTERN template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,

@@ -103,16 +103,28 @@ extern void dgesv(const int *n, const int *nrhs, double *a, const int *lda,
 // QR factorization
 extern void dgeqrf(const int *m, const int *n, double *a, const int *lda,
                    double *tau, double *work, const int *lwork, int *info);
+extern void zgeqrf(const int *m, const int *n, complex<double> *a,
+                   const int *lda, complex<double> *tau, complex<double> *work,
+                   const int *lwork, int *info);
 extern void dorgqr(const int *m, const int *n, const int *k, double *a,
                    const int *lda, const double *tau, double *work,
                    const int *lwork, int *info);
+extern void zungqr(const int *m, const int *n, const int *k, complex<double> *a,
+                   const int *lda, const complex<double> *tau,
+                   complex<double> *work, const int *lwork, int *info);
 
 // LQ factorization
 extern void dgelqf(const int *m, const int *n, double *a, const int *lda,
                    double *tau, double *work, const int *lwork, int *info);
+extern void zgelqf(const int *m, const int *n, complex<double> *a,
+                   const int *lda, complex<double> *tau, complex<double> *work,
+                   const int *lwork, int *info);
 extern void dorglq(const int *m, const int *n, const int *k, double *a,
                    const int *lda, const double *tau, double *work,
                    const int *lwork, int *info);
+extern void zunglq(const int *m, const int *n, const int *k, complex<double> *a,
+                   const int *lda, const complex<double> *tau,
+                   complex<double> *work, const int *lwork, int *info);
 
 // eigenvalue problem
 extern void dsyev(const char *jobz, const char *uplo, const int *n, double *a,
@@ -242,6 +254,70 @@ inline void xlacpy(const char *uplo, const int *m, const int *n,
                    const complex<double> *a, const int *lda, complex<double> *b,
                    const int *ldb) {
     zlacpy(uplo, m, n, a, lda, b, ldb);
+}
+
+template <typename FL>
+inline void xgeqrf(const int *m, const int *n, FL *a, const int *lda, FL *tau,
+                   FL *work, const int *lwork, int *info);
+template <>
+inline void xgeqrf(const int *m, const int *n, double *a, const int *lda,
+                   double *tau, double *work, const int *lwork, int *info) {
+    dgeqrf(m, n, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xgeqrf(const int *m, const int *n, complex<double> *a,
+                   const int *lda, complex<double> *tau, complex<double> *work,
+                   const int *lwork, int *info) {
+    zgeqrf(m, n, a, lda, tau, work, lwork, info);
+}
+
+template <typename FL>
+inline void xungqr(const int *m, const int *n, const int *k, FL *a,
+                   const int *lda, const FL *tau, FL *work, const int *lwork,
+                   int *info);
+template <>
+inline void xungqr(const int *m, const int *n, const int *k, double *a,
+                   const int *lda, const double *tau, double *work,
+                   const int *lwork, int *info) {
+    dorgqr(m, n, k, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xungqr(const int *m, const int *n, const int *k, complex<double> *a,
+                   const int *lda, const complex<double> *tau,
+                   complex<double> *work, const int *lwork, int *info) {
+    zungqr(m, n, k, a, lda, tau, work, lwork, info);
+}
+
+template <typename FL>
+inline void xgelqf(const int *m, const int *n, FL *a, const int *lda, FL *tau,
+                   FL *work, const int *lwork, int *info);
+template <>
+inline void xgelqf(const int *m, const int *n, double *a, const int *lda,
+                   double *tau, double *work, const int *lwork, int *info) {
+    dgelqf(m, n, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xgelqf(const int *m, const int *n, complex<double> *a,
+                   const int *lda, complex<double> *tau, complex<double> *work,
+                   const int *lwork, int *info) {
+    zgelqf(m, n, a, lda, tau, work, lwork, info);
+}
+
+template <typename FL>
+inline void xunglq(const int *m, const int *n, const int *k, FL *a,
+                   const int *lda, const FL *tau, FL *work, const int *lwork,
+                   int *info);
+template <>
+inline void xunglq(const int *m, const int *n, const int *k, double *a,
+                   const int *lda, const double *tau, double *work,
+                   const int *lwork, int *info) {
+    dorglq(m, n, k, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xunglq(const int *m, const int *n, const int *k, complex<double> *a,
+                   const int *lda, const complex<double> *tau,
+                   complex<double> *work, const int *lwork, int *info) {
+    zunglq(m, n, k, a, lda, tau, work, lwork, info);
 }
 
 template <typename FL>
