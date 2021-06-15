@@ -1273,7 +1273,7 @@ class FlatFermionTensor(FlatSparseTensor):
         return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
 
     def tensor_qr(self, left_idx, right_idx=None, mod="qr"):
-        return flat_qr_fast(self, left_idx, right_idx=right_idx, mod=mod)
+        return flat_qr(self, left_idx, right_idx=right_idx, mod=mod)
 
     def to_exponential(self, x):
         from pyblock3.algebra.fermion_ops import get_flat_exponential
