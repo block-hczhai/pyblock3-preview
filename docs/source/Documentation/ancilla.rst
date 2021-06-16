@@ -2,6 +2,11 @@
 Finite-Temperature DMRG
 =======================
 
+References:
+
+* Feiguin, A. E., White, S. R. Finite-temperature density matrix renormalization using an enlarged Hilbert space. *Physical Review B* 2005, **72**, 220401.
+* Feiguin, A. E., White, S. R. Time-step targeting methods for real-time dynamics using the density matrix renormalization group. *Physical Review B* 2005, **72**, 020404.
+
 Here is an example for calculating :math:`\exp(-\beta/2\cdot H) |\psi\rangle`.
 
 Imports:

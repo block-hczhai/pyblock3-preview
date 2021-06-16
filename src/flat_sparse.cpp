@@ -488,8 +488,7 @@ flat_sparse_tensor_kron_add(
     const py::array_t<FL> &adata, const py::array_t<uint32_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
     const py::array_t<FL> &bdata, const py::array_t<uint32_t> &bidxs,
-    const map_uint_uint<Q> &infol,
-    const map_uint_uint<Q> &infor) {
+    const map_uint_uint<Q> &infol, const map_uint_uint<Q> &infor) {
     if (aqs.shape()[0] == 0)
         return std::make_tuple(bqs, bshs, bdata, bidxs);
     else if (bqs.shape()[0] == 0)
@@ -618,8 +617,8 @@ flat_sparse_tensor_fuse(const py::array_t<uint32_t> &aqs,
         for (int j = 0; j < nctr; j++) {
             nk *= pshs[ia * asi + pi[j] * asj];
             ufqs[ia][j] = pqs[ia * asi + pi[j] * asj];
-            xq = xq +
-                 (pattern[j] == '+' ? Q::to_q(ufqs[ia][j]) : -Q::to_q(ufqs[ia][j]));
+            xq = xq + (pattern[j] == '+' ? Q::to_q(ufqs[ia][j])
+                                         : -Q::to_q(ufqs[ia][j]));
         }
         uint32_t xxq = Q::from_q(xq);
         if (info.count(xxq) == 0)
@@ -701,7 +700,7 @@ flat_sparse_tensor_fuse(const py::array_t<uint32_t> &aqs,
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
 
-template<typename Q>
+template <typename Q>
 map_fusing flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
                                             const py::array_t<uint32_t> &ashs,
                                             const string &pattern) {
@@ -752,11 +751,10 @@ map_fusing flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
     return r;
 }
 
-template<typename Q>
+template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
-flat_sparse_tensor_skeleton(
-    const vector<map_uint_uint<Q>> &infos,
-    const string &pattern, uint32_t fdq) {
+flat_sparse_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
+                            const string &pattern, uint32_t fdq) {
     int ndim = (int)infos.size();
     size_t nx = 1;
     for (int i = 0; i < ndim; i++)
@@ -777,8 +775,8 @@ flat_sparse_tensor_skeleton(
             xp = x;
             for (int i = ndim - 1; i >= 0; xp /= infox[i].size(), i--) {
                 auto &r = infox[i][xp % infox[i].size()];
-                qk[i] =
-                    pattern[i] == '+' ? Q::from_q(r.first) : Q::from_q(-r.first),
+                qk[i] = pattern[i] == '+' ? Q::from_q(r.first)
+                                          : Q::from_q(-r.first),
                 shk[i] = r.second, sz *= r.second;
             }
             qs.insert(qs.end(), qk.begin(), qk.end());
@@ -797,7 +795,7 @@ flat_sparse_tensor_skeleton(
     return std::make_tuple(cqs, cshs, cidxs);
 }
 
-template<typename Q>
+template <typename Q>
 vector<map_uint_uint<Q>>
 flat_sparse_tensor_get_infos(const py::array_t<uint32_t> &aqs,
                              const py::array_t<uint32_t> &ashs) {
@@ -880,13 +878,13 @@ inline void collect_blocks(
     }
 }
 
-template <typename Q, DIRECTION L>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL, DIRECTION L>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<double>, py::array_t<uint32_t>>
+      py::array_t<FL>, py::array_t<uint32_t>>
 flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
                          const py::array_t<uint32_t> &ashs,
-                         const py::array_t<double> &adata,
+                         const py::array_t<FL> &adata,
                          const py::array_t<uint32_t> &aidxs, uint32_t *pxidx) {
     if (aqs.shape()[0] == 0)
         return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata,
@@ -900,7 +898,7 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
     unordered_map<uint32_t, vector<int>> collected;
     const uint32_t *pashs = ashs.data(), *paqs = aqs.data(),
                    *pia = aidxs.data();
-    const double *pa = adata.data();
+    const FL *pa = adata.data();
     for (int i = 0; i < n_blocks_a; i++)
         collected[paqs[i * asi + cidx * asj]].push_back(i);
 
@@ -922,13 +920,13 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
                       pqshs, pqidxs, plrqs, plrshs, plridxs, nullptr, nullptr,
                       nullptr, pxidx);
 
-    py::array_t<double> qdata(vector<ssize_t>{pqidxs[n_blocks_a]});
-    py::array_t<double> lrdata(vector<ssize_t>{plridxs[n_blocks_lr]});
-    double *pq = qdata.mutable_data(), *plr = lrdata.mutable_data();
-    memset(plr, 0, sizeof(double) * plridxs[n_blocks_lr]);
+    py::array_t<FL> qdata(vector<ssize_t>{pqidxs[n_blocks_a]});
+    py::array_t<FL> lrdata(vector<ssize_t>{plridxs[n_blocks_lr]});
+    FL *pq = qdata.mutable_data(), *plr = lrdata.mutable_data();
+    memset(plr, 0, sizeof(FL) * plridxs[n_blocks_lr]);
     int iq = 0, ilr = 0;
     int lwork = (L == LEFT ? max_rshape : max_lshape) * 34, info = 0;
-    vector<double> tau(max_mshape), work(lwork), tmp(max_tmp_size);
+    vector<FL> tau(max_mshape), work(lwork), tmp(max_tmp_size);
 
     for (auto &cr : collected) {
         int nq = (int)cr.second.size(), lshape, rshape;
@@ -940,46 +938,45 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
             rshape = (pqidxs[iq + nq] - pqidxs[iq]) / plrshs[ilr * 2 + 1];
         }
         int mshape = min(lshape, rshape);
-        double *ptmp = tmp.data();
+        FL *ptmp = tmp.data();
         if (L == LEFT) {
             for (int i = 0; i < nq; i++) {
                 uint32_t ia = cr.second[i], sz = pia[ia + 1] - pia[ia];
-                memcpy(ptmp, pa + pia[ia], sizeof(double) * sz);
+                memcpy(ptmp, pa + pia[ia], sizeof(FL) * sz);
                 ptmp += sz;
             }
-            dgelqf(&rshape, &lshape, tmp.data(), &rshape, tau.data(),
-                   work.data(), &lwork, &info);
+            xgelqf<FL>(&rshape, &lshape, tmp.data(), &rshape, tau.data(),
+                       work.data(), &lwork, &info);
             assert(info == 0);
             for (int j = 0; j < mshape; j++)
                 memcpy(plr + plridxs[ilr] + j * rshape + j,
-                       tmp.data() + j * rshape + j,
-                       sizeof(double) * (rshape - j));
-            dorglq(&mshape, &lshape, &mshape, tmp.data(), &rshape, tau.data(),
-                   work.data(), &lwork, &info);
+                       tmp.data() + j * rshape + j, sizeof(FL) * (rshape - j));
+            xunglq<FL>(&mshape, &lshape, &mshape, tmp.data(), &rshape,
+                       tau.data(), work.data(), &lwork, &info);
             assert(info == 0);
             for (int j = 0; j < lshape; j++)
                 memcpy(pq + pqidxs[iq] + j * mshape, tmp.data() + j * rshape,
-                       sizeof(double) * mshape);
+                       sizeof(FL) * mshape);
         } else {
             for (int i = 0; i < nq; i++) {
                 int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
-                dlacpy("N", &ra, &lshape, pa + pia[ia], &ra, ptmp, &rshape);
+                xlacpy<FL>("N", &ra, &lshape, pa + pia[ia], &ra, ptmp, &rshape);
                 ptmp += ra;
             }
-            dgeqrf(&rshape, &lshape, tmp.data(), &rshape, tau.data(),
-                   work.data(), &lwork, &info);
+            xgeqrf<FL>(&rshape, &lshape, tmp.data(), &rshape, tau.data(),
+                       work.data(), &lwork, &info);
             assert(info == 0);
             for (int j = 0; j < lshape; j++)
                 memcpy(plr + plridxs[ilr] + j * mshape, tmp.data() + j * rshape,
-                       sizeof(double) * min(mshape, j + 1));
-            dorgqr(&rshape, &mshape, &mshape, tmp.data(), &rshape, tau.data(),
-                   work.data(), &lwork, &info);
+                       sizeof(FL) * min(mshape, j + 1));
+            xungqr<FL>(&rshape, &mshape, &mshape, tmp.data(), &rshape,
+                       tau.data(), work.data(), &lwork, &info);
             assert(info == 0);
             ptmp = tmp.data();
             for (int i = 0; i < nq; i++) {
                 int ia = cr.second[i], ra = (pia[ia + 1] - pia[ia]) / lshape;
-                dlacpy("N", &ra, &mshape, ptmp, &rshape, pq + pqidxs[iq + i],
-                       &ra);
+                xlacpy<FL>("N", &ra, &mshape, ptmp, &rshape,
+                           pq + pqidxs[iq + i], &ra);
                 ptmp += ra;
             }
         }
@@ -1101,26 +1098,28 @@ flat_sparse_svd(const py::array_t<uint32_t> &aqs,
                                  sidxs, qqs, qshs, qdata, qidxs);
 }
 
-template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<double>, py::array_t<uint32_t>>
+      py::array_t<FL>, py::array_t<uint32_t>>
 flat_sparse_left_canonicalize(const py::array_t<uint32_t> &aqs,
                               const py::array_t<uint32_t> &ashs,
-                              const py::array_t<double> &adata,
+                              const py::array_t<FL> &adata,
                               const py::array_t<uint32_t> &aidxs) {
-    return flat_sparse_canonicalize<Q, LEFT>(aqs, ashs, adata, aidxs, nullptr);
+    return flat_sparse_canonicalize<Q, FL, LEFT>(aqs, ashs, adata, aidxs,
+                                                 nullptr);
 }
 
-template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<double>, py::array_t<uint32_t>>
+      py::array_t<FL>, py::array_t<uint32_t>>
 flat_sparse_right_canonicalize(const py::array_t<uint32_t> &aqs,
                                const py::array_t<uint32_t> &ashs,
-                               const py::array_t<double> &adata,
+                               const py::array_t<FL> &adata,
                                const py::array_t<uint32_t> &aidxs) {
-    return flat_sparse_canonicalize<Q, RIGHT>(aqs, ashs, adata, aidxs, nullptr);
+    return flat_sparse_canonicalize<Q, FL, RIGHT>(aqs, ashs, adata, aidxs,
+                                                  nullptr);
 }
 
 template <typename Q>
@@ -1147,33 +1146,33 @@ flat_sparse_right_svd(const py::array_t<uint32_t> &aqs,
     return flat_sparse_svd<Q, RIGHT>(aqs, ashs, adata, aidxs, nullptr);
 }
 
-template <typename Q>
-pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
            py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-           py::array_t<double>, py::array_t<uint32_t>>,
+           py::array_t<FL>, py::array_t<uint32_t>>,
      py::array_t<uint32_t>>
 flat_sparse_left_canonicalize_indexed(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<uint32_t> &ashs,
-                                      const py::array_t<double> &adata,
+                                      const py::array_t<FL> &adata,
                                       const py::array_t<uint32_t> &aidxs) {
     py::array_t<uint32_t> xidx(vector<ssize_t>{aqs.shape()[0]});
-    const auto &r = flat_sparse_canonicalize<Q, LEFT>(aqs, ashs, adata, aidxs,
-                                                   xidx.mutable_data());
+    const auto &r = flat_sparse_canonicalize<Q, FL, LEFT>(
+        aqs, ashs, adata, aidxs, xidx.mutable_data());
     return make_pair(r, xidx);
 }
 
-template <typename Q>
-pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
            py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-           py::array_t<double>, py::array_t<uint32_t>>,
+           py::array_t<FL>, py::array_t<uint32_t>>,
      py::array_t<uint32_t>>
 flat_sparse_right_canonicalize_indexed(const py::array_t<uint32_t> &aqs,
                                        const py::array_t<uint32_t> &ashs,
-                                       const py::array_t<double> &adata,
+                                       const py::array_t<FL> &adata,
                                        const py::array_t<uint32_t> &aidxs) {
     py::array_t<uint32_t> xidx(vector<ssize_t>{aqs.shape()[0]});
-    const auto &r = flat_sparse_canonicalize<Q, RIGHT>(aqs, ashs, adata, aidxs,
-                                                    xidx.mutable_data());
+    const auto &r = flat_sparse_canonicalize<Q, FL, RIGHT>(
+        aqs, ashs, adata, aidxs, xidx.mutable_data());
     return make_pair(r, xidx);
 }
 
@@ -1209,14 +1208,14 @@ flat_sparse_right_svd_indexed(const py::array_t<uint32_t> &aqs,
     return make_pair(r, xidx);
 }
 
-template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
       py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>>
+      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint32_t>>
 flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
                        const py::array_t<uint32_t> &ashs,
-                       const py::array_t<double> &adata,
+                       const py::array_t<FL> &adata,
                        const py::array_t<uint32_t> &aidxs, int idx,
                        const map_fusing &linfo, const map_fusing &rinfo,
                        const string &pattern) {
@@ -1231,7 +1230,7 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
     vector<uint32_t> fqs(n_blocks_a);
     unordered_map<uint32_t, size_t> mat_mp;
     const uint32_t *pshs = ashs.data(), *pqs = aqs.data(), *pia = aidxs.data();
-    const double *pa = adata.data();
+    const FL *pa = adata.data();
     size_t s_size = 0, mat_size = 0;
     unordered_map<uint32_t, vector<int>> mat_idxl, mat_idxr;
     int max_lshape = 0, max_rshape = 0, max_tmpl_shape = 0, max_tmpr_shape = 0;
@@ -1267,7 +1266,7 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
         }
     }
 
-    vector<double> mat_data(mat_size);
+    vector<FL> mat_data(mat_size);
     vector<pair<int, int>> lkns(n_blocks_a), rkns(n_blocks_a);
     for (int ia = 0; ia < n_blocks_a; ia++) {
         const uint32_t q = fqs[ia];
@@ -1285,8 +1284,8 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
                                   multiplies<uint32_t>());
         int rkn = (int)accumulate(rpk.second.begin(), rpk.second.end(), 1,
                                   multiplies<uint32_t>());
-        dlacpy("N", &rkn, &lkn, pa + pia[ia], &rkn,
-               mat_data.data() + mat_mp[q] + rk + (size_t)lk * rfn, &rfn);
+        xlacpy<FL>("N", &rkn, &lkn, pa + pia[ia], &rkn,
+                   mat_data.data() + mat_mp[q] + rk + (size_t)lk * rfn, &rfn);
         lkns[ia] = make_pair(lk, lkn), rkns[ia] = make_pair(rk, rkn);
     }
 
@@ -1329,8 +1328,8 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
     py::array_t<uint32_t> sqs(vector<ssize_t>{n_blocks_s, 1}),
         sshs(vector<ssize_t>{n_blocks_s, 1});
     py::array_t<uint32_t> sidxs(vector<ssize_t>{n_blocks_s + 1});
-    py::array_t<double> ldata(vector<ssize_t>{(ssize_t)l_size});
-    py::array_t<double> rdata(vector<ssize_t>{(ssize_t)r_size});
+    py::array_t<FL> ldata(vector<ssize_t>{(ssize_t)l_size});
+    py::array_t<FL> rdata(vector<ssize_t>{(ssize_t)r_size});
     py::array_t<double> sdata(vector<ssize_t>{(ssize_t)s_size});
 
     uint32_t *plqs = lqs.mutable_data(), *plshs = lshs.mutable_data(),
@@ -1339,21 +1338,21 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
              *pridxs = ridxs.mutable_data();
     uint32_t *psqs = sqs.mutable_data(), *psshs = sshs.mutable_data(),
              *psidxs = sidxs.mutable_data();
-    double *pl = ldata.mutable_data(), *pr = rdata.mutable_data(),
-           *ps = sdata.mutable_data();
+    FL *pl = ldata.mutable_data(), *pr = rdata.mutable_data();
+    double *ps = sdata.mutable_data();
     int lwork = max(max_lshape, max_rshape) * 34, info = 0;
-    vector<double> work(lwork), tmpl(max_tmpl_shape), tmpr(max_tmpr_shape);
+    vector<FL> work(lwork), tmpl(max_tmpl_shape), tmpr(max_tmpr_shape);
     int iis = 0, iil = 0, iir = 0;
     psidxs[0] = plidxs[0] = pridxs[0] = 0;
     for (auto &mq : mat_mp) {
         const uint32_t q = mq.first;
-        double *mat = mat_data.data() + mq.second;
+        FL *mat = mat_data.data() + mq.second;
         int ml = linfo.at(q).first, mr = rinfo.at(q).first, mm = min(ml, mr);
         int lwork = max(ml, mr) * 34;
         psidxs[iis + 1] = psidxs[iis] + mm;
         psqs[iis] = q, psshs[iis] = mm;
-        dgesvd("S", "S", &mr, &ml, mat, &mr, ps + psidxs[iis], tmpr.data(), &mr,
-               tmpl.data(), &mm, work.data(), &lwork, &info);
+        xgesvd<FL>("S", "S", &mr, &ml, mat, &mr, ps + psidxs[iis], tmpr.data(),
+                   &mr, tmpl.data(), &mm, work.data(), &lwork, &info);
         assert(info == 0);
         int isl = 0, isr = 0;
         for (auto &v : mat_idxl[q]) {
@@ -1361,8 +1360,9 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
                 continue;
             plidxs[iil + isl + 1] =
                 plidxs[iil + isl] + (uint32_t)mm * lkns[v].second;
-            dlacpy("N", &mm, &lkns[v].second, tmpl.data() + lkns[v].first * mm,
-                   &mm, pl + plidxs[iil + isl], &mm);
+            xlacpy<FL>("N", &mm, &lkns[v].second,
+                       tmpl.data() + lkns[v].first * mm, &mm,
+                       pl + plidxs[iil + isl], &mm);
             for (int i = 0; i < idx; i++) {
                 plqs[(iil + isl) * (idx + 1) + i] = pqs[v * asi + i * asj];
                 plshs[(iil + isl) * (idx + 1) + i] = pshs[v * asi + i * asj];
@@ -1376,8 +1376,8 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
                 continue;
             pridxs[iir + isr + 1] =
                 pridxs[iir + isr] + (uint32_t)mm * rkns[v].second;
-            dlacpy("N", &rkns[v].second, &mm, tmpr.data() + rkns[v].first, &mr,
-                   pr + pridxs[iir + isr], &rkns[v].second);
+            xlacpy<FL>("N", &rkns[v].second, &mm, tmpr.data() + rkns[v].first,
+                       &mr, pr + pridxs[iir + isr], &rkns[v].second);
             for (int i = idx; i < ndima; i++) {
                 prqs[(iir + isr) * (ndima - idx + 1) + i - idx + 1] =
                     pqs[v * asi + i * asj];
@@ -1397,18 +1397,18 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
                            rqs, rshs, rdata, ridxs);
 }
 
-template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
       py::array_t<double>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint32_t>, double>
+      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint32_t>, double>
 flat_sparse_truncate_svd(
     const py::array_t<uint32_t> &lqs, const py::array_t<uint32_t> &lshs,
-    const py::array_t<double> &ldata, const py::array_t<uint32_t> &lidxs,
+    const py::array_t<FL> &ldata, const py::array_t<uint32_t> &lidxs,
     const py::array_t<uint32_t> &sqs, const py::array_t<uint32_t> &sshs,
     const py::array_t<double> &sdata, const py::array_t<uint32_t> &sidxs,
     const py::array_t<uint32_t> &rqs, const py::array_t<uint32_t> &rshs,
-    const py::array_t<double> &rdata, const py::array_t<uint32_t> &ridxs,
+    const py::array_t<FL> &rdata, const py::array_t<uint32_t> &ridxs,
     int max_bond_dim, double cutoff, double max_dw, double norm_cutoff,
     bool eigen_values) {
     if (sqs.shape()[0] == 0)
@@ -1424,7 +1424,8 @@ flat_sparse_truncate_svd(
     const uint32_t *plqs = lqs.data(), *psqs = sqs.data(), *prqs = rqs.data();
     const uint32_t *plshs = lshs.data(), *psshs = sshs.data(),
                    *prshs = rshs.data();
-    const double *pl = ldata.data(), *ps = sdata.data(), *pr = rdata.data();
+    const FL *pl = ldata.data(), *pr = rdata.data();
+    const double *ps = sdata.data();
     const uint32_t *pil = lidxs.data(), *pis = sidxs.data(),
                    *pir = ridxs.data();
     const ssize_t lsi = lqs.strides()[0] / sizeof(uint32_t),
@@ -1541,8 +1542,8 @@ flat_sparse_truncate_svd(
     py::array_t<uint32_t> nsqs(vector<ssize_t>{n_blocks_s_new, ndims}),
         nsshs(vector<ssize_t>{n_blocks_s_new, ndims});
     py::array_t<uint32_t> nsidxs(vector<ssize_t>{n_blocks_s_new + 1});
-    py::array_t<double> nldata(vector<ssize_t>{size_l_new});
-    py::array_t<double> nrdata(vector<ssize_t>{size_r_new});
+    py::array_t<FL> nldata(vector<ssize_t>{size_l_new});
+    py::array_t<FL> nrdata(vector<ssize_t>{size_r_new});
     py::array_t<double> nsdata(vector<ssize_t>{size_s_new});
 
     uint32_t *pnlqs = nlqs.mutable_data(), *pnlshs = nlshs.mutable_data(),
@@ -1551,8 +1552,8 @@ flat_sparse_truncate_svd(
              *pnridxs = nridxs.mutable_data();
     uint32_t *pnsqs = nsqs.mutable_data(), *pnsshs = nsshs.mutable_data(),
              *pnsidxs = nsidxs.mutable_data();
-    double *pnl = nldata.mutable_data(), *pnr = nrdata.mutable_data(),
-           *pns = nsdata.mutable_data();
+    FL *pnl = nldata.mutable_data(), *pnr = nrdata.mutable_data();
+    double *pns = nsdata.mutable_data();
     pnlidxs[0] = pnridxs[0] = pnsidxs[0] = 0;
     ikl = 0, ikr = 0, iks = 0;
     int iknl = 0, iknr = 0;
@@ -1576,8 +1577,8 @@ flat_sparse_truncate_svd(
             uint32_t lsz = lszl * ssz;
             pnlidxs[iknl + i + 1] = pnlidxs[iknl + i] + lsz;
             for (uint32_t j = 0; j < ssz; j++)
-                dcopy(&lszl, pl + pil[ikl + i] + m.second[j] - ist, &fsz,
-                      pnl + pnlidxs[iknl + i] + j, &ssz);
+                xcopy<FL>(&lszl, pl + pil[ikl + i] + m.second[j] - ist, &fsz,
+                          pnl + pnlidxs[iknl + i] + j, &ssz);
         }
         for (int i = 0; i < nbr[iis]; i++) {
             ikr = skbr[iis];
@@ -1591,8 +1592,8 @@ flat_sparse_truncate_svd(
             uint32_t rsz = rszr * ssz;
             pnridxs[iknr + i + 1] = pnridxs[iknr + i] + rsz;
             for (uint32_t j = 0; j < ssz; j++)
-                dcopy(&rszr, pr + pir[ikr + i] + (m.second[j] - ist) * rszr,
-                      &inc, pnr + pnridxs[iknr + i] + j * rszr, &inc);
+                xcopy<FL>(&rszr, pr + pir[ikr + i] + (m.second[j] - ist) * rszr,
+                          &inc, pnr + pnridxs[iknr + i] + j * rszr, &inc);
         }
         iknl += nbl[iis], iknr += nbr[iis];
         iks++;

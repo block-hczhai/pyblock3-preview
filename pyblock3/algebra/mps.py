@@ -190,42 +190,44 @@ class MPS(NDArrayOperatorsMixin):
         return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod
-    def ones(info, opts=None):
+    def ones(info, dtype=float, opts=None):
         """Construct unfused MPS from MPSInfo, with identity matrix elements."""
         tensors = [None] * info.n_sites
         for i in range(info.n_sites):
             if isinstance(info.basis[i], BondInfo):
                 tensors[i] = SparseTensor.ones(
-                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]), dtype=dtype)
             else:
                 tensors[i] = FlatSparseTensor.ones(
-                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]), dtype=dtype)
         return MPS(tensors=tensors, opts=opts)
 
     @staticmethod
-    def zeros(info, opts=None):
+    def zeros(info, dtype=float, opts=None):
         """Construct unfused MPS from MPSInfo, with zero matrix elements."""
         tensors = [None] * info.n_sites
         for i in range(info.n_sites):
             if isinstance(info.basis[i], BondInfo):
                 tensors[i] = SparseTensor.zeros(
-                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]), dtype=dtype)
             else:
                 tensors[i] = FlatSparseTensor.zeros(
-                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]))
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]), dtype=dtype)
         return MPS(tensors=tensors, opts=opts)
 
     @staticmethod
-    def random(info, low=0, high=1, opts=None):
+    def random(info, low=0, high=1, dtype=float, opts=None):
         """Construct unfused MPS from MPSInfo, with random matrix elements."""
         tensors = [None] * info.n_sites
         for i in range(info.n_sites):
             if isinstance(info.basis[i], BondInfo):
                 tensors[i] = SparseTensor.random(
-                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1])) * (high - low) + low
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]),
+                    dtype=dtype) * (high - low) + low
             else:
                 tensors[i] = FlatSparseTensor.random(
-                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1])) * (high - low) + low
+                    (info.left_dims[i], info.basis[i], info.left_dims[i + 1]),
+                    dtype=dtype) * (high - low) + low
         return MPS(tensors=tensors, opts=opts)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
@@ -267,8 +269,12 @@ class MPS(NDArrayOperatorsMixin):
                     return NotImplemented
             elif len(inputs) == 1:
                 const = getattr(ufunc, method)(inputs[0].const)
-                tensors = [getattr(ufunc, method)(
-                    inputs[0].tensors[0])] + inputs[0].tensors[1:]
+                if ufunc.__name__ in ["conjugate"]:
+                    tensors = [getattr(ufunc, method)(ts)
+                               for ts in inputs[0].tensors]
+                else:
+                    tensors = [getattr(ufunc, method)(
+                        inputs[0].tensors[0])] + inputs[0].tensors[1:]
             else:
                 return NotImplemented
         else:
@@ -387,6 +393,9 @@ class MPS(NDArrayOperatorsMixin):
     def __setitem__(self, i, ts):
         self.tensors[i] = ts
 
+    def conj(self):
+        return np.conj(self)
+
     @staticmethod
     @implements(np.copy)
     def _copy(x):
@@ -433,11 +442,12 @@ class MPS(NDArrayOperatorsMixin):
     @staticmethod
     @implements(np.linalg.norm)
     def _norm(x):
-        return np.sqrt(x.dot(x))
+        d = np.conj(x).dot(x)
+        assert abs(d.imag) < 1E-14
+        return np.sqrt(abs(d.real) if abs(d.real) < 1E-14 else d.real)
 
     def norm(self):
-        d = self.dot(self)
-        return np.sqrt(abs(d) if abs(d) < 1E-14 else d)
+        return np.linalg.norm(self)
 
     @staticmethod
     @implements(np.matmul)

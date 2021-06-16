@@ -2,6 +2,10 @@
 DDMRG++ for Green's Function
 ============================
 
+References:
+
+* Ronca, E., Li, Z., Jimenez-Hoyos, C. A., Chan, G. K. L. Time-step targeting time-dependent and dynamical density matrix renormalization group algorithms with ab initio Hamiltonians. *Journal of Chemical Theory and Computation* 2017, **13**, 5560-5571.
+
 The following example calculate the Green's function for H10 (STO6G):
 
 .. math::

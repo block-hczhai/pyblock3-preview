@@ -12,11 +12,6 @@ pyblock3.algebra.core
 pyblock3.algebra.flat
 ---------------------
 
-.. automodule:: pyblock3.algebra.flat
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 pyblock3.algebra.mpe
 --------------------
 

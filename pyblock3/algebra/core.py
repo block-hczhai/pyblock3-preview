@@ -137,6 +137,24 @@ class SubTensor(np.ndarray):
         return SubTensor(reduced=np.asarray(self).conj(), q_labels=self.q_labels)
 
     @staticmethod
+    @implements(np.real)
+    def _real(x):
+        return SubTensor(reduced=np.ascontiguousarray(np.asarray(x).real), q_labels=x.q_labels)
+
+    @property
+    def real(self):
+        return np.real(self)
+
+    @staticmethod
+    @implements(np.imag)
+    def _imag(x):
+        return SubTensor(reduced=np.ascontiguousarray(np.asarray(x).imag), q_labels=x.q_labels)
+
+    @property
+    def imag(self):
+        return np.imag(self)
+
+    @staticmethod
     @implements(np.linalg.norm)
     def _norm(x):
         return np.linalg.norm(np.asarray(x))
@@ -514,6 +532,32 @@ class SparseTensor(NDArrayOperatorsMixin):
                 else:
                     bond_infos[iq][q] = block.shape[iq]
         return bond_infos
+
+    def conj(self):
+        """
+        Complex conjugate.
+        Note that np.conj() is a ufunc (no need to be defined).
+        But np.real and np.imag are array_functions
+        """
+        return self.__class__(blocks=[b.conj() for b in self.blocks])
+
+    @staticmethod
+    @implements(np.real)
+    def _real(x):
+        return x.__class__(blocks=[b.real for b in x.blocks])
+
+    @property
+    def real(self):
+        return np.real(self)
+
+    @staticmethod
+    @implements(np.imag)
+    def _imag(x):
+        return x.__class__(blocks=[b.imag for b in x.blocks])
+
+    @property
+    def imag(self):
+        return np.imag(self)
 
     def quick_deflate(self):
         return self.__class__(blocks=[b for b in self.blocks if b is not None])
@@ -1449,6 +1493,32 @@ class FermionTensor(NDArrayOperatorsMixin):
             return self.odd.infos
         else:
             return tuple(o | e for o, e in zip(self.odd.infos, self.even.infos))
+
+    def conj(self):
+        """
+        Complex conjugate.
+        Note that np.conj() is a ufunc (no need to be defined).
+        But np.real and np.imag are array_functions
+        """
+        return self.__class__(odd=self.odd.conj(), even=self.even.conj())
+
+    @staticmethod
+    @implements(np.real)
+    def _real(x):
+        return x.__class__(odd=x.odd.real, even=x.even.real)
+
+    @property
+    def real(self):
+        return np.real(self)
+
+    @staticmethod
+    @implements(np.imag)
+    def _imag(x):
+        return x.__class__(odd=x.odd.imag, even=x.even.imag)
+
+    @property
+    def imag(self):
+        return np.imag(self)
 
     def deflate(self, cutoff=0):
         return FermionTensor(odd=self.odd.deflate(cutoff), even=self.even.deflate(cutoff))

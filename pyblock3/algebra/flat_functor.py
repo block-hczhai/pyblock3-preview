@@ -187,13 +187,12 @@ class FlatSparseFunctor:
         return plan_ro, plan_re, plan_lo, plan_le
 
     def __matmul__(self, other):
-        assert other.dtype == np.float64
         assert other.size == self.cmat.idxs[-1]
         l, r = self.op.tensors
         pro, pre, plo, ple = self.plan
-        self.work.data[:] = 0
-        self.work2.data[:] = 0
-        self.vmat.data = np.zeros_like(self.vmat.data)
+        self.work.data = np.zeros_like(self.work.data, dtype=other.dtype)
+        self.work2.data = np.zeros_like(self.work2.data, dtype=other.dtype)
+        self.vmat.data = np.zeros_like(self.vmat.data, dtype=other.dtype)
         self.nflop += flat_sparse_matmul(pro,
                                          r.odd.data, other, self.work.data)
         self.nflop += flat_sparse_matmul(pre,
@@ -216,8 +215,7 @@ class FlatSparseFunctor:
         return self.vmat.data
 
     def prepare_vector(self, spt):
-        self.ket = spt
-        return FlatSparseTensor.zeros_like(self.cmat).cast_assign(spt).data
+        return FlatSparseTensor.zeros_like(self.cmat, dtype=spt.dtype).cast_assign(spt).data
 
     def finalize_vector(self, data):
         self.vmat.data = data

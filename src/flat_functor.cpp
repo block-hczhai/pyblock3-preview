@@ -139,23 +139,23 @@ flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
     return std::make_tuple(cqs, cshs, cdata, cidxs);
 }
 
-template <typename Q>
+template <typename Q, typename FL>
 size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
-                                 const py::array_t<double> &adata,
-                                 const py::array_t<double> &bdata,
-                                 py::array_t<double> &cdata) {
+                                 const py::array_t<FL> &adata,
+                                 const py::array_t<FL> &bdata,
+                                 py::array_t<FL> &cdata) {
     int nb = (int)plan.shape()[0], ndimp = (int)plan.shape()[1];
     assert(plan.strides()[1] == sizeof(int32_t));
     assert(ndimp == 9);
-    const double *pa = adata.data(), *pb = bdata.data();
-    double *pc = cdata.mutable_data();
+    const FL *pa = adata.data(), *pb = bdata.data();
+    FL *pc = cdata.mutable_data();
     size_t nflop = 0;
     const CBLAS_LAYOUT layout = CblasRowMajor;
     vector<CBLAS_TRANSPOSE> ta(nb), tb(nb);
     vector<int> n(nb), m(nb), k(nb), gp(nb, 1), lda(nb), ldb(nb), ldc(nb);
-    vector<double> alpha(nb), beta(nb, 1.0);
-    vector<const double *> a(nb), b(nb);
-    vector<double *> c(nb);
+    vector<FL> alpha(nb), beta(nb, 1.0);
+    vector<const FL *> a(nb), b(nb);
+    vector<FL *> c(nb);
     for (int i = 0, j = 0; i < nb; i++) {
         const int32_t *pp = plan.data() + ndimp * i;
         const int trans_b = pp[0], trans_a = pp[1];
@@ -170,9 +170,9 @@ size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
         ldc[i] = nn;
         a[i] = pa + pia, b[i] = pb + pib, c[i] = pc + pic;
         if (i == nb - 1 || (plan.data() + ndimp * (i + 1))[7] <= pic) {
-            cblas_dgemm_batch(layout, &ta[j], &tb[j], &m[j], &n[j], &k[j],
-                              &alpha[j], &a[j], &lda[j], &b[j], &ldb[j],
-                              &beta[j], &c[j], &ldc[j], i + 1 - j, &gp[j]);
+            cblas_xgemm_batch<FL>(layout, &ta[j], &tb[j], &m[j], &n[j], &k[j],
+                                  &alpha[j], &a[j], &lda[j], &b[j], &ldb[j],
+                                  &beta[j], &c[j], &ldc[j], i + 1 - j, &gp[j]);
             j = i + 1;
         }
         nflop += (size_t)mm * nn * kk;
@@ -611,5 +611,13 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
 }
 
 #define TMPL_NAME flat_functor
+
 #include "symmetry_tmpl.hpp"
+#define TMPL_FL double
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+#define TMPL_FL complex<double>
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+
 #undef TMPL_NAME

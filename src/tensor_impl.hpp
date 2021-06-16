@@ -130,6 +130,10 @@ extern void zunglq(const int *m, const int *n, const int *k, complex<double> *a,
 extern void dsyev(const char *jobz, const char *uplo, const int *n, double *a,
                   const int *lda, double *w, double *work, const int *lwork,
                   int *info);
+extern void zheev(const char *jobz, const char *uplo, const int *n,
+                  complex<double> *a, const int *lda, double *w,
+                  complex<double> *work, const int *lwork, double *rwork,
+                  int *info);
 
 // SVD
 // mat [a] = mat [u] * vector [sigma] * mat [vt]
@@ -137,6 +141,12 @@ extern void dgesvd(const char *jobu, const char *jobvt, const int *m,
                    const int *n, double *a, const int *lda, double *s,
                    double *u, const int *ldu, double *vt, const int *ldvt,
                    double *work, const int *lwork, int *info);
+extern void zgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, complex<double> *a, const int *lda, double *s,
+                   complex<double> *u, const int *ldu, complex<double> *vt,
+                   const int *ldvt, complex<double> *work, const int *lwork,
+                   double *rwork, int *info);
+
 // matrix copy
 // mat [b] = mat [a]
 extern void dlacpy(const char *uplo, const int *m, const int *n,
@@ -172,6 +182,43 @@ inline void cblas_dgemm_batch(
             dgemm(trb, tra, &n, &m, &k, &alpha, B_Array[i], &ldb, A_Array[i],
                   &lda, &beta, C_Array[i], &ldc);
     }
+}
+
+inline void cblas_zgemm_batch_impl(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const complex<double> *alpha_Array,
+    const complex<double> **A_Array, const int *lda_Array,
+    const complex<double> **B_Array, const int *ldb_Array,
+    const complex<double> *beta_Array, complex<double> **C_Array,
+    const int *ldc_Array, const int group_count, const int *group_size) {
+    assert(Layout == CblasRowMajor);
+    for (int ig = 0, i = 0; ig < group_count; ig++) {
+        const char *tra = TransA_Array[ig] == CblasNoTrans ? "n" : "t";
+        const char *trb = TransB_Array[ig] == CblasNoTrans ? "n" : "t";
+        const int m = M_Array[ig], n = N_Array[ig], k = K_Array[ig];
+        const complex<double> alpha = alpha_Array[ig], beta = beta_Array[ig];
+        const int lda = lda_Array[ig], ldb = ldb_Array[ig], ldc = ldc_Array[ig];
+        const int gsize = group_size[ig];
+        for (int j = 0; j < gsize; j++, i++)
+            zgemm(trb, tra, &n, &m, &k, &alpha, B_Array[i], &ldb, A_Array[i],
+                  &lda, &beta, C_Array[i], &ldc);
+    }
+}
+
+inline void cblas_zgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const void *alpha_Array, const void **A_Array,
+    const int *lda_Array, const void **B_Array, const int *ldb_Array,
+    const void *beta_Array, void **C_Array, const int *ldc_Array,
+    const int group_count, const int *group_size) {
+    cblas_zgemm_batch_impl(
+        Layout, TransA_Array, TransB_Array, M_Array, N_Array, K_Array,
+        (const complex<double> *)alpha_Array, (const complex<double> **)A_Array,
+        lda_Array, (const complex<double> **)B_Array, ldb_Array,
+        (const complex<double> *)beta_Array, (complex<double> **)C_Array,
+        ldc_Array, group_count, group_size);
 }
 
 #endif
@@ -318,6 +365,99 @@ inline void xunglq(const int *m, const int *n, const int *k, complex<double> *a,
                    const int *lda, const complex<double> *tau,
                    complex<double> *work, const int *lwork, int *info) {
     zunglq(m, n, k, a, lda, tau, work, lwork, info);
+}
+
+template <typename FL>
+inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, FL *a, const int *lda, double *s, FL *u,
+                   const int *ldu, FL *vt, const int *ldvt, FL *work,
+                   const int *lwork, int *info);
+template <>
+inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, double *a, const int *lda, double *s,
+                   double *u, const int *ldu, double *vt, const int *ldvt,
+                   double *work, const int *lwork, int *info) {
+    dgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, work, lwork, info);
+}
+template <>
+inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, complex<double> *a, const int *lda, double *s,
+                   complex<double> *u, const int *ldu, complex<double> *vt,
+                   const int *ldvt, complex<double> *work, const int *lwork,
+                   int *info) {
+    double *rwork = new double[5 * min(*m, *n)];
+    zgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, work, lwork, rwork,
+           info);
+    delete[] rwork;
+}
+
+template <typename FL>
+inline void cblas_xgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const FL *alpha_Array, const FL **A_Array,
+    const int *lda_Array, const FL **B_Array, const int *ldb_Array,
+    const FL *beta_Array, FL **C_Array, const int *ldc_Array,
+    const int group_count, const int *group_size);
+template <>
+inline void cblas_xgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const double *alpha_Array, const double **A_Array,
+    const int *lda_Array, const double **B_Array, const int *ldb_Array,
+    const double *beta_Array, double **C_Array, const int *ldc_Array,
+    const int group_count, const int *group_size) {
+    cblas_dgemm_batch(Layout, TransA_Array, TransB_Array, M_Array, N_Array,
+                      K_Array, alpha_Array, A_Array, lda_Array, B_Array,
+                      ldb_Array, beta_Array, C_Array, ldc_Array, group_count,
+                      group_size);
+}
+template <>
+inline void cblas_xgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const complex<double> *alpha_Array,
+    const complex<double> **A_Array, const int *lda_Array,
+    const complex<double> **B_Array, const int *ldb_Array,
+    const complex<double> *beta_Array, complex<double> **C_Array,
+    const int *ldc_Array, const int group_count, const int *group_size) {
+    cblas_zgemm_batch(Layout, TransA_Array, TransB_Array, M_Array, N_Array,
+                      K_Array, (const void *)alpha_Array,
+                      (const void **)A_Array, lda_Array, (const void **)B_Array,
+                      ldb_Array, (const void *)beta_Array, (void **)C_Array,
+                      ldc_Array, group_count, group_size);
+}
+
+template <typename FL>
+inline void x_tensor_transpose(const int *perm, const int dim, const FL alpha,
+                               const FL *A, const int *sizeA,
+                               const int *outerSizeA, const FL beta, FL *B,
+                               const int *outerSizeB, const int numThreads,
+                               const int useRowMajor);
+
+template <>
+inline void x_tensor_transpose<double>(
+    const int *perm, const int dim, const double alpha, const double *A,
+    const int *sizeA, const int *outerSizeA, const double beta, double *B,
+    const int *outerSizeB, const int numThreads, const int useRowMajor) {
+#ifdef _HAS_HPTT
+    dTensorTranspose(perm, dim, alpha, A, sizeA, outerSizeA, beta, B,
+                     outerSizeB, numThreads, useRowMajor);
+#endif
+}
+
+template <>
+inline void x_tensor_transpose<complex<double>>(
+    const int *perm, const int dim, const complex<double> alpha,
+    const complex<double> *A, const int *sizeA, const int *outerSizeA,
+    const complex<double> beta, complex<double> *B, const int *outerSizeB,
+    const int numThreads, const int useRowMajor) {
+#ifdef _HAS_HPTT
+    zTensorTranspose(perm, dim, (double _Complex &)alpha, false,
+                     (const double _Complex *)A, sizeA, outerSizeA,
+                     (double _Complex &)beta, (double _Complex *)B, outerSizeB,
+                     numThreads, useRowMajor);
+#endif
 }
 
 template <typename FL>
