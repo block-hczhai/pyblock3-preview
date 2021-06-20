@@ -54,6 +54,16 @@ tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
 flat_fermion_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
                              uint32_t fdq);
 
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<FL>, py::array_t<uint32_t>>
+flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
+                       const py::array_t<uint32_t> &ashs,
+                       const py::array_t<FL> &adata,
+                       const py::array_t<uint32_t> &aidxs, int idx,
+                       const string &pattern, bool is_qr);
+
 #define TMPL_EXTERN extern
 #define TMPL_NAME flat_fermion
 

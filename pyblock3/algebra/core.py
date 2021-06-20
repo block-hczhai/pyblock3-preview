@@ -68,6 +68,8 @@ class SubTensor(np.ndarray):
     """
     def __new__(cls, reduced, q_labels=None):
         obj = np.asarray(reduced).view(cls)
+        if q_labels is not None and not isinstance(q_labels, tuple):
+            q_labels = tuple(q_labels)
         obj.q_labels = q_labels
         return obj
 
@@ -185,8 +187,8 @@ class SubTensor(np.ndarray):
             idxa, idxb = axes
         idxa = [x if x >= 0 else a.ndim + x for x in idxa]
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
-        out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
-        out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
+        out_idx_a = sorted(list(set(range(0, a.ndim)) - set(idxa)))
+        out_idx_b = sorted(list(set(range(0, b.ndim)) - set(idxb)))
 
         assert all(a.q_labels[ia] == b.q_labels[ib]
                    for ia, ib in zip(idxa, idxb))
@@ -784,8 +786,8 @@ class SparseTensor(NDArrayOperatorsMixin):
             idxa, idxb = axes
         idxa = [x if x >= 0 else a.ndim + x for x in idxa]
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
-        out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
-        out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
+        out_idx_a = sorted(list(set(range(0, a.ndim)) - set(idxa)))
+        out_idx_b = sorted(list(set(range(0, b.ndim)) - set(idxb)))
         assert len(idxa) == len(idxb)
 
         map_idx_b = {}
@@ -904,7 +906,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                     mb = blocks_map[block.q_labels]
                     np.subtract(mb, block, out=mb)
                 else:
-                    blocks_map[block.q_labels] = block
+                    blocks_map[block.q_labels] = -block
             blocks = list(blocks_map.values())
             return a.__class__(blocks=blocks)
 
@@ -1198,7 +1200,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         for ik, g in groupby(ss_trunc, key=lambda x: x[0]):
             gl = np.array([ig[1] for ig in g], dtype=int)
             gl_inv = np.array(
-                list(set(range(0, len(s.blocks[ik]))) - set(gl)), dtype=int)
+                sorted(list(set(range(0, len(s.blocks[ik]))) - set(gl))), dtype=int)
             while ikl < l.n_blocks and l.blocks[ikl].q_labels[-1] != s.blocks[ik].q_labels[0]:
                 ikl += 1
             while ikl < l.n_blocks and l.blocks[ikl].q_labels[-1] == s.blocks[ik].q_labels[0]:
@@ -2071,7 +2073,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         for ik, g in groupby(ss_trunc, key=lambda x: x[0]):
             gl = np.array([ig[1] for ig in g], dtype=int)
             gl_inv = np.array(
-                list(set(range(0, len(s.blocks[ik]))) - set(gl)), dtype=int)
+                sorted(list(set(range(0, len(s.blocks[ik]))) - set(gl))), dtype=int)
             for il, lb in enumerate(lbs):
                 ikl = lmps[il][s.blocks[ik].q_labels[0]]
                 while ikl < len(lb) and lb[ikl].q_labels[-1] == s.blocks[ik].q_labels[0]:

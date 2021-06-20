@@ -460,6 +460,310 @@ flat_fermion_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
     return std::make_tuple(cqs, cshs, cidxs);
 }
 
+template <typename Q>
+map_fusing flat_fermion_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
+                                             const py::array_t<uint32_t> &ashs,
+                                             const string &pattern, int idxa,
+                                             int idxb) {
+    map_fusing r;
+    if (aqs.shape()[0] == 0)
+        return r;
+    const int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
+    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
+                  asj = aqs.strides()[1] / sizeof(uint32_t);
+    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
+    vector<Q> qs(idxb - idxa);
+    vector<uint32_t> shs(idxb - idxa);
+    const uint32_t *pshs = ashs.data(), *pqs = aqs.data();
+    unordered_map<uint32_t,
+                  vector<pair<vector<Q>, pair<uint32_t, vector<uint32_t>>>>>
+        xr;
+    for (int i = 0; i < n_blocks_a; i++) {
+        Q xq;
+        for (int j = idxa; j < idxb; j++) {
+            qs[j - idxa] = Q::to_q(pqs[i * asi + j * asj]);
+            shs[j - idxa] = pshs[i * asi + j * asj];
+            xq = xq + (pattern[j] == '+' ? qs[j - idxa] : -qs[j - idxa]);
+        }
+        uint32_t xxq = Q::from_q(xq);
+        assert(Q::to_q(xxq) == xq);
+        uint32_t sz =
+            accumulate(shs.begin(), shs.end(), 1, multiplies<uint32_t>());
+        xr[xxq].push_back(make_pair(qs, make_pair(sz, shs)));
+    }
+    vector<uint32_t> xqs(idxb - idxa);
+    for (auto &m : xr) {
+        vector<int> midx(m.second.size());
+        for (size_t i = 0; i < m.second.size(); i++)
+            midx[i] = i;
+        sort(midx.begin(), midx.end(), [&m](size_t i, size_t j) {
+            return less_pvsz<Q, pair<uint32_t, vector<uint32_t>>>(m.second[i],
+                                                                  m.second[j]);
+        });
+        auto &mr = r[m.first];
+        mr.first = 0;
+        for (size_t im = 0; im < m.second.size(); im++) {
+            auto &mm = m.second[midx[im]];
+            bool same = mr.first == 0 ? false : true;
+            for (int j = idxa; j < idxb; j++) {
+                uint32_t qq = Q::from_q(mm.first[j - idxa]);
+                same = same && qq == xqs[j - idxa];
+                xqs[j - idxa] = qq;
+            }
+            if (same) {
+                midx[im] = -1;
+                continue;
+            }
+            mr.first += mm.second.first;
+        }
+        sort(midx.begin(), midx.end());
+        mr.first = 0;
+        for (size_t im = 0; im < m.second.size(); im++) {
+            if (midx[im] == -1)
+                continue;
+            auto &mm = m.second[midx[im]];
+            for (int j = idxa; j < idxb; j++) {
+                uint32_t qq = Q::from_q(mm.first[j - idxa]);
+                xqs[j - idxa] = qq;
+            }
+            mr.second[xqs] = make_pair(mr.first, mm.second.second);
+            mr.first += mm.second.first;
+        }
+    }
+    return r;
+}
+
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<FL>, py::array_t<uint32_t>>
+flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
+                       const py::array_t<uint32_t> &ashs,
+                       const py::array_t<FL> &adata,
+                       const py::array_t<uint32_t> &aidxs, int idx,
+                       const string &pattern, bool is_qr) {
+    if (aqs.shape()[0] == 0)
+        return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata,
+                               aidxs);
+    const int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
+    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
+                  asj = aqs.strides()[1] / sizeof(uint32_t);
+    assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
+
+    const map_fusing linfo =
+        flat_fermion_tensor_kron_sum_info<Q>(aqs, ashs, pattern, 0, idx);
+    const map_fusing rinfo =
+        flat_fermion_tensor_kron_sum_info<Q>(aqs, ashs, pattern, idx, ndima);
+
+    vector<vector<uint32_t>> ufqsl(n_blocks_a), ufqsr(n_blocks_a);
+    vector<pair<uint32_t, uint32_t>> fqs(n_blocks_a);
+    unordered_map<uint32_t, size_t> mat_mp;
+    const uint32_t *pshs = ashs.data(), *pqs = aqs.data(), *pia = aidxs.data();
+    const FL *pa = adata.data();
+    size_t mat_size = 0;
+    unordered_map<uint32_t, vector<int>> mat_idxl, mat_idxr;
+    int max_lshape = 0, max_rshape = 0, max_mshape = 0;
+    size_t max_tmp_size = 0;
+    bool has_dq = false;
+    Q dq;
+    for (int ia = 0; ia < n_blocks_a; ia++) {
+        Q xql, xqr;
+        ufqsl[ia].resize(idx);
+        ufqsr[ia].resize(ndima - idx);
+        for (int j = 0; j < idx; j++) {
+            ufqsl[ia][j] = pqs[ia * asi + j * asj];
+            xql = xql + (pattern[j] == '+' ? Q::to_q(ufqsl[ia][j])
+                                           : -Q::to_q(ufqsl[ia][j]));
+        }
+        for (int j = idx; j < ndima; j++) {
+            ufqsr[ia][j - idx] = pqs[ia * asi + j * asj];
+            xqr = xqr + (pattern[j] == '+' ? Q::to_q(ufqsr[ia][j - idx])
+                                           : -Q::to_q(ufqsr[ia][j - idx]));
+        }
+        if (!has_dq)
+            dq = xql + xqr, has_dq = true;
+        else {
+            assert(xql + xqr == dq);
+            assert(dq - xql == xqr);
+            assert(dq - xqr == xql);
+        }
+        uint32_t ql = Q::from_q(xql), qr = Q::from_q(xqr);
+        fqs[ia] = make_pair(ql, qr);
+        assert(linfo.count(ql) && rinfo.count(qr));
+        mat_idxl[ql].push_back(ia);
+        mat_idxr[qr].push_back(ia);
+        if (!mat_mp.count(ql)) {
+            mat_mp[ql] = mat_size;
+            int ml = linfo.at(ql).first, mr = rinfo.at(qr).first;
+            mat_size += (size_t)ml * mr;
+            max_lshape = max(ml, max_lshape);
+            max_rshape = max(mr, max_rshape);
+            max_mshape = max(min(ml, mr), max_mshape);
+            max_tmp_size = max((size_t)ml * mr, max_tmp_size);
+        }
+    }
+
+    vector<FL> mat_data(mat_size);
+    vector<pair<int, int>> lkns(n_blocks_a), rkns(n_blocks_a);
+    for (int ia = 0; ia < n_blocks_a; ia++) {
+        const uint32_t ql = fqs[ia].first, qr = fqs[ia].second;
+        const vector<uint32_t> &qls = ufqsl[ia], &qrs = ufqsr[ia];
+        assert(mat_mp.count(ql));
+        int lfn = linfo.at(ql).first, rfn = rinfo.at(qr).first;
+        const pair<uint32_t, vector<uint32_t>> &lpk =
+            linfo.at(ql).second.at(qls);
+        const pair<uint32_t, vector<uint32_t>> &rpk =
+            rinfo.at(qr).second.at(qrs);
+        int lk = (int)lpk.first, rk = (int)rpk.first;
+        int lkn = (int)accumulate(lpk.second.begin(), lpk.second.end(), 1,
+                                  multiplies<uint32_t>());
+        int rkn = (int)accumulate(rpk.second.begin(), rpk.second.end(), 1,
+                                  multiplies<uint32_t>());
+        xlacpy<FL>("N", &rkn, &lkn, pa + pia[ia], &rkn,
+                   mat_data.data() + mat_mp[ql] + rk + (size_t)lk * rfn, &rfn);
+        lkns[ia] = make_pair(lk, lkn), rkns[ia] = make_pair(rk, rkn);
+    }
+
+    int n_blocks_s = (int)mat_mp.size();
+    int n_blocks_l = 0, n_blocks_r = 0;
+    size_t l_size = 0, r_size = 0;
+    for (auto &v : mat_idxl) {
+        int mm = min(linfo.at(v.first).first,
+                     rinfo.at(Q::from_q(dq - Q::to_q(v.first))).first);
+        sort(v.second.begin(), v.second.end(),
+             [&lkns](int i, int j) { return lkns[i].first < lkns[j].first; });
+        for (size_t i = 1; i < v.second.size(); i++) {
+            const int vi = v.second[i], vip = v.second[i - 1];
+            if (lkns[vi].first == lkns[vip].first)
+                v.second[i - 1] = -1;
+        }
+        for (auto &vi : v.second)
+            if (vi != -1)
+                l_size += (size_t)mm * lkns[vi].second, n_blocks_l++;
+    }
+    for (auto &v : mat_idxr) {
+        int mm = min(linfo.at(Q::from_q(dq - Q::to_q(v.first))).first,
+                     rinfo.at(v.first).first);
+        sort(v.second.begin(), v.second.end(),
+             [&rkns](int i, int j) { return rkns[i].first < rkns[j].first; });
+        for (size_t i = 1; i < v.second.size(); i++) {
+            const int vi = v.second[i], vip = v.second[i - 1];
+            if (rkns[vi].first == rkns[vip].first)
+                v.second[i - 1] = -1;
+        }
+        for (auto &vi : v.second)
+            if (vi != -1)
+                r_size += (size_t)mm * rkns[vi].second, n_blocks_r++;
+    }
+
+    py::array_t<uint32_t> lqs(vector<ssize_t>{n_blocks_l, idx + 1}),
+        lshs(vector<ssize_t>{n_blocks_l, idx + 1});
+    py::array_t<uint32_t> lidxs(vector<ssize_t>{n_blocks_l + 1});
+    py::array_t<uint32_t> rqs(vector<ssize_t>{n_blocks_r, ndima - idx + 1}),
+        rshs(vector<ssize_t>{n_blocks_r, ndima - idx + 1});
+    py::array_t<uint32_t> ridxs(vector<ssize_t>{n_blocks_r + 1});
+    py::array_t<FL> ldata(vector<ssize_t>{(ssize_t)l_size});
+    py::array_t<FL> rdata(vector<ssize_t>{(ssize_t)r_size});
+
+    uint32_t *plqs = lqs.mutable_data(), *plshs = lshs.mutable_data(),
+             *plidxs = lidxs.mutable_data();
+    uint32_t *prqs = rqs.mutable_data(), *prshs = rshs.mutable_data(),
+             *pridxs = ridxs.mutable_data();
+    FL *pl = ldata.mutable_data(), *pr = rdata.mutable_data();
+
+    int lwork = (is_qr ? max_rshape : max_lshape) * 34, info = 0;
+    vector<FL> tau(max_mshape), work(lwork), tmpl(max_tmp_size),
+        tmpr(max_tmp_size);
+    int iis = 0, iil = 0, iir = 0;
+    plidxs[0] = pridxs[0] = 0;
+    if (is_qr)
+        memset(pr, 0, sizeof(FL) * r_size);
+    else
+        memset(pl, 0, sizeof(FL) * l_size);
+    for (auto &mq : mat_mp) {
+        const uint32_t ql = mq.first, qr = Q::from_q(dq - Q::to_q(mq.first));
+        FL *mat = mat_data.data() + mq.second;
+        int ml = linfo.at(ql).first, mr = rinfo.at(qr).first, mm = min(ml, mr);
+        const int lshape = ml, rshape = mr, mshape = mm;
+        int lwork = max(ml, mr) * 34;
+        if (is_qr) {
+            memcpy(tmpr.data(), mat, sizeof(FL) * lshape * rshape);
+            xgelqf<FL>(&rshape, &lshape, tmpr.data(), &rshape, tau.data(),
+                       work.data(), &lwork, &info);
+            assert(info == 0);
+            memcpy(tmpl.data(), tmpr.data(), sizeof(FL) * lshape * rshape);
+            xunglq<FL>(&mshape, &lshape, &mshape, tmpl.data(), &rshape,
+                       tau.data(), work.data(), &lwork, &info);
+            assert(info == 0);
+        } else {
+            memcpy(tmpl.data(), mat, sizeof(FL) * lshape * rshape);
+            xgeqrf<FL>(&rshape, &lshape, tmpl.data(), &rshape, tau.data(),
+                       work.data(), &lwork, &info);
+            assert(info == 0);
+            memcpy(tmpr.data(), tmpl.data(), sizeof(FL) * lshape * rshape);
+            xungqr<FL>(&rshape, &mshape, &mshape, tmpr.data(), &rshape,
+                       tau.data(), work.data(), &lwork, &info);
+            assert(info == 0);
+        }
+        int isl = 0, isr = 0;
+        for (auto &v : mat_idxl[ql]) {
+            if (v == -1)
+                continue;
+            plidxs[iil + isl + 1] =
+                plidxs[iil + isl] + (uint32_t)mm * lkns[v].second;
+            if (!is_qr)
+                for (int j = 0; j < lkns[v].second; j++)
+                    memcpy(pl + plidxs[iil + isl] + j * mshape,
+                           tmpl.data() + (lkns[v].first + j) * rshape,
+                           sizeof(FL) * min(mshape, lkns[v].first + j + 1));
+            else
+                xlacpy<FL>("N", &mm, &lkns[v].second,
+                           tmpl.data() + lkns[v].first * mr, &mr,
+                           pl + plidxs[iil + isl], &mm);
+            for (int i = 0; i < idx; i++) {
+                plqs[(iil + isl) * (idx + 1) + i] = pqs[v * asi + i * asj];
+                plshs[(iil + isl) * (idx + 1) + i] = pshs[v * asi + i * asj];
+            }
+            plqs[(iil + isl) * (idx + 1) + idx] =
+                is_qr ? Q::from_q(Q::to_q(ql) - dq) : ql;
+            plshs[(iil + isl) * (idx + 1) + idx] = mm;
+            isl++;
+        }
+        for (auto &v : mat_idxr[qr]) {
+            if (v == -1)
+                continue;
+            pridxs[iir + isr + 1] =
+                pridxs[iir + isr] + (uint32_t)mm * rkns[v].second;
+            if (is_qr) {
+                int pxdr = rkns[v].first;
+                for (int j = 0; j < min(mm, pxdr + rkns[v].second); j++) {
+                    memcpy(pr + pridxs[iir + isr] + j * rkns[v].second +
+                               max(j, pxdr) - pxdr,
+                           tmpr.data() + max(j, pxdr) + j * rshape,
+                           sizeof(FL) * (rkns[v].second + pxdr - max(j, pxdr)));
+                }
+            } else
+                xlacpy<FL>("N", &rkns[v].second, &mm,
+                           tmpr.data() + rkns[v].first, &mr,
+                           pr + pridxs[iir + isr], &rkns[v].second);
+            for (int i = idx; i < ndima; i++) {
+                prqs[(iir + isr) * (ndima - idx + 1) + i - idx + 1] =
+                    pqs[v * asi + i * asj];
+                prshs[(iir + isr) * (ndima - idx + 1) + i - idx + 1] =
+                    pshs[v * asi + i * asj];
+            }
+            prqs[(iir + isr) * (ndima - idx + 1) + 0] =
+                is_qr ? Q::from_q(-Q::to_q(qr)) : Q::from_q(dq - Q::to_q(qr));
+            prshs[(iir + isr) * (ndima - idx + 1) + 0] = mm;
+            isr++;
+        }
+        iil += isl, iir += isr;
+    }
+    assert(iil == n_blocks_l && iir == n_blocks_r);
+    assert(plidxs[iil] == l_size && pridxs[iir] == r_size);
+    return std::make_tuple(lqs, lshs, ldata, lidxs, rqs, rshs, rdata, ridxs);
+}
+
 #define TMPL_NAME flat_fermion
 
 #include "symmetry_tmpl.hpp"
