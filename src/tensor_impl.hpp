@@ -41,6 +41,8 @@
 
 #ifndef _HAS_INTEL_MKL
 
+using namespace std;
+
 extern "C" {
 
 // vector scale

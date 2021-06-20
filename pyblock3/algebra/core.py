@@ -742,8 +742,8 @@ class SparseTensor(NDArrayOperatorsMixin):
             idxa, idxb = axes
         idxa = [x if x >= 0 else a.ndim + x for x in idxa]
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
-        out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
-        out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
+        out_idx_a = sorted(list(set(range(0, a.ndim)) - set(idxa)))
+        out_idx_b = sorted(list(set(range(0, b.ndim)) - set(idxb)))
         assert len(idxa) == len(idxb)
 
         map_idx_b = {}
@@ -862,7 +862,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                     mb = blocks_map[block.q_labels]
                     np.subtract(mb, block, out=mb)
                 else:
-                    blocks_map[block.q_labels] = block
+                    blocks_map[block.q_labels] = -block
             blocks = list(blocks_map.values())
             return a.__class__(blocks=blocks)
 

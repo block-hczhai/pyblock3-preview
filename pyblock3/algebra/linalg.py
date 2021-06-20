@@ -102,6 +102,210 @@ def _precondition(r, diag):
     return z
 
 
+def _simple_olsen_precondition(q, c, ld, ldp, diag):
+    """Simple Olsen precondition."""
+    if ldp is None:
+        eps = np.linalg.norm(q)
+    else:
+        eps = -abs(ld - ldp)
+    mask = np.abs(ld - diag) > 1E-12
+    q += (-eps) * c
+    q[mask] /= ld - diag[mask]
+
+def _robust_simple_olsen_precondition(q, c, lds, ck, ldp, diag):
+    """Simple Olsen precondition with robust shifting."""
+    qnorm = np.linalg.norm(q)
+    delta = qnorm if ldp is None else abs(lds[ck] - ldp)
+    if len(lds) <= 1:
+        rsh = delta
+    elif ck == 0:
+        gap = abs(lds[ck] - lds[ck + 1])
+        rsh = min(delta, qnorm * qnorm / gap) if gap > qnorm else qnorm
+    elif ck == len(lds) - 1:
+        gap = abs(lds[ck] - lds[ck - 1])
+        rsh = min(delta, qnorm * qnorm / gap) if gap > qnorm else qnorm
+        rsh = min(rsh, gap)
+    else:
+        low_gap = abs(lds[ck] - lds[ck - 1])
+        gap = min(abs(lds[ck] - lds[ck + 1]), low_gap)
+        rsh = min(delta, qnorm * qnorm / gap) if gap > qnorm else qnorm
+        rsh = min(rsh, low_gap)
+    eps = min(delta, rsh)
+    mask = np.abs(lds[ck] - rsh - diag) > 1E-12
+    q += (-eps) * c
+    q[mask] /= lds[ck] - rsh - diag[mask]
+
+
+def _robust_olsen_precondition(q, c, lds, ck, ldp, diag):
+    """Olsen precondition with robust shifting."""
+    qnorm = np.linalg.norm(q)
+    delta = qnorm if ldp is None else abs(lds[ck] - ldp)
+    if len(lds) <= 1:
+        rsh = delta
+    elif ck == 0:
+        gap = abs(lds[ck] - lds[ck + 1])
+        rsh = min(delta, qnorm * qnorm / gap) if gap > qnorm else qnorm
+    elif ck == len(lds) - 1:
+        gap = abs(lds[ck] - lds[ck - 1])
+        rsh = min(delta, qnorm * qnorm / gap) if gap > qnorm else qnorm
+        rsh = min(rsh, gap)
+    else:
+        low_gap = abs(lds[ck] - lds[ck - 1])
+        gap = min(abs(lds[ck] - lds[ck + 1]), low_gap)
+        rsh = min(delta, qnorm * qnorm / gap) if gap > qnorm else qnorm
+        rsh = min(rsh, low_gap)
+    t = c.copy()
+    mask = np.abs(lds[ck] - rsh - diag) > 1E-12
+    t[mask] /= lds[ck] - rsh - diag[mask]
+    numerator = np.dot(t, q)
+    denominator = np.dot(c, t)
+    q += (-numerator / denominator) * c
+    q[mask] /= lds[ck] - rsh - diag[mask]
+
+
+# E.R. Davidson, J. Comput. Phys. 17 (1), 87-94 (1975).
+def davidson2(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflation_max_size=30, iprint=False, mpi=False):
+    """
+    Davidson diagonalization.
+
+    Args:
+        a : Matrix
+            The matrix to diagonalize.
+        b : list(Vector)
+            The initial guesses for eigenvectors.
+
+    Kwargs:
+        max_iter : int
+            Maximal number of davidson iteration.
+        conv_thrd : float
+            Convergence threshold for squared norm of eigenvector.
+        deflation_min_size : int
+            Sub-space size after deflation.
+        deflation_max_size : int
+            Maximal sub-space size before deflation.
+        iprint : bool
+            Indicate whether davidson iteration information should be printed.
+        mpi : bool
+            Indicate whether mpi is used.
+
+    Returns:
+        ld : list(float)
+            List of eigenvalues.
+        b : list(Vector)
+            List of eigenvectors.
+    """
+
+    if mpi:
+        from mpi4py import MPI
+        rank = MPI.COMM_WORLD.Get_rank()
+        comm = MPI.COMM_WORLD
+    else:
+        rank = 0
+
+    assert len(b) == k
+    if deflation_min_size < k:
+        deflation_min_size = k
+    aa = a.diag() if hasattr(a, "diag") else None
+    for i in range(k):
+        for j in range(i):
+            b[i] += -np.dot(b[j], b[i]) * b[j]
+        b[i] /= np.linalg.norm(b[i])
+    sigma = [None] * k
+    q = b[0]
+    l = k
+    ck = 0
+    msig = 0
+    m = l
+    xiter = 0
+    ldp = None
+    while xiter < max_iter:
+        xiter += 1
+        if mpi and xiter != 1:
+            for i in range(msig, m):
+                b[i] = comm.bcast(b[i], root=0)
+        for i in range(msig, m):
+            sigma[i] = a @ b[i]
+            msig += 1
+        if not mpi or rank == 0:
+            atilde = np.zeros((m, m))
+            for i in range(m):
+                for j in range(i + 1):
+                    atilde[i, j] = np.dot(b[i], sigma[j])
+                    atilde[j, i] = atilde[i, j]
+            ld, alpha = np.linalg.eigh(atilde)
+            # b[1:m] = np.dot(b[:], alpha[:, 1:m])
+            tmp = [ib.copy() for ib in b[:m]]
+            for j in range(m):
+                b[j] *= alpha[j, j]
+            for j in range(m):
+                for i in range(m):
+                    if i != j:
+                        b[j] += alpha[i, j] * tmp[i]
+            # sigma[1:m] = np.dot(sigma[:], alpha[:, 1:m])
+            for i in range(m):
+                tmp[i] = sigma[i].copy()
+            for j in range(m):
+                sigma[j] *= alpha[j, j]
+            for j in range(m):
+                for i in range(m):
+                    if i != j:
+                        sigma[j] += alpha[i, j] * tmp[i]
+            for i in range(ck):
+                q = sigma[i].copy()
+                q += (-ld[i]) * b[i]
+                qq = np.dot(q, q)
+                if np.sqrt(qq) >= conv_thrd:
+                    ck = i
+                    ldp = None
+                    break
+            # q = sigma[ck] - b[ck] * ld[ck]
+            q = sigma[ck].copy()
+            q += (-ld[ck]) * b[ck]
+            qq = np.dot(q, q)
+            if iprint:
+                print("%5d %5d %5d %15.8f %9.2E" % (xiter, m, ck, ld[ck], qq))
+
+            if aa is not None:
+                # _simple_olsen_precondition(q, b[ck], ld[ck], ldp, aa)
+                # _robust_simple_olsen_precondition(q, b[ck], ld, ck, ldp, aa)
+                # _robust_olsen_precondition(q, b[ck], ld, ck, ldp, aa)
+                _olsen_precondition(q, b[ck], ld[ck], aa)
+                ldp = ld[ck]
+        if mpi:
+            qq = comm.bcast(qq if rank == 0 else None, root=0)
+            ck = comm.bcast(ck if rank == 0 else None, root=0)
+
+        if qq < 0 or np.sqrt(qq) < conv_thrd:
+            ck += 1
+            ldp = None
+            if ck == k:
+                break
+        else:
+            if m >= deflation_max_size:
+                m = deflation_min_size
+                msig = deflation_min_size
+            if not mpi or rank == 0:
+                for j in range(m):
+                    q += (-np.dot(b[j], q)) * b[j]
+                q /= np.linalg.norm(q)
+            if m >= len(b):
+                b.append(None)
+                sigma.append(None)
+            if not mpi or rank == 0:
+                b[m] = q
+            m += 1
+
+        if xiter == max_iter:
+            raise RuntimeError("Only %d converged!" % ck)
+
+    if mpi:
+        ld = comm.bcast(ld if rank == 0 else None, root=0)
+        for i in range(0, ck):
+            b[i] = comm.bcast(b[i], root=0)
+
+    return ld[:ck], b[:ck], xiter
+
+
 # E.R. Davidson, J. Comput. Phys. 17 (1), 87-94 (1975).
 def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflation_max_size=30, iprint=False, mpi=False):
     """
