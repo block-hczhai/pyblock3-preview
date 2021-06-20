@@ -7,7 +7,7 @@ import time
 import numpy as np
 import pyblock3.algebra.funcs as pbalg
 from pyblock3.algebra.mpe import MPE
-# from pyblock3.aux.hamil import HamilTools
+# from pyblock3.block2.hamil import HamilTools
 from pyblock3.hamiltonian import Hamiltonian
 from pyblock3.fcidump import FCIDUMP
 from pyblock3.symbolic.symbolic_mpo import QCSymbolicMPO
