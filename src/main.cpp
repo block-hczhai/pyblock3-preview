@@ -33,6 +33,7 @@
 #include <pybind11/stl_bind.h>
 
 PYBIND11_MAKE_OPAQUE(vector<uint32_t>);
+PYBIND11_MAKE_OPAQUE(vector<uint64_t>);
 PYBIND11_MAKE_OPAQUE(
     unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>);
 PYBIND11_MAKE_OPAQUE(map_fusing);
@@ -40,10 +41,10 @@ PYBIND11_MAKE_OPAQUE(vector<unordered_map<uint32_t, uint32_t>>);
 PYBIND11_MAKE_OPAQUE(unordered_map<uint32_t, uint32_t>);
 PYBIND11_MAKE_OPAQUE(
     vector<std::tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                      py::array_t<double>, py::array_t<uint32_t>>>);
+                      py::array_t<double>, py::array_t<uint64_t>>>);
 PYBIND11_MAKE_OPAQUE(
     vector<std::tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                      py::array_t<complex<double>>, py::array_t<uint32_t>>>);
+                      py::array_t<complex<double>>, py::array_t<uint64_t>>>);
 
 template <typename Q>
 void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
@@ -713,6 +714,7 @@ PYBIND11_MODULE(block3, m) {
     });
 
     py::bind_vector<vector<uint32_t>>(m, "VectorUInt");
+    py::bind_vector<vector<uint64_t>>(m, "VectorUInt64");
     py::bind_map<
         unordered_map<vector<uint32_t>, pair<uint32_t, vector<uint32_t>>>>(
         m, "MapVUIntPUV");
@@ -726,11 +728,11 @@ PYBIND11_MODULE(block3, m) {
         });
 
     py::bind_vector<vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                                 py::array_t<double>, py::array_t<uint32_t>>>>(
+                                 py::array_t<double>, py::array_t<uint64_t>>>>(
         m, "VectorFlat");
     py::bind_vector<
         vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                     py::array_t<complex<double>>, py::array_t<uint32_t>>>>(
+                     py::array_t<complex<double>>, py::array_t<uint64_t>>>>(
         m, "VectorComplexFlat");
 
     py::module m_sz = m.def_submodule(
