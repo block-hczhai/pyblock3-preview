@@ -1004,8 +1004,8 @@ class FlatFermionTensor(FlatSparseTensor):
         self._pattern = pattern
 
         if idxs is None:
-            self.idxs = np.zeros((self.n_blocks + 1, ), dtype=shapes.dtype)
-            self.idxs[1:] = np.cumsum(shapes.prod(axis=1))
+            self.idxs = np.zeros((self.n_blocks + 1, ), dtype=np.uint64)
+            self.idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
         else:
             self.idxs = idxs
         if self.n_blocks != 0:
@@ -1113,8 +1113,8 @@ class FlatFermionTensor(FlatSparseTensor):
         for i in range(n_blocks):
             shapes[i] = spt.blocks[i].shape
             q_labels[i] = list(map(cls.to_flat, spt.blocks[i].q_labels))
-        idxs = np.zeros((n_blocks + 1, ), dtype=np.uint32)
-        idxs[1:] = np.cumsum(shapes.prod(axis=1))
+        idxs = np.zeros((n_blocks + 1, ), dtype=np.uint64)
+        idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
         data = np.zeros((idxs[-1], ), dtype=spt.dtype)
         for i in range(n_blocks):
             data[idxs[i]:idxs[i + 1]] = spt.blocks[i].flatten()

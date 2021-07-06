@@ -30,7 +30,7 @@ template <typename Q, typename FL>
 void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
                                    const py::array_t<uint32_t> &ashs,
                                    const py::array_t<FL> &adata,
-                                   const py::array_t<uint32_t> &aidxs,
+                                   const py::array_t<uint64_t> &aidxs,
                                    const py::array_t<int32_t> &perm,
                                    py::array_t<FL> &cdata) {
     int n_blocks_a = (int)ashs.shape()[0], ndima = (int)ashs.shape()[1];
@@ -38,7 +38,8 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
                   asj = ashs.strides()[1] / sizeof(uint32_t);
     const int *perma = (const int *)perm.data();
     const FL *pa = adata.data();
-    const uint32_t *pia = aidxs.data(), *psha = ashs.data();
+    const uint64_t *pia = aidxs.data();
+    const uint32_t *psha = ashs.data();
     FL *pc = cdata.mutable_data();
 
     const uint32_t *apqs = aqs.data();
@@ -71,7 +72,7 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
         int shape_a[ndima];
         for (int i = 0; i < ndima; i++)
             shape_a[i] = psha[ia * asi + i * asj];
-        uint32_t size_a = pia[ia + 1] - pia[ia];
+        uint32_t size_a = (uint32_t)(pia[ia + 1] - pia[ia]);
         tensor_transpose_impl<FL>(ndima, size_a, perma, shape_a, a, c,
                                   (FL)phase_a[ia], 0.0);
     }
@@ -79,12 +80,12 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
 
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
-      py::array_t<uint32_t>>
+      py::array_t<uint64_t>>
 flat_fermion_tensor_tensordot(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<FL> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<FL> &adata, const py::array_t<uint64_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
-    const py::array_t<FL> &bdata, const py::array_t<uint32_t> &bidxs,
+    const py::array_t<FL> &bdata, const py::array_t<uint64_t> &bidxs,
     const py::array_t<int> &idxa, const py::array_t<int> &idxb) {
     if (aqs.shape()[0] == 0)
         return std::make_tuple(aqs, ashs, adata, aidxs);
@@ -155,9 +156,11 @@ flat_fermion_tensor_tensordot(
             outb[j++] = i;
 
     // permutation
-    vector<int> perma(ndima + n_blocks_a + 1, -1);
-    vector<int> permb(ndimb + n_blocks_b + 1, -1);
-    int *piatr = perma.data() + ndima, *pibtr = permb.data() + ndimb;
+    vector<int> perma(ndima, -1);
+    vector<int> permb(ndimb, -1);
+    vector<uint64_t> viatr(n_blocks_a + 1, -1);
+    vector<uint64_t> vibtr(n_blocks_b + 1, -1);
+    uint64_t *piatr = viatr.data(), *pibtr = vibtr.data();
     if (trans_a == 0) {
         for (int i = 0; i < nctr; i++)
             perma[i] = pidxa[i];
@@ -309,13 +312,13 @@ flat_fermion_tensor_tensordot(
     }
 
     vector<ssize_t> sh = {n_blocks_c, ndimc};
-    py::array_t<uint32_t> cqs(sh), cshs(sh),
-        cidxs(vector<ssize_t>{n_blocks_c + 1});
+    py::array_t<uint32_t> cqs(sh), cshs(sh);
+    py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
     assert(cqs.strides()[1] == sizeof(uint32_t));
     assert(cshs.strides()[1] == sizeof(uint32_t));
     py::array_t<FL> cdata(vector<ssize_t>{csize});
-    uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data(),
-             *pcidxs = cidxs.mutable_data();
+    uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
+    uint64_t *pcidxs = cidxs.mutable_data();
     vector<uint32_t> psha(n_blocks_a * ndima), pshb(n_blocks_b * ndimb);
     for (int i = 0; i < n_blocks_a; i++)
         for (int j = 0; j < ndima; j++)
@@ -342,25 +345,25 @@ flat_fermion_tensor_tensordot(
 
     // transpose
     FL *pa = (FL *)adata.data(), *pb = (FL *)bdata.data();
-    uint32_t *pia = (uint32_t *)aidxs.data(), *pib = (uint32_t *)bidxs.data();
+    uint64_t *pia = (uint64_t *)aidxs.data(), *pib = (uint64_t *)bidxs.data();
     if (trans_a == 0) {
         int iatr = 0;
         for (int ia = 0; ia < n_blocks_a; ia++)
             if (piatr[ia] != -1)
                 piatr[ia] = iatr, iatr += pia[ia + 1] - pia[ia];
         FL *new_pa = new FL[iatr];
-        int *new_pia = (int *)piatr;
+        uint64_t *new_pia = piatr;
         for (int ia = 0; ia < n_blocks_a; ia++)
             if (piatr[ia] != -1) {
                 FL *a = pa + pia[ia], *new_a = new_pa + new_pia[ia];
                 const int *shape_a = (const int *)(psha.data() + ia * ndima);
-                uint32_t size_a = pia[ia + 1] - pia[ia];
+                uint32_t size_a = (uint32_t)(pia[ia + 1] - pia[ia]);
                 tensor_transpose_impl<FL>(ndima, size_a, perma.data(), shape_a,
                                           a, new_a, 1.0, 0.0);
             }
         trans_a = 1;
         pa = new_pa;
-        pia = (uint32_t *)new_pia;
+        pia = new_pia;
     }
 
     if (trans_b == 0) {
@@ -369,18 +372,18 @@ flat_fermion_tensor_tensordot(
             if (pibtr[ib] != -1)
                 pibtr[ib] = ibtr, ibtr += pib[ib + 1] - pib[ib];
         FL *new_pb = new FL[ibtr];
-        int *new_pib = (int *)pibtr;
+        uint64_t *new_pib = pibtr;
         for (int ib = 0; ib < n_blocks_b; ib++)
             if (pibtr[ib] != -1) {
                 FL *b = pb + pib[ib], *new_b = new_pb + new_pib[ib];
                 const int *shape_b = (const int *)(pshb.data() + ib * ndimb);
-                uint32_t size_b = pib[ib + 1] - pib[ib];
+                uint32_t size_b = (uint32_t)(pib[ib + 1] - pib[ib]);
                 tensor_transpose_impl<FL>(ndimb, size_b, permb.data(), shape_b,
                                           b, new_b, 1.0, 0.0);
             }
         trans_b = 1;
         pb = new_pb;
-        pib = (uint32_t *)new_pib;
+        pib = new_pib;
     }
 
     auto tra = trans_a == -1 ? "n" : "t";
@@ -415,7 +418,7 @@ flat_fermion_tensor_tensordot(
 }
 
 template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
 flat_fermion_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
                              uint32_t fdq) {
     int ndim = (int)infos.size();
@@ -425,7 +428,7 @@ flat_fermion_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
     }
     const string pattern(ndim, '+');
     vector<uint32_t> qs, shs;
-    vector<uint32_t> idxs(1, 0);
+    vector<uint64_t> idxs(1, 0);
     vector<vector<pair<Q, uint32_t>>> infox;
     bond_info_trans<Q>(infos, pattern, infox, true);
     Q dq = Q::to_q(fdq);
@@ -456,7 +459,7 @@ flat_fermion_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
     assert(cshs.strides()[1] == sizeof(uint32_t));
     memcpy(cqs.mutable_data(), qs.data(), qs.size() * sizeof(uint32_t));
     memcpy(cshs.mutable_data(), shs.data(), shs.size() * sizeof(uint32_t));
-    memcpy(cidxs.mutable_data(), idxs.data(), idxs.size() * sizeof(uint32_t));
+    memcpy(cidxs.mutable_data(), idxs.data(), idxs.size() * sizeof(uint64_t));
     return std::make_tuple(cqs, cshs, cidxs);
 }
 
@@ -535,12 +538,12 @@ map_fusing flat_fermion_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
 
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
-      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<FL>, py::array_t<uint32_t>>
+      py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<FL>, py::array_t<uint64_t>>
 flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
                        const py::array_t<uint32_t> &ashs,
                        const py::array_t<FL> &adata,
-                       const py::array_t<uint32_t> &aidxs, int idx,
+                       const py::array_t<uint64_t> &aidxs, int idx,
                        const string &pattern, bool is_qr) {
     if (aqs.shape()[0] == 0)
         return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata,
@@ -558,7 +561,8 @@ flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
     vector<vector<uint32_t>> ufqsl(n_blocks_a), ufqsr(n_blocks_a);
     vector<pair<uint32_t, uint32_t>> fqs(n_blocks_a);
     unordered_map<uint32_t, size_t> mat_mp;
-    const uint32_t *pshs = ashs.data(), *pqs = aqs.data(), *pia = aidxs.data();
+    const uint32_t *pshs = ashs.data(), *pqs = aqs.data();
+    const uint64_t *pia = aidxs.data();
     const FL *pa = adata.data();
     size_t mat_size = 0;
     unordered_map<uint32_t, vector<int>> mat_idxl, mat_idxr;
@@ -658,17 +662,17 @@ flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
 
     py::array_t<uint32_t> lqs(vector<ssize_t>{n_blocks_l, idx + 1}),
         lshs(vector<ssize_t>{n_blocks_l, idx + 1});
-    py::array_t<uint32_t> lidxs(vector<ssize_t>{n_blocks_l + 1});
+    py::array_t<uint64_t> lidxs(vector<ssize_t>{n_blocks_l + 1});
     py::array_t<uint32_t> rqs(vector<ssize_t>{n_blocks_r, ndima - idx + 1}),
         rshs(vector<ssize_t>{n_blocks_r, ndima - idx + 1});
-    py::array_t<uint32_t> ridxs(vector<ssize_t>{n_blocks_r + 1});
+    py::array_t<uint64_t> ridxs(vector<ssize_t>{n_blocks_r + 1});
     py::array_t<FL> ldata(vector<ssize_t>{(ssize_t)l_size});
     py::array_t<FL> rdata(vector<ssize_t>{(ssize_t)r_size});
 
-    uint32_t *plqs = lqs.mutable_data(), *plshs = lshs.mutable_data(),
-             *plidxs = lidxs.mutable_data();
-    uint32_t *prqs = rqs.mutable_data(), *prshs = rshs.mutable_data(),
-             *pridxs = ridxs.mutable_data();
+    uint32_t *plqs = lqs.mutable_data(), *plshs = lshs.mutable_data();
+    uint64_t *plidxs = lidxs.mutable_data();
+    uint32_t *prqs = rqs.mutable_data(), *prshs = rshs.mutable_data();
+    uint64_t *pridxs = ridxs.mutable_data();
     FL *pl = ldata.mutable_data(), *pr = rdata.mutable_data();
 
     int lwork = (is_qr ? max_rshape : max_lshape) * 34, info = 0;

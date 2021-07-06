@@ -25,11 +25,11 @@
 
 template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
-      py::array_t<uint32_t>>
+      py::array_t<uint64_t>>
 flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
                         const py::array_t<uint32_t> &ashs,
                         const py::array_t<double> &adata,
-                        const py::array_t<uint32_t> &aidxs,
+                        const py::array_t<uint64_t> &aidxs,
                         const py::array_t<int> &idxa,
                         const py::array_t<int> &idxb) {
     if (aqs.shape()[0] == 0)
@@ -100,16 +100,16 @@ flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
     }
 
     vector<ssize_t> sh = {n_blocks_c, ndimc};
-    py::array_t<uint32_t> cqs(sh), cshs(sh),
-        cidxs(vector<ssize_t>{n_blocks_c + 1});
+    py::array_t<uint32_t> cqs(sh), cshs(sh);
+    py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
     assert(cqs.strides()[1] == sizeof(uint32_t));
     assert(cshs.strides()[1] == sizeof(uint32_t));
     py::array_t<double> cdata(vector<ssize_t>{csize});
-    uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data(),
-             *pcidxs = cidxs.mutable_data();
+    uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
+    uint64_t *pcidxs = cidxs.mutable_data();
     double *pc = cdata.mutable_data();
     const double *pa = adata.data();
-    const uint32_t *pia = aidxs.data();
+    const uint64_t *pia = aidxs.data();
     pcidxs[0] = 0;
     for (int ia = 0, ic = 0; ia < n_blocks_a; ia++) {
         if (!oks[ia])
@@ -251,7 +251,7 @@ flat_sparse_tensor_matmul_init(
 }
 
 template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
 flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<uint32_t> &ashs,
                                       const py::array_t<uint32_t> &bqs,
@@ -376,12 +376,12 @@ flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
     }
 
     vector<ssize_t> sh = {n_blocks_c, ndimc};
-    py::array_t<uint32_t> cqs(sh), cshs(sh),
-        cidxs(vector<ssize_t>{n_blocks_c + 1});
+    py::array_t<uint32_t> cqs(sh), cshs(sh);
+    py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
     assert(cqs.strides()[1] == sizeof(uint32_t));
     assert(cshs.strides()[1] == sizeof(uint32_t));
-    uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data(),
-             *pcidxs = cidxs.mutable_data();
+    uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
+    uint64_t *pcidxs = cidxs.mutable_data();
     vector<uint32_t> psha(n_blocks_a * ndima), pshb(n_blocks_b * ndimb);
     for (int i = 0; i < n_blocks_a; i++)
         for (int j = 0; j < ndima; j++)
@@ -412,10 +412,10 @@ flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
 template <typename Q>
 py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,
-    const py::array_t<uint32_t> &bshs, const py::array_t<uint32_t> &bidxs,
+    const py::array_t<uint64_t> &aidxs, const py::array_t<uint32_t> &bqs,
+    const py::array_t<uint32_t> &bshs, const py::array_t<uint64_t> &bidxs,
     const py::array_t<int> &idxa, const py::array_t<int> &idxb,
-    const py::array_t<uint32_t> &cqs, const py::array_t<uint32_t> &cidxs,
+    const py::array_t<uint32_t> &cqs, const py::array_t<uint64_t> &cidxs,
     bool ferm_op) {
 
     assert(bqs.shape()[0] != 0);
@@ -545,8 +545,8 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
             vqcs[i][j] = psh[j * csj];
     }
 
-    uint32_t *pia = (uint32_t *)aidxs.data(), *pib = (uint32_t *)bidxs.data();
-    uint32_t *pic = (uint32_t *)cidxs.data();
+    uint64_t *pia = (uint64_t *)aidxs.data(), *pib = (uint64_t *)bidxs.data();
+    uint64_t *pic = (uint64_t *)cidxs.data();
     map<int, vector<vector<int>>> mr;
     int maxz = 0;
     for (int ia = 0; ia < n_blocks_a; ia++) {

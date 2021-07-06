@@ -123,8 +123,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         self.q_labels = q_labels
         self.data = data
         if idxs is None:
-            self.idxs = np.zeros((self.n_blocks + 1, ), dtype=shapes.dtype)
-            self.idxs[1:] = np.cumsum(shapes.prod(axis=1))
+            self.idxs = np.zeros((self.n_blocks + 1, ), dtype=np.uint64)
+            self.idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
         else:
             self.idxs = idxs
         if self.n_blocks != 0:
@@ -160,7 +160,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def get_zero():
         zu = np.zeros((0, 0), dtype=np.uint32)
         zd = np.zeros((0, ), dtype=float)
-        iu = np.zeros((1, ), dtype=np.uint32)
+        iu = np.zeros((1, ), dtype=np.uint64)
         return FlatSparseTensor(zu, zu, zd, iu)
 
     @staticmethod
@@ -172,8 +172,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         for i in range(n_blocks):
             shapes[i] = spt.blocks[i].shape
             q_labels[i] = list(map(SZ.to_flat, spt.blocks[i].q_labels))
-        idxs = np.zeros((n_blocks + 1, ), dtype=np.uint32)
-        idxs[1:] = np.cumsum(shapes.prod(axis=1))
+        idxs = np.zeros((n_blocks + 1, ), dtype=np.uint64)
+        idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
         data = np.zeros((idxs[-1], ), dtype=spt.dtype)
         for i in range(n_blocks):
             data[idxs[i]:idxs[i + 1]] = spt.blocks[i].flatten()

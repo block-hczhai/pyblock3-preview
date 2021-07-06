@@ -881,7 +881,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             for block in b.blocks:
                 if block.q_labels in blocks_map:
                     mb = blocks_map[block.q_labels]
-                    np.add(mb, block, out=mb)
+                    blocks_map[block.q_labels] = np.add(mb, block)
                 else:
                     blocks_map[block.q_labels] = block
             blocks = list(blocks_map.values())
@@ -904,7 +904,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             for block in b.blocks:
                 if block.q_labels in blocks_map:
                     mb = blocks_map[block.q_labels]
-                    np.subtract(mb, block, out=mb)
+                    blocks_map[block.q_labels] = np.subtract(mb, block)
                 else:
                     blocks_map[block.q_labels] = -block
             blocks = list(blocks_map.values())

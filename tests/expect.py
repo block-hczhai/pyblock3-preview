@@ -17,8 +17,8 @@ from block2.sz import HamiltonianQC, MPS, MPSInfo, VectorStateInfo, StateInfo
 from block2.sz import PDM1MPOQC, SimplifiedMPO, Rule, RuleQC, MPOQC, IdentityMPO
 from block2.sz import Expect, MovingEnvironment, NoTransposeRule
 from pyblock3.algebra.mpe import MPE as PYME
-from pyblock3.aux.hamil import MPSTools, MPOTools, HamilTools
-from pyblock3.aux.io import SymbolicMPOTools
+from pyblock3.block2.hamil import MPSTools, MPOTools, HamilTools
+from pyblock3.block2.io import SymbolicMPOTools
 import pyblock3.algebra.funcs as pbalg
 import os
 import block3.sz as block3

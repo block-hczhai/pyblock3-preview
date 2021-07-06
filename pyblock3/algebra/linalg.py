@@ -101,7 +101,6 @@ def _precondition(r, diag):
         z[mask] /= diag[mask]
     return z
 
-
 # E.R. Davidson, J. Comput. Phys. 17 (1), 87-94 (1975).
 def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflation_max_size=30, iprint=False, mpi=False):
     """
