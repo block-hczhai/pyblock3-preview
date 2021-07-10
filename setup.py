@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(name='pyblock3',
       version='0.1.0',
-      packages=['pyblock3'],
+      packages=find_packages(),
       license='LICENSE',
       description='An Efficient python block-sparse tensor and MPS/DMRG Library.',
       long_description=open('README.md').read(),
