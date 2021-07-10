@@ -87,6 +87,7 @@ setup(name='pyblock3',
           "mkl-include",
           "numpy",
           "numba",
-          "psutil"
+          "psutil",
+          "pybind11"
       ]
       )
