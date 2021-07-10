@@ -6,4 +6,5 @@ docs/build/
 __pycache__/
 *.py[cod]
 .clang-format
-.egg-info
+*.egg-info
+dist/
