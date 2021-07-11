@@ -71,7 +71,7 @@ class CMakeBuild(build_ext):
 
 
 setup(name='pyblock3',
-      version='0.1.0',
+      version='0.1.3',
       packages=find_packages(),
       ext_modules=[CMakeExt('block3')],
       cmdclass={'build_ext': CMakeBuild},
@@ -88,6 +88,7 @@ setup(name='pyblock3',
           "numpy",
           "numba",
           "psutil",
-          "pybind11"
+          "pybind11",
+          "intel-openmp"
       ]
       )
