@@ -637,7 +637,7 @@ def _adjust_q_labels(symmetry, q_labels, flip_axes):
     if len(flip_axes)==0:
         return q_labels
     else:
-        new_q_labels = q_labels.copy()
+        new_q_labels = q_labels.copy(order="K")
         for ix in flip_axes:
             new_q_labels[:,ix] = symmetry.flip_flat(q_labels[:,ix])
         return new_q_labels
@@ -674,8 +674,6 @@ class SparseFermionTensor(SparseTensor):
         if pattern is None:
             pattern = _gen_default_pattern(self.ndim)
         self._pattern = pattern
-        shapes = [iblk.shape for iblk in self]
-        self._shape = tuple(np.sum(shapes, axis=0))
 
     @property
     def dq(self):
@@ -705,7 +703,17 @@ class SparseFermionTensor(SparseTensor):
 
     @property
     def shape(self):
-        return self._shape
+        counted_block = [[] for _ in range(self.ndim)]
+        shape = [0,] * self.ndim
+        for iblk in self:
+            for ix, iq in enumerate(iblk.q_labels):
+                if iq in counted_block[ix]:
+                    continue
+                else:
+                    shape[ix] += iblk.shape[ix]
+                    counted_block[ix].append(iq)
+
+        return tuple(shape)
 
     @staticmethod
     @implements(np.copy)
@@ -1003,7 +1011,6 @@ class FlatFermionTensor(FlatSparseTensor):
         if self.n_blocks != 0:
             assert shapes.shape == (self.n_blocks, self.ndim)
             assert q_labels.shape == (self.n_blocks, self.ndim)
-        self._shape = tuple(np.sum(shapes, axis=0))
         self.symmetry = setting.dispatch_settings(symmetry=symmetry)
 
     @property
@@ -1039,7 +1046,7 @@ class FlatFermionTensor(FlatSparseTensor):
     @staticmethod
     @implements(np.copy)
     def _copy(x):
-        return x.__class__(q_labels=x.q_labels.copy(), shapes=x.shapes.copy(), data=x.data.copy(), pattern=x.pattern, idxs=x.idxs.copy(), symmetry=x.symmetry)
+        return x.__class__(q_labels=x.q_labels.copy(order="K"), shapes=x.shapes.copy(order="K"), data=x.data.copy(), pattern=x.pattern, idxs=x.idxs.copy(), symmetry=x.symmetry)
 
     def copy(self):
         return np.copy(self)
@@ -1050,7 +1057,11 @@ class FlatFermionTensor(FlatSparseTensor):
 
     @property
     def shape(self):
-        return self._shape
+        shape = []
+        for idim in range(self.ndim):
+            _, indices = np.unique(self.q_labels[:,idim], return_index=True)
+            shape.append(self.shapes[indices, idim].sum())
+        return tuple(shape)
 
     def get_bond_info(self, ax):
         ipattern = self.pattern[ax]
