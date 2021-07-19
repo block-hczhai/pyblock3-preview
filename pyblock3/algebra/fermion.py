@@ -1046,7 +1046,7 @@ class FlatFermionTensor(FlatSparseTensor):
     @staticmethod
     @implements(np.copy)
     def _copy(x):
-        return x.__class__(q_labels=x.q_labels.copy(), shapes=x.shapes.copy(), data=x.data.copy(), pattern=x.pattern, idxs=x.idxs.copy(), symmetry=x.symmetry)
+        return x.__class__(q_labels=x.q_labels.copy(order="K"), shapes=x.shapes.copy(order="K"), data=x.data.copy(), pattern=x.pattern, idxs=x.idxs.copy(), symmetry=x.symmetry)
 
     def copy(self):
         return np.copy(self)
