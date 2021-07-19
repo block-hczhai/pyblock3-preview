@@ -21,6 +21,8 @@ Huanchen Zhai, Yang Gao, and Garnet K.-L. Chan. pyblock3: an efficient python bl
 
 Documentation: https://pyblock3.readthedocs.io/en/latest
 
+Tutorial: https://colab.research.google.com/drive/1grQyYP9oTivjqQRZiwU40tF9SdWyrPfV?usp=sharing
+
 Features
 --------
 
