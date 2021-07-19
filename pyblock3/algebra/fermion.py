@@ -637,7 +637,7 @@ def _adjust_q_labels(symmetry, q_labels, flip_axes):
     if len(flip_axes)==0:
         return q_labels
     else:
-        new_q_labels = q_labels.copy()
+        new_q_labels = q_labels.copy(order="K")
         for ix in flip_axes:
             new_q_labels[:,ix] = symmetry.flip_flat(q_labels[:,ix])
         return new_q_labels
