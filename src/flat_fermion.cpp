@@ -72,7 +72,7 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
         int shape_a[ndima];
         for (int i = 0; i < ndima; i++)
             shape_a[i] = psha[ia * asi + i * asj];
-        uint32_t size_a = (uint32_t)(pia[ia + 1] - pia[ia]);
+        uint64_t size_a = (uint64_t)(pia[ia + 1] - pia[ia]);
         tensor_transpose_impl<FL>(ndima, size_a, perma, shape_a, a, c,
                                   (FL)phase_a[ia], 0.0);
     }
@@ -347,7 +347,7 @@ flat_fermion_tensor_tensordot(
     FL *pa = (FL *)adata.data(), *pb = (FL *)bdata.data();
     uint64_t *pia = (uint64_t *)aidxs.data(), *pib = (uint64_t *)bidxs.data();
     if (trans_a == 0) {
-        int iatr = 0;
+        uint64_t iatr = 0;
         for (int ia = 0; ia < n_blocks_a; ia++)
             if (piatr[ia] != -1)
                 piatr[ia] = iatr, iatr += pia[ia + 1] - pia[ia];
@@ -357,7 +357,7 @@ flat_fermion_tensor_tensordot(
             if (piatr[ia] != -1) {
                 FL *a = pa + pia[ia], *new_a = new_pa + new_pia[ia];
                 const int *shape_a = (const int *)(psha.data() + ia * ndima);
-                uint32_t size_a = (uint32_t)(pia[ia + 1] - pia[ia]);
+                uint64_t size_a = (uint64_t)(pia[ia + 1] - pia[ia]);
                 tensor_transpose_impl<FL>(ndima, size_a, perma.data(), shape_a,
                                           a, new_a, 1.0, 0.0);
             }
@@ -367,7 +367,7 @@ flat_fermion_tensor_tensordot(
     }
 
     if (trans_b == 0) {
-        int ibtr = 0;
+        uint64_t ibtr = 0;
         for (int ib = 0; ib < n_blocks_b; ib++)
             if (pibtr[ib] != -1)
                 pibtr[ib] = ibtr, ibtr += pib[ib + 1] - pib[ib];
@@ -377,7 +377,7 @@ flat_fermion_tensor_tensordot(
             if (pibtr[ib] != -1) {
                 FL *b = pb + pib[ib], *new_b = new_pb + new_pib[ib];
                 const int *shape_b = (const int *)(pshb.data() + ib * ndimb);
-                uint32_t size_b = (uint32_t)(pib[ib + 1] - pib[ib]);
+                uint64_t size_b = (uint64_t)(pib[ib + 1] - pib[ib]);
                 tensor_transpose_impl<FL>(ndimb, size_b, permb.data(), shape_b,
                                           b, new_b, 1.0, 0.0);
             }
