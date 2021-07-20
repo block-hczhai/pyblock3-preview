@@ -472,11 +472,29 @@ def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     v = T.__class__(blocks=vblocks, pattern="+"+new_T.pattern[split_ax:])
     return u, s, v
 
+def _gen_null_qr_partition(T, mod):
+    return {"qr": ("-"+T.pattern, 0, slice(None)),
+            "lq": (T.pattern+"-", T.ndim, slice(None,None,-1))}[mod]
+
 def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
     assert mod in ["qr", "lq"]
     new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
     if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
-        raise NotImplementedError
+        dq = T.dq
+        qblks = [SubTensor(reduced=np.ones([1]), q_labels=(dq, ))]
+        Q = T.__class__(blocks=qblks, pattern="+")
+
+        def _get_new_blk_qr(blk, ax):
+            new_q_labels = blk.q_labels[:ax] + (dq,) + blk.q_labels[ax:]
+            new_shape = blk.shape[:ax] + (1,) + blk.shape[ax:]
+            arr = np.asarray(blk).reshape(new_shape)
+            return blk.__class__(reduced=arr, q_labels=new_q_labels)
+
+        new_pattern, inds, return_order = _gen_null_qr_partition(T, mod)
+        rblks = [_get_new_blk_qr(iblk, inds) for iblk in T.blocks]
+        R = T.__class__(blocks=rblks, pattern=new_pattern)
+        return (Q, R)[return_order]
+
     symmetry = T.dq.__class__
     dq = {"lq": symmetry(0),
           "qr": T.dq}[mod]
@@ -533,7 +551,18 @@ def flat_qr(T, left_idx, right_idx=None, mod="qr"):
     assert mod in ["qr", "lq"]
     new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
     if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
-        raise NotImplementedError
+        flat_q = T.dq.to_flat()
+        flat_qs = np.asarray([[flat_q]], dtype=np.uint32)
+        ishapes = np.asarray([[1,]], dtype=np.uint32)
+        data = np.asarray([1,])
+        Q = T.__class__(flat_qs, ishapes, data, pattern="+", symmetry=T.symmetry)
+        new_pattern, inds, return_order = _gen_null_qr_partition(T, mod)
+        new_shapes = np.insert(T.shapes, inds, 1, axis=1)
+        new_q_labels = np.insert(T.q_labels, inds, flat_q, axis=1)
+        R = T.__class__(new_q_labels, new_shapes,
+                        T.data.copy(), pattern=new_pattern,
+                        idxs=T.idxs.copy(), symmetry=T.symmetry)
+        return (Q, R)[return_order]
     symmetry = T.dq.__class__
     dq = {"lq": symmetry(0),
           "qr": T.dq}[mod]
