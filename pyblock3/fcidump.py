@@ -87,6 +87,77 @@ class FCIDUMP:
             else:
                 self.h1e[0] = self.h1e[0] - self.mu * np.identity(self.n_sites)
                 self.h1e[1] = self.h1e[1] - self.mu * np.identity(self.n_sites)
+    
+    def build(self, gen):
+        from .symbolic.expr import OpElement, OpNames, OpString
+        from .algebra.symmetry import SZ
+        c_op = np.zeros((self.n_sites, 2), dtype=OpElement)
+        d_op = np.zeros((self.n_sites, 2), dtype=OpElement)
+        for m in range(self.n_sites):
+            for s in range(2):
+                qa = SZ(1, [1, -1][s], self.orb_sym[m])
+                qb = SZ(-1, -[1, -1][s], self.orb_sym[m])
+                c_op[m, s] = OpElement(OpNames.C, (m, s), q_label=qa)
+                d_op[m, s] = OpElement(OpNames.D, (m, s), q_label=qb)
+        if isinstance(gen, tuple):
+            SPIN, SITE, OP = 1, 2, 16384
+            terms = [None] * len(gen[0])
+            for ii, (x, t) in enumerate(zip(*gen)):
+                terms[ii] = OpString(
+                    [[c_op, d_op][i // OP][(i % OP) // SITE, (i % SITE) // SPIN] for i in t if i != -1], x)
+        else:
+            terms = list(gen(self.n_sites, c_op, d_op))
+        if not self.uhf:
+            self.h1e = np.zeros((self.n_sites, self.n_sites))
+            self.g2e = np.zeros((self.n_sites, self.n_sites,
+                                self.n_sites, self.n_sites))
+            for term in terms:
+                assert isinstance(term, OpString)
+                if len(term.ops) == 2:
+                    assert term.ops[0].name == OpNames.C and term.ops[1].name == OpNames.D
+                    self.h1e[term.ops[0].site_index[0], term.ops[1].site_index[0]] = term.factor
+                elif len(term.ops) == 4:
+                    assert term.ops[0].name == OpNames.C and term.ops[1].name == OpNames.C
+                    assert term.ops[2].name == OpNames.D and term.ops[3].name == OpNames.D
+                    self.g2e[term.ops[0].site_index[0], term.ops[3].site_index[0],
+                        term.ops[1].site_index[0], term.ops[2].site_index[0]] = term.factor
+                else:
+                    raise RuntimeError('Unknown term: ', term)
+        else:
+            self.h1e = (
+                np.zeros((self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites)))
+            self.g2e = (
+                np.zeros((self.n_sites, self.n_sites,
+                        self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites,
+                        self.n_sites, self.n_sites)),
+                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)))
+            for term in terms:
+                assert isinstance(term, OpString)
+                if len(term.ops) == 2:
+                    assert term.ops[0].name == OpNames.C and term.ops[1].name == OpNames.D
+                    assert term.ops[0].site_index[1] == term.ops[1].site_index[1]
+                    self.h1e[term.ops[0].site_index[1]][term.ops[0].site_index[0], term.ops[1].site_index[0]] = term.factor
+                elif len(term.ops) == 4:
+                    assert term.ops[0].name == OpNames.C and term.ops[1].name == OpNames.C
+                    assert term.ops[2].name == OpNames.D and term.ops[3].name == OpNames.D
+                    assert term.ops[0].site_index[1] == term.ops[3].site_index[1]
+                    assert term.ops[1].site_index[1] == term.ops[2].site_index[1]
+                    if term.ops[0].site_index[1] == 0 and term.ops[1].site_index[1] == 0:
+                        x = 0
+                    elif term.ops[0].site_index[1] == 1 and term.ops[1].site_index[1] == 1:
+                        x = 2
+                    elif term.ops[0].site_index[1] == 0 and term.ops[1].site_index[1] == 1:
+                        x = 1
+                    else:
+                        self.g2e[x][term.ops[1].site_index[0], term.ops[2].site_index[0],
+                            term.ops[0].site_index[0], term.ops[3].site_index[0]] = term.factor
+                    if x != -1:
+                        self.g2e[x][term.ops[0].site_index[0], term.ops[3].site_index[0],
+                            term.ops[1].site_index[0], term.ops[2].site_index[0]] = term.factor
+                else:
+                    raise RuntimeError('Unknown term: ', term)
 
     def t(self, s, i, j):
         return self.h1e[s][i, j] if self.uhf else self.h1e[i, j]
