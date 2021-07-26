@@ -278,4 +278,4 @@ class Z22(U11):
 
     @classmethod
     def flip_flat(cls, flat_array):
-        return - flat_array % (cls._mod1 * cls._mod2)
+        return  flat_array % (cls._mod1 * cls._mod2)

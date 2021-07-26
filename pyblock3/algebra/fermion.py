@@ -22,12 +22,11 @@ Author: Yang Gao
 """
 
 import numbers
-from functools import reduce
 import numpy as np
+import string
 import block3.sz as _block3
 from .core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
 from .flat import FlatSparseTensor, _flat_sparse_tensor_numpy_func_impls
-from .fermion_symmetry import U1, Z4, Z2, U11, Z22
 from .symmetry import BondInfo
 from . import fermion_setting as setting
 
@@ -112,6 +111,25 @@ def _contract_patterns(patterna, patternb, idxa, idxb):
             if ixa == ixb:
                 b_flip_axes.append(ind)
     return out_a + out_b, b_flip_axes
+
+def _trace_preprocess(T, ax1, ax2):
+    if isinstance(ax1, int):
+        ax1 = (ax1, )
+    if isinstance(ax2, int):
+        ax2 = (ax2, )
+    input_subs = output_subs = string.ascii_lowercase[:T.ndim]
+    T_axes = []
+    for ix, iy in zip(ax1, ax2):
+        T_axes.extend([ix, iy])
+        output_subs = output_subs.replace(input_subs[ix], "")
+        output_subs = output_subs.replace(input_subs[iy], "")
+        input_subs = input_subs.replace(input_subs[iy],input_subs[ix]) 
+    einsum_subs = input_subs + "->" + output_subs
+    rem_axes = [ix for ix in range(T.ndim) if ix not in ax1+ax2]
+    output_pattern = "".join([T.pattern[ix] 
+                        for ix in rem_axes])
+
+    return ax1, ax2, einsum_subs, rem_axes, output_pattern, T_axes
 
 def _trim_singular_vals(s_data, cutoff, cutoff_mode, max_bond=None):
     """Find the number of singular values to keep of ``s`` given ``cutoff`` and
@@ -671,9 +689,14 @@ def _adjust_q_labels(symmetry, q_labels, flip_axes):
             new_q_labels[:,ix] = symmetry.flip_flat(q_labels[:,ix])
         return new_q_labels
 
-def compute_phase(q_labels, axes, direction="left"):
+def compute_phase(q_labels, axes, direction="left", symmetry=None):
     if not setting.DEFAULT_FERMION: return 1
-    plist = [qpn.parity for qpn in q_labels]
+    if isinstance(q_labels, np.ndarray):
+        if symmetry is None: 
+            symmetry = setting.DEFAULT_SYMMETRY
+        plist = [symmetry.flat_to_parity(qpn) for qpn in q_labels]
+    else:
+        plist = [qpn.parity for qpn in q_labels]
     counted = []
     phase = 1
     for x in axes:
@@ -898,6 +921,41 @@ class SparseFermionTensor(SparseTensor):
 
     def subtract(self, b):
         return self._subtract(self, b)
+    
+    def trace(self, ax1, ax2):
+        ax1, ax2, einsum_subs, rem_axes, \
+            output_pattern, T_axes= _trace_preprocess(self, ax1, ax2)
+        symmetry = self.dq.__class__
+        if len(ax1+ax2) == self.ndim and self.dq != symmetry(0):
+            return 0
+        blks_to_trace = []
+        for iblk in self.blocks:
+            aligned = True
+            for axi, axj in zip(ax1, ax2):
+                q_labels = [iblk.q_labels[axi], iblk.q_labels[axj]]
+                pattern = self.pattern[axi] + self.pattern[axj]
+                dq = symmetry._compute(pattern, q_labels)
+                aligned = aligned and dq == symmetry(0)
+                if not aligned:
+                    break
+            if aligned:
+                blks_to_trace.append(iblk)
+        data = {}
+        for iblk in blks_to_trace:
+            phase = compute_phase(iblk.q_labels, T_axes)
+            out = np.einsum(einsum_subs, np.asarray(iblk)) * phase
+            q_labels = tuple([iblk.q_labels[ix] for ix in rem_axes])
+            if output_pattern:
+                out = iblk.__class__(reduced=out, q_labels=q_labels)
+            if q_labels not in data:
+                data[q_labels] = out
+            else:
+                data[q_labels] += out
+        data = list(data.values())
+        if output_pattern:
+            return self.__class__(blocks=data, pattern=output_pattern)
+        else:
+            return sum(data)
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _sparse_fermion_tensor_numpy_func_impls:
@@ -1194,6 +1252,54 @@ class FlatFermionTensor(FlatSparseTensor):
 
     def subtract(self, b):
         return self._subtract(self, b)
+    
+    def trace(self, ax1, ax2):
+        ax1, ax2, einsum_subs, rem_axes, \
+            output_pattern, T_axes= _trace_preprocess(self, ax1, ax2)
+        symmetry = self.dq.__class__
+        if len(ax1+ax2) == self.ndim and self.dq != symmetry(0):
+            return 0
+        
+        axes_to_flip = []
+        for ax, (ix, iy) in enumerate(zip(ax1, ax2)):
+            if self.pattern[ix]==self.pattern[iy]:
+                axes_to_flip.append(ax)
+        
+        q_labels2 = _adjust_q_labels(symmetry, 
+                        self.q_labels[:,ax2], axes_to_flip)
+        diff = abs(self.q_labels[:,ax1]-q_labels2).sum(axis=1)
+        blks_to_trace = np.where(diff==0)[0]
+        blk_map = dict()
+        for iblk in blks_to_trace:
+            q_labels = tuple(self.q_labels[iblk,rem_axes])
+            if q_labels not in blk_map:
+                blk_map[q_labels] = [iblk]
+            else:
+                blk_map[q_labels].append(iblk)
+
+        data = []
+        output_q_labels = []
+        output_shapes = []
+        for qlab, blks in blk_map.items():
+            output_q_labels.append(qlab)
+            ish = self.shapes[blks[0],rem_axes]
+            output_shapes.append(ish)  
+            out = 0
+            for iblk in blks:
+                jsh = self.shapes[iblk]
+                phase = compute_phase(self.q_labels[iblk], T_axes, symmetry=symmetry)
+                dat = self.data[self.idxs[iblk]:self.idxs[iblk+1]].reshape(jsh)
+                out = out + np.einsum(einsum_subs, dat).ravel() * phase
+            data.append(out)
+        
+        output_q_labels = np.vstack(output_q_labels)
+        output_shapes = np.vstack(output_shapes)
+        data = np.concatenate(data)
+        if output_pattern:
+            return self.__class__(output_q_labels, output_shapes, data, 
+                                pattern=output_pattern, symmetry=self.symmetry)
+        else:
+            return data.sum()
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in _flat_fermion_tensor_numpy_func_impls:
