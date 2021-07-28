@@ -119,17 +119,22 @@ def _trace_preprocess(T, ax1, ax2):
         ax2 = (ax2, )
     input_subs = output_subs = string.ascii_lowercase[:T.ndim]
     T_axes = []
+    new_ax1 = []
+    new_ax2 = []
     for ix, iy in zip(ax1, ax2):
+        ix, iy = sorted([ix, iy])
+        new_ax1.append(ix)
+        new_ax2.append(iy)
         T_axes.extend([ix, iy])
         output_subs = output_subs.replace(input_subs[ix], "")
         output_subs = output_subs.replace(input_subs[iy], "")
-        input_subs = input_subs.replace(input_subs[iy],input_subs[ix]) 
+        input_subs = input_subs.replace(input_subs[iy],input_subs[ix])
     einsum_subs = input_subs + "->" + output_subs
     rem_axes = [ix for ix in range(T.ndim) if ix not in ax1+ax2]
-    output_pattern = "".join([T.pattern[ix] 
+    output_pattern = "".join([T.pattern[ix]
                         for ix in rem_axes])
 
-    return ax1, ax2, einsum_subs, rem_axes, output_pattern, T_axes
+    return new_ax1, new_ax2, einsum_subs, rem_axes, output_pattern, T_axes
 
 def _trim_singular_vals(s_data, cutoff, cutoff_mode, max_bond=None):
     """Find the number of singular values to keep of ``s`` given ``cutoff`` and
@@ -692,7 +697,7 @@ def _adjust_q_labels(symmetry, q_labels, flip_axes):
 def compute_phase(q_labels, axes, direction="left", symmetry=None):
     if not setting.DEFAULT_FERMION: return 1
     if isinstance(q_labels, np.ndarray):
-        if symmetry is None: 
+        if symmetry is None:
             symmetry = setting.DEFAULT_SYMMETRY
         plist = [symmetry.flat_to_parity(qpn) for qpn in q_labels]
     else:
@@ -921,7 +926,7 @@ class SparseFermionTensor(SparseTensor):
 
     def subtract(self, b):
         return self._subtract(self, b)
-    
+
     def trace(self, ax1, ax2):
         ax1, ax2, einsum_subs, rem_axes, \
             output_pattern, T_axes= _trace_preprocess(self, ax1, ax2)
@@ -1252,20 +1257,20 @@ class FlatFermionTensor(FlatSparseTensor):
 
     def subtract(self, b):
         return self._subtract(self, b)
-    
+
     def trace(self, ax1, ax2):
         ax1, ax2, einsum_subs, rem_axes, \
             output_pattern, T_axes= _trace_preprocess(self, ax1, ax2)
         symmetry = self.dq.__class__
         if len(ax1+ax2) == self.ndim and self.dq != symmetry(0):
             return 0
-        
+
         axes_to_flip = []
         for ax, (ix, iy) in enumerate(zip(ax1, ax2)):
             if self.pattern[ix]==self.pattern[iy]:
                 axes_to_flip.append(ax)
-        
-        q_labels2 = _adjust_q_labels(symmetry, 
+
+        q_labels2 = _adjust_q_labels(symmetry,
                         self.q_labels[:,ax2], axes_to_flip)
         diff = abs(self.q_labels[:,ax1]-q_labels2).sum(axis=1)
         blks_to_trace = np.where(diff==0)[0]
@@ -1283,7 +1288,7 @@ class FlatFermionTensor(FlatSparseTensor):
         for qlab, blks in blk_map.items():
             output_q_labels.append(qlab)
             ish = self.shapes[blks[0],rem_axes]
-            output_shapes.append(ish)  
+            output_shapes.append(ish)
             out = 0
             for iblk in blks:
                 jsh = self.shapes[iblk]
@@ -1291,12 +1296,12 @@ class FlatFermionTensor(FlatSparseTensor):
                 dat = self.data[self.idxs[iblk]:self.idxs[iblk+1]].reshape(jsh)
                 out = out + np.einsum(einsum_subs, dat).ravel() * phase
             data.append(out)
-        
+
         output_q_labels = np.vstack(output_q_labels)
         output_shapes = np.vstack(output_shapes)
         data = np.concatenate(data)
         if output_pattern:
-            return self.__class__(output_q_labels, output_shapes, data, 
+            return self.__class__(output_q_labels, output_shapes, data,
                                 pattern=output_pattern, symmetry=self.symmetry)
         else:
             return data.sum()
