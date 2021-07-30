@@ -20,7 +20,6 @@
 """One-body/two-body integral object."""
 
 import numpy as np
-import numba as nb
 
 PointGroup = {
     "d2h": [8, 0, 7, 6, 1, 5, 2, 3, 4],
@@ -33,36 +32,63 @@ PointGroup = {
     "c1": [8, 0]
 }
 
+try:
+    import numba as nb
 
-@nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :]))
-def parallelize_h1e(n_sites, mrank, msize, h1e):
-    for i in range(0, n_sites):
-        if mrank != i % msize:
-            h1e[i, :] = 0.0
+    @nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :]))
+    def parallelize_h1e(n_sites, mrank, msize, h1e):
+        for i in range(0, n_sites):
+            if mrank != i % msize:
+                h1e[i, :] = 0.0
 
 
-@nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :, :, :]))
-def parallelize_g2e(n_sites, mrank, msize, g2e):
-    for i in range(0, n_sites):
-        for j in range(0, n_sites):
-            for k in range(0, n_sites):
-                for l in range(0, n_sites):
-                    if g2e[i, j, k, l] == 0:
-                        continue
-                    x = np.array([i, j, k, l], dtype=np.int32)
-                    x.sort()
-                    if x[1] == x[2]:
-                        if mrank != x[1] % msize:
-                            g2e[i, j, k, l] = 0
-                    else:
-                        ii, jj = x[0], x[1]
-                        if ii <= jj:
-                            if mrank != (jj * (jj + 1) // 2 + ii) % msize:
+    @nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :, :, :]))
+    def parallelize_g2e(n_sites, mrank, msize, g2e):
+        for i in range(0, n_sites):
+            for j in range(0, n_sites):
+                for k in range(0, n_sites):
+                    for l in range(0, n_sites):
+                        if g2e[i, j, k, l] == 0:
+                            continue
+                        x = np.array([i, j, k, l], dtype=np.int32)
+                        x.sort()
+                        if x[1] == x[2]:
+                            if mrank != x[1] % msize:
                                 g2e[i, j, k, l] = 0
                         else:
-                            if mrank != (ii * (ii + 1) // 2 + jj) % msize:
-                                g2e[i, j, k, l] = 0
+                            ii, jj = x[0], x[1]
+                            if ii <= jj:
+                                if mrank != (jj * (jj + 1) // 2 + ii) % msize:
+                                    g2e[i, j, k, l] = 0
+                            else:
+                                if mrank != (ii * (ii + 1) // 2 + jj) % msize:
+                                    g2e[i, j, k, l] = 0
+except Exception:
 
+    def parallelize_h1e(n_sites, mrank, msize, h1e):
+        for i in range(0, n_sites):
+            if mrank != i % msize:
+                h1e[i, :] = 0.0
+    def parallelize_g2e(n_sites, mrank, msize, g2e):
+        for i in range(0, n_sites):
+            for j in range(0, n_sites):
+                for k in range(0, n_sites):
+                    for l in range(0, n_sites):
+                        if g2e[i, j, k, l] == 0:
+                            continue
+                        x = np.array([i, j, k, l], dtype=np.int32)
+                        x.sort()
+                        if x[1] == x[2]:
+                            if mrank != x[1] % msize:
+                                g2e[i, j, k, l] = 0
+                        else:
+                            ii, jj = x[0], x[1]
+                            if ii <= jj:
+                                if mrank != (jj * (jj + 1) // 2 + ii) % msize:
+                                    g2e[i, j, k, l] = 0
+                            else:
+                                if mrank != (ii * (ii + 1) // 2 + jj) % msize:
+                                    g2e[i, j, k, l] = 0
 
 class FCIDUMP:
 
