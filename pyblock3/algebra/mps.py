@@ -229,6 +229,13 @@ class MPS(NDArrayOperatorsMixin):
                     (info.left_dims[i], info.basis[i], info.left_dims[i + 1]),
                     dtype=dtype) * (high - low) + low
         return MPS(tensors=tensors, opts=opts)
+    
+    def fix_pattern(self, pattern=None):
+        dq = None
+        for i in range(self.n_sites):
+            self.tensors[i], dq = self.tensors[i].fix_pattern(pattern=pattern, dq=dq)
+            print(i, dq)
+        return dq
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if ufunc in _mps_numpy_func_impls:

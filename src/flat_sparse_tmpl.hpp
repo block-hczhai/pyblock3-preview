@@ -137,6 +137,10 @@ flat_sparse_tensor_kron_sum_info<TMPL_Q>(const py::array_t<uint32_t> &aqs,
                                          const py::array_t<uint32_t> &ashs,
                                          const string &pattern);
 
+TMPL_EXTERN template tuple<py::array_t<uint32_t>, uint32_t>
+flat_sparse_tensor_fix_pattern<TMPL_Q>(py::array_t<uint32_t> aqs,
+                                       const string &pattern, uint32_t fdq);
+
 TMPL_EXTERN template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
                            py::array_t<uint64_t>>
 flat_sparse_tensor_skeleton<TMPL_Q>(const vector<map_uint_uint<TMPL_Q>> &infos,

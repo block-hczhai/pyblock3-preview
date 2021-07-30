@@ -183,6 +183,8 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
 
     py::module flat_sparse_tensor =
         m.def_submodule("flat_sparse_tensor", "FlatSparseTensor");
+    flat_sparse_tensor.def("fix_pattern", &flat_sparse_tensor_fix_pattern<Q>,
+                           py::arg("aqs"), py::arg("pattern"), py::arg("dq"));
     flat_sparse_tensor.def("skeleton", &flat_sparse_tensor_skeleton<Q>,
                            py::arg("infos"), py::arg("pattern"), py::arg("dq"));
     flat_sparse_tensor.def("left_svd", &flat_sparse_left_svd<Q>, py::arg("aqs"),

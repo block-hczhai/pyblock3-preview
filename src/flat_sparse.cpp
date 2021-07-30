@@ -756,6 +756,37 @@ map_fusing flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
 }
 
 template <typename Q>
+tuple<py::array_t<uint32_t>, uint32_t>
+flat_sparse_tensor_fix_pattern(py::array_t<uint32_t> aqs, const string &pattern,
+                               uint32_t fdq) {
+    const int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
+    const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
+                  asj = aqs.strides()[1] / sizeof(uint32_t);
+    vector<ssize_t> sh = {(ssize_t)n_blocks_a, ndima};
+    py::array_t<uint32_t> cqs(sh);
+    Q dq = Q::to_q(fdq), rdq;
+    uint32_t *pcqs = cqs.mutable_data();
+    memcpy(cqs.mutable_data(), aqs.data(), aqs.size() * sizeof(uint32_t));
+    for (int i = 0; i < n_blocks_a; i++) {
+        Q xq = dq;
+        for (int j = 0; j < ndima; j++)
+            xq = xq + (pattern[j] == '+' ? Q::to_q(pcqs[i * asi + j * asj])
+                                         : -Q::to_q(pcqs[i * asi + j * asj]));
+        pcqs[i * asi + 0 * asj] =
+            Q::from_q(Q::to_q(pcqs[i * asi + 0 * asj]) + dq);
+        if (i == 0)
+            rdq = xq;
+        else
+            assert(rdq == xq);
+        pcqs[i * asi + (ndima - 1) * asj] =
+            pattern[ndima - 1] == '+'
+                ? Q::from_q(Q::to_q(pcqs[i * asi + (ndima - 1) * asj]) - xq)
+                : Q::from_q(Q::to_q(pcqs[i * asi + (ndima - 1) * asj]) + xq);
+    }
+    return std::make_tuple(cqs, Q::from_q(rdq));
+}
+
+template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
 flat_sparse_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
                             const string &pattern, uint32_t fdq) {

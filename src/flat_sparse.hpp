@@ -83,6 +83,11 @@ map_fusing flat_sparse_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
                                             const string &pattern);
 
 template <typename Q>
+tuple<py::array_t<uint32_t>, uint32_t>
+flat_sparse_tensor_fix_pattern(py::array_t<uint32_t> aqs, const string &pattern,
+                               uint32_t fdq);
+
+template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
 flat_sparse_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
                             const string &pattern, uint32_t fdq);
