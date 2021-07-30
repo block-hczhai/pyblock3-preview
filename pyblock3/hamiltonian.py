@@ -151,7 +151,7 @@ class Hamiltonian:
             from .symbolic.symbolic_mpo import QCSymbolicMPO
             return QCSymbolicMPO(self).to_sparse()
 
-    def build_mpo(self, gen, cutoff=1E-12, max_bond_dim=-1):
+    def build_mpo(self, gen, cutoff=1E-12, max_bond_dim=-1, const=0):
 
         if self.flat and isinstance(gen, tuple):
             import block3.sz.hamiltonian as hm
@@ -166,7 +166,7 @@ class Hamiltonian:
                 tensors[i] = FlatFermionTensor(
                     odd=FlatSparseTensor(*ts[i * 2 + 0]),
                     even=FlatSparseTensor(*ts[i * 2 + 1]))
-            return MPS(tensors=tensors, const=self.fcidump.const_e)
+            return MPS(tensors=tensors, const=const)
 
         vac = SZ(0, 0, 0)
         i_op = OpElement(OpNames.I, (), q_label=vac)
@@ -211,7 +211,7 @@ class Hamiltonian:
         for i in range(0, self.n_sites):
             tensors[i].ops = self.get_site_ops(
                 i, tensors[i].ops.items(), cutoff=cutoff)
-        mpo = MPS(tensors=tensors, const=self.fcidump.const_e)
+        mpo = MPS(tensors=tensors, const=const)
         if self.flat:
             mpo = mpo.to_sparse().to_flat()
         return mpo

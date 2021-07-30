@@ -194,7 +194,8 @@ def build_qc(filename, mrank, msize, pg='d2h', cutoff=1E-9, max_bond_dim=-1):
             fcidump.n_sites, fcidump.h1e, fcidump.g2e, cutoff)
     print('hamil term time = ', time.perf_counter() - tx, len(terms[0]))
     tx = time.perf_counter()
-    mm = hamil.build_mpo(terms, cutoff=cutoff, max_bond_dim=max_bond_dim).to_sparse()
+    mm = hamil.build_mpo(terms, cutoff=cutoff, max_bond_dim=max_bond_dim,
+        const=hamil.fcidump.const_e).to_sparse()
     return hamil, mm, time.perf_counter() - tx
 
 tx = time.perf_counter()

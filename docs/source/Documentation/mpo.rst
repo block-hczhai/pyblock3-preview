@@ -86,7 +86,7 @@ One can set the explicit expression for Hamiltonian for Hubbard model and quantu
                                     if abs(v) > cutoff:
                                         yield (0.5 * v) * (c[i, sij] * c[k, skl] * d[l, skl] * d[j, sij])
 
-        return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff).to_sparse()
+        return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff, const=hamil.fcidump.const_e).to_sparse()
 
 Then the MPO can be built by:
 
@@ -176,7 +176,7 @@ First, we can use ``numba`` optimized functions to set the Hamiltonian terms:
         hamil = Hamiltonian(fcidump, flat=flat)
         terms = generate_qc_terms(
             fcidump.n_sites, fcidump.h1e, fcidump.g2e, cutoff)
-        return hamil, hamil.build_mpo(terms, cutoff=cutoff, max_bond_dim=max_bond_dim).to_sparse()
+        return hamil, hamil.build_mpo(terms, cutoff=cutoff, max_bond_dim=max_bond_dim, const=hamil.fcidump.const_e).to_sparse()
 
 Then the MPO can be built by:
 

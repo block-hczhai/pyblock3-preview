@@ -58,7 +58,8 @@ def build_qc(filename, pg='d2h', cutoff=1E-9):
                                 if abs(v) > cutoff:
                                     yield (0.5 * v) * (c[i, sij] * c[k, skl] * d[l, skl] * d[j, sij])
 
-    return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff).to_sparse()
+    return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff,
+        const=hamil.fcidump.const_e).to_sparse()
 
 tx = time.perf_counter()
 # fd = '../data/N2.STO3G.FCIDUMP'
