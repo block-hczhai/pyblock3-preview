@@ -187,17 +187,6 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
                            py::arg("aqs"), py::arg("pattern"), py::arg("dq"));
     flat_sparse_tensor.def("skeleton", &flat_sparse_tensor_skeleton<Q>,
                            py::arg("infos"), py::arg("pattern"), py::arg("dq"));
-    flat_sparse_tensor.def("left_svd", &flat_sparse_left_svd<Q>, py::arg("aqs"),
-                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("right_svd", &flat_sparse_right_svd<Q>,
-                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
-                           py::arg("aidxs"));
-    flat_sparse_tensor.def("left_svd_indexed", &flat_sparse_left_svd_indexed<Q>,
-                           py::arg("aqs"), py::arg("ashs"), py::arg("adata"),
-                           py::arg("aidxs"));
-    flat_sparse_tensor.def("right_svd_indexed",
-                           &flat_sparse_right_svd_indexed<Q>, py::arg("aqs"),
-                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
     flat_sparse_tensor.def("get_infos", &flat_sparse_tensor_get_infos<Q>,
                            py::arg("aqs"), py::arg("ashs"));
     flat_sparse_tensor.def("kron_sum_info",
@@ -298,6 +287,34 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
         [](const py::object &aqs, const py::object &ashs,
            const py::array_t<double> &adata, const py::object &aidxs) {
             return flat_sparse_right_canonicalize_indexed<Q, double>(
+                aqs, ashs, adata, aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("left_svd", 
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs) {
+            return flat_sparse_left_svd<Q, double>(aqs, ashs, adata,
+                                                            aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("right_svd", 
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs) {
+            return flat_sparse_right_svd<Q, double>(aqs, ashs, adata,
+                                                             aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("left_svd_indexed",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs) {
+            return flat_sparse_left_svd_indexed<Q, double>(
+                aqs, ashs, adata, aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("right_svd_indexed",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs) {
+            return flat_sparse_right_svd_indexed<Q, double>(
                 aqs, ashs, adata, aidxs);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
@@ -422,6 +439,34 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
         [](const py::object &aqs, const py::object &ashs,
            const py::array_t<complex<double>> &adata, const py::object &aidxs) {
             return flat_sparse_right_canonicalize_indexed<Q, complex<double>>(
+                aqs, ashs, adata, aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+     flat_sparse_tensor.def("left_svd", 
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs) {
+            return flat_sparse_left_svd<Q, complex<double>>(aqs, ashs, adata,
+                                                            aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("right_svd", 
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs) {
+            return flat_sparse_right_svd<Q, complex<double>>(aqs, ashs, adata,
+                                                             aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("left_svd_indexed",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs) {
+            return flat_sparse_left_svd_indexed<Q, complex<double>>(
+                aqs, ashs, adata, aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def("right_svd_indexed",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs) {
+            return flat_sparse_right_svd_indexed<Q, complex<double>>(
                 aqs, ashs, adata, aidxs);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));

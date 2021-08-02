@@ -108,14 +108,13 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
                          const py::array_t<FL> &adata,
                          const py::array_t<uint64_t> &aidxs, uint32_t *pxidx);
 
-template <typename Q, DIRECTION L>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL, DIRECTION L>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
       py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint64_t>>
+      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
 flat_sparse_svd(const py::array_t<uint32_t> &aqs,
-                const py::array_t<uint32_t> &ashs,
-                const py::array_t<double> &adata,
+                const py::array_t<uint32_t> &ashs, const py::array_t<FL> &adata,
                 const py::array_t<uint64_t> &aidxs, uint32_t *pxidx);
 
 template <typename Q, typename FL>
@@ -136,24 +135,24 @@ flat_sparse_right_canonicalize(const py::array_t<uint32_t> &aqs,
                                const py::array_t<FL> &adata,
                                const py::array_t<uint64_t> &aidxs);
 
-template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
       py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint64_t>>
+      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
 flat_sparse_left_svd(const py::array_t<uint32_t> &aqs,
                      const py::array_t<uint32_t> &ashs,
-                     const py::array_t<double> &adata,
+                     const py::array_t<FL> &adata,
                      const py::array_t<uint64_t> &aidxs);
 
-template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
       py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint64_t>>
+      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
 flat_sparse_right_svd(const py::array_t<uint32_t> &aqs,
                       const py::array_t<uint32_t> &ashs,
-                      const py::array_t<double> &adata,
+                      const py::array_t<FL> &adata,
                       const py::array_t<uint64_t> &aidxs);
 
 template <typename Q, typename FL>
@@ -176,26 +175,26 @@ flat_sparse_right_canonicalize_indexed(const py::array_t<uint32_t> &aqs,
                                        const py::array_t<FL> &adata,
                                        const py::array_t<uint64_t> &aidxs);
 
-template <typename Q>
-pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
            py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
            py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-           py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint64_t>>,
+           py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>,
      py::array_t<uint32_t>>
 flat_sparse_left_svd_indexed(const py::array_t<uint32_t> &aqs,
                              const py::array_t<uint32_t> &ashs,
-                             const py::array_t<double> &adata,
+                             const py::array_t<FL> &adata,
                              const py::array_t<uint64_t> &aidxs);
 
-template <typename Q>
-pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
            py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
            py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-           py::array_t<uint32_t>, py::array_t<double>, py::array_t<uint64_t>>,
+           py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>,
      py::array_t<uint32_t>>
 flat_sparse_right_svd_indexed(const py::array_t<uint32_t> &aqs,
                               const py::array_t<uint32_t> &ashs,
-                              const py::array_t<double> &adata,
+                              const py::array_t<FL> &adata,
                               const py::array_t<uint64_t> &aidxs);
 
 template <typename Q, typename FL>
