@@ -68,6 +68,6 @@ A ``FermionTensor`` contains two ``SparseTensor``, including blocks with odd ``d
 ``FlatSparseTensor`` is another representation of block-sparse tensor, where quantum-number are combined together to a single integer,
 and floating-point contents of all blocks are merged to one single "flattened" ``numpy.ndarray``.
 
-``FlatSparseTensor`` has the same interface as ``SparseTensor``, but ``FlatSparseTensor`` provides much faster C++ implemntation
+``FlatSparseTensor`` has the same interface as ``SparseTensor``, but ``FlatSparseTensor`` provides much faster C++ implementation
 for functions like `tensordot` and `tranpose`. For debugging purpose, ``FlatSparseTensor`` also has pure python implementation,
 which can be activated by setting ``ENABLE_FAST_IMPLS = False`` in ``flat.py``.

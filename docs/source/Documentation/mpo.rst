@@ -23,10 +23,10 @@ MPO can be constructed from a FCIDUMP file:
     hamil = Hamiltonian(FCIDUMP(pg='d2h').read(fd), flat=False)
     mpo = hamil.build_qc_mpo()
 
-This will build a ``MPS`` object (representing MPO) using a list of ``FermionTensor``.
+This will build an ``MPS`` object (representing MPO) using a list of ``FermionTensor``.
 
 If ``flat`` parameter is set to ``True`` in ``Hamiltonian``, the code will use more efficient C++ code for building
-MPO, and the resulting MPO is a ``MPS`` object with a list of ``FlatFermionTensor`` included.
+MPO, and the resulting MPO is an ``MPS`` object with a list of ``FlatFermionTensor`` included.
 
 .. code:: python3
 
