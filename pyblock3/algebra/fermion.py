@@ -678,6 +678,123 @@ def flat_qr(T, left_idx, right_idx=None, mod="qr"):
         r.shape = (r.shape[0],)+new_T.shape[split_ax:]
     return q, r
 
+def sparse_constructor(T, axes):
+    if isinstance(axes, int):
+        axes = (axes, )
+    q_tab = dict()
+    shape_tab = dict()
+    in_pattern = [T.pattern[ix] for ix in axes]
+    string_inv = {"+":"-",
+                  "-":"+"}
+    out_pattern = "".join([string_inv[ix] for ix in in_pattern])
+    for iblk in T:
+        in_q_labels = tuple([iblk.q_labels[ix] for ix in axes])
+        in_shape = [iblk.shape[ix] for ix in axes]
+        dq = T.dq._compute(out_pattern, in_q_labels)
+        if dq not in q_tab:
+            q_tab[dq] = []
+            shape_tab[dq] = []
+        if in_q_labels not in q_tab[dq]:
+            q_tab[dq].append(in_q_labels)
+            shape_tab[dq].append(in_shape)
+
+    seg_tab = dict()
+    for idq, ish in shape_tab.items():
+        isize = np.prod(ish, axis=1)
+        iseg = np.zeros(len(isize)+1, dtype=np.int)
+        iseg[1:] = np.cumsum(isize)
+        seg_tab[idq] = iseg
+
+    def vector_to_tensor(vec, dq):
+        vec = np.real_if_close(vec)
+        shapes = shape_tab[dq]
+        q_labels = q_tab[dq]
+        seg = seg_tab[dq]
+        assert (len(vec)==seg[-1])
+        blocks = []
+        for ik, (ish, iq) in enumerate(zip(shapes, q_labels)):
+            dat = vec[seg[ik]:seg[ik+1]].reshape(ish)
+            blocks.append(SubTensor(reduced=dat, q_labels=iq))
+        out = T.__class__(blocks=blocks, pattern=out_pattern)
+        return out
+
+    def tensor_to_vector(tsr):
+        dq = tsr.dq
+        shapes = shape_tab[dq]
+        q_labels = q_tab[dq]
+        vec = [None for _ in range(len(shapes))]
+        for iblk in tsr.blocks:
+            idx = q_labels.index(iblk.q_labels)
+            vec[idx] = np.asarray(iblk).ravel()
+        vec = np.concatenate(vec)
+        return vec
+
+    def vector_size(dq):
+        shapes = shape_tab[dq]
+        return np.prod(shapes, axis=1).sum()
+
+    fn_lib = {"vector_size": vector_size,
+              "vector_to_tensor": vector_to_tensor,
+              "tensor_to_vector": tensor_to_vector}
+    return fn_lib
+
+def flat_constructor(T, axes):
+    if isinstance(axes, int):
+        axes = (axes, )
+    q_tab = dict()
+    shape_tab = dict()
+    in_pattern = [T.pattern[ix] for ix in axes]
+    string_inv = {"+":"-",
+                  "-":"+"}
+    out_pattern = "".join([string_inv[ix] for ix in in_pattern])
+    selected_q_labels = T.q_labels[:,axes]
+    selected_shapes = T.shapes[:,axes]
+    indices = np.unique(selected_q_labels, return_index=True, axis=0)[1]
+    selected_q_labels = selected_q_labels[indices]
+    selected_shapes = selected_shapes[indices]
+    dqs = T.dq._compute(out_pattern, selected_q_labels)
+    for idq, iq, ish in zip(dqs, selected_q_labels, selected_shapes):
+        if idq not in q_tab:
+            q_tab[idq] = []
+            shape_tab[idq] = []
+        q_tab[idq].append(iq)
+        shape_tab[idq].append(ish)
+    for idq in dqs:
+        q_tab[idq] = np.vstack(q_tab[idq])
+        shape_tab[idq] = np.vstack(shape_tab[idq])
+
+    def vector_to_tensor(vec, dq):
+        vec = np.ascontiguousarray(np.real_if_close(vec))
+        if not isinstance(dq, int):
+            dq = dq.to_flat()
+        shapes = shape_tab[dq]
+        q_labels = q_tab[dq]
+        out = T.__class__(q_labels, shapes, vec, pattern=out_pattern, symmetry=T.symmetry)
+        return out
+
+    def tensor_to_vector(tsr):
+        dq = tsr.dq.to_flat()
+        q_labels = q_tab[dq]
+        if (q_labels==tsr.q_labels).all():
+            return tsr.data
+        else:
+            data = []
+            for iq in q_labels:
+                ix = np.where((tsr.q_labels==iq).all(axis=1))[0][0]
+                data.append(tsr.data[tsr.idxs[ix]:tsr.idxs[ix+1]])
+            return np.concatenate(data)
+
+    def vector_size(dq):
+        if not isinstance(dq, int):
+            dq = dq.to_flat()
+        shapes = shape_tab[dq]
+        return np.prod(shapes, axis=1).sum().astype(np.int64)
+
+    fn_lib = {"vector_size": vector_size,
+              "vector_to_tensor": vector_to_tensor,
+              "tensor_to_vector": tensor_to_vector}
+    return fn_lib
+
 def flat_qr_fast(T, left_idx, right_idx=None, mod="qr"):
     assert mod in ["qr", "lq"]
     new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
@@ -795,6 +912,9 @@ class SparseFermionTensor(SparseTensor):
     def shape(self, sh):
         assert len(sh) == self.ndim
         self._shape = tuple(sh)
+
+    def constructor(self, axes):
+        return sparse_constructor(self, axes)
 
     def new_like(self, blocks, **kwargs):
         pattern = kwargs.pop("pattern", self.pattern)
@@ -1203,6 +1323,9 @@ class FlatFermionTensor(FlatSparseTensor):
     def shape(self, sh):
         assert len(sh) == self.ndim
         self._shape = tuple(sh)
+
+    def constructor(self, axes):
+        return flat_constructor(self, axes)
 
     def get_bond_info(self, ax):
         ipattern = self.pattern[ax]
