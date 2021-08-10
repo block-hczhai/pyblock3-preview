@@ -89,6 +89,6 @@ setup(name='pyblock3',
           "psutil",
           "pybind11",
           "intel-openmp",
-          "cmake==3.19.0"
+          "cmake==3.17"
       ]
       )
