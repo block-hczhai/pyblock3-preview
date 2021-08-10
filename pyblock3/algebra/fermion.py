@@ -1007,26 +1007,31 @@ class SparseFermionTensor(SparseTensor):
         out = kwargs.pop("out", None)
         if out is not None and not all(isinstance(x, self.__class__) for x in out):
             return NotImplemented
-
+        out_shape = None
         if method == "__call__":
             if ufunc.__name__ in ["matmul"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
                     blocks = [a * block for block in b.blocks]
+                    out_shape = a.shape
                 elif isinstance(b, numbers.Number):
                     blocks = [block * b for block in a.blocks]
+                    out_shape = b.shape
                 else:
                     blocks = self._tensordot(a, b, axes=([-1], [0])).blocks
+                    out.shape = blocks.shape
                 out_pattern, _ = _contract_patterns(a.pattern, b.pattern, [a.ndim-1], [0])
             elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
                     blocks = [getattr(ufunc, method)(a, block)
                               for block in b.blocks]
+                    out_shape = b.shape
                     out_pattern = b.pattern
                 elif isinstance(b, numbers.Number):
                     blocks = [getattr(ufunc, method)(block, b)
                               for block in a.blocks]
+                    out_shape = a.shape
                     out_pattern = a.pattern
                 else:
                     return NotImplemented
@@ -1034,6 +1039,7 @@ class SparseFermionTensor(SparseTensor):
                 blocks = [getattr(ufunc, method)(block)
                           for block in inputs[0].blocks]
                 out_pattern = inputs[0].pattern
+                out_shape = input[0].shape
             else:
                 return NotImplemented
         else:
@@ -1041,7 +1047,8 @@ class SparseFermionTensor(SparseTensor):
         if out is not None:
             out[0].blocks = blocks
             out[0].pattern = out_pattern
-        return self.__class__(blocks=blocks, pattern=out_pattern)
+            out[0].shape=out_shape
+        return self.__class__(blocks=blocks, pattern=out_pattern, shape=out_shape)
 
     @staticmethod
     @implements(np.tensordot)
@@ -1373,7 +1380,7 @@ class FlatFermionTensor(FlatSparseTensor):
         out = kwargs.pop("out", None)
         if out is not None and not all(isinstance(x, self.__class__) for x in out):
             return NotImplemented
-
+        out_shape = None
         if method == "__call__":
             if ufunc.__name__ in ["matmul"]:
                 a, b = inputs
@@ -1381,15 +1388,18 @@ class FlatFermionTensor(FlatSparseTensor):
                     shs, qs, data, idxs = b.shapes, b.q_labels, a * b.data, b.idxs
                     out_pattern = b.pattern
                     symmetry = b.symmetry
+                    out_shape = b.shape
                 elif isinstance(b, numbers.Number):
                     shs, qs, data, idxs = a.shapes, a.q_labels, a.data * b, a.idxs
                     out_pattern = a.pattern
                     symmetry = a.symmetry
+                    out_shape = a.shape
                 else:
                     c = self._tensordot(a, b, axes=([-1], [0]))
                     shs, qs, data, idxs = c.shapes, c.q_labels, c.data, c.idxs
                     out_pattern, _ = _contract_patterns(a.pattern, b.pattern, [a.ndim-1], [0])
                     symmetry = a.symmetry
+                    out_shape = c.shape
             elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
@@ -1397,11 +1407,13 @@ class FlatFermionTensor(FlatSparseTensor):
                         ufunc, method)(a, b.data), b.idxs
                     out_pattern = b.pattern
                     symmetry = b.symmetry
+                    out_shape = b.shape
                 elif isinstance(b, numbers.Number):
                     shs, qs, data, idxs = a.shapes, a.q_labels, getattr(
                         ufunc, method)(a.data, b), a.idxs
                     out_pattern = a.pattern
                     symmetry = a.symmetry
+                    out_shape = a.shape
                 else:
                     return NotImplemented
             elif len(inputs) == 1:
@@ -1410,6 +1422,7 @@ class FlatFermionTensor(FlatSparseTensor):
                     ufunc, method)(a.data), a.idxs
                 out_pattern = a.pattern
                 symmetry = a.symmetry
+                out_shape = a.shape
             else:
                 return NotImplemented
         else:
@@ -1421,7 +1434,8 @@ class FlatFermionTensor(FlatSparseTensor):
             out[0].idxs[...] = idxs
             out[0].pattern = out_pattern
             out[0].symmetry = symmetry
-        return FlatFermionTensor(q_labels=qs, shapes=shs, data=data, pattern=out_pattern, idxs=idxs, symmetry=symmetry)
+            out[0].shape = out_shape
+        return FlatFermionTensor(q_labels=qs, shapes=shs, data=data, pattern=out_pattern, idxs=idxs, symmetry=symmetry, shape=out_shape)
 
     @staticmethod
     @implements(np.tensordot)
