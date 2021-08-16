@@ -522,8 +522,12 @@ def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
             return blk.__class__(reduced=arr, q_labels=new_q_labels)
 
         new_pattern, inds, return_order = _gen_null_qr_partition(T, mod)
+        if return_order == slice(None):
+            shape = (1,)+T.shape
+        else:
+            shape = T.shape + (1,)
         rblks = [_get_new_blk_qr(iblk, inds) for iblk in T.blocks]
-        R = T.__class__(blocks=rblks, pattern=new_pattern)
+        R = T.__class__(blocks=rblks, pattern=new_pattern, shape=shape)
         return (Q, R)[return_order]
 
     symmetry = T.dq.__class__
@@ -594,9 +598,13 @@ def flat_qr(T, left_idx, right_idx=None, mod="qr"):
         new_pattern, inds, return_order = _gen_null_qr_partition(T, mod)
         new_shapes = np.insert(T.shapes, inds, 1, axis=1)
         new_q_labels = np.insert(T.q_labels, inds, flat_q, axis=1)
+        if return_order == slice(None):
+            shape = (1,)+T.shape
+        else:
+            shape = T.shape + (1,)
         R = T.__class__(new_q_labels, new_shapes,
                         T.data.copy(), pattern=new_pattern,
-                        idxs=T.idxs.copy(), symmetry=T.symmetry)
+                        idxs=T.idxs.copy(), symmetry=T.symmetry, shape=shape)
         return (Q, R)[return_order]
     symmetry = T.dq.__class__
     dq = {"lq": symmetry(0),
@@ -795,10 +803,10 @@ class SparseFermionTensor(SparseTensor):
     def shape(self, sh):
         assert len(sh) == self.ndim
         self._shape = tuple(sh)
-    
+
     def to_constructor(self, axes):
         return Constructor.from_sparse_tensor(self, axes)
-    
+
     def new_like(self, blocks, **kwargs):
         pattern = kwargs.pop("pattern", self.pattern)
         shape = kwargs.pop("shape", self.shape)
@@ -1516,7 +1524,7 @@ class Constructor:
         self.q_labels_tab = dict()
         self.idxs_tab = dict()
         self.info_generator = info_generator
-    
+
     @property
     def pattern(self):
         return self._pattern
@@ -1532,7 +1540,7 @@ class Constructor:
             self.idxs_tab[dq] = info[2]
 
         return self.shapes_tab[dq], self.q_labels_tab[dq], self.idxs_tab[dq]
-    
+
     @classmethod
     def from_bond_infos(cls, bond_infos, pattern, flat=None):
         flat = setting.dispatch_settings(flat=flat)
@@ -1555,7 +1563,7 @@ class Constructor:
                 shapes = np.vstack(shapes).astype(np.uint32)
             return shapes, q_labels, idxs
         return Constructor(pattern, flat=flat, info_generator=generator, symmetry=symmetry)
-    
+
     @classmethod
     def from_sparse_tensor(cls, T, axes, inv=True):
         if isinstance(axes, int):
@@ -1567,7 +1575,7 @@ class Constructor:
             pattern = "".join([string_inv[ix] for ix in input_pattern])
         else:
             pattern = input_pattern
-        
+
         q_tab = dict()
         shape_tab = dict()
         mycon = Constructor(pattern, flat=False, symmetry=T.dq.__class__)
@@ -1616,8 +1624,8 @@ class Constructor:
                 shape_tab[idq] = []
             q_tab[idq].append(iq)
             shape_tab[idq].append(ish)
-    
-        for idq, shapes in shape_tab.items():        
+
+        for idq, shapes in shape_tab.items():
             isize = np.prod(shapes, axis=1)
             idxs = np.zeros(len(isize)+1, dtype=np.uint64)
             idxs[1:] = np.cumsum(isize)
@@ -1625,17 +1633,17 @@ class Constructor:
             shapes = np.vstack(shapes)
             mycon.update(idq, shapes=shapes, q_labels=q_labels, idxs=idxs)
         return mycon
-            
+
     def vector_size(self, dq):
         return self.get_info(dq)[2][-1].astype(np.int)
-    
+
     def vector_to_tensor(self, vector, dq):
         shapes, q_labels, idxs = self.get_info(dq)
         vector = np.real_if_close(vector)
         assert (len(vector)==idxs[-1])
         if self.flat:
             vector = np.ascontiguousarray(vector)
-            T = FlatFermionTensor(q_labels, shapes, 
+            T = FlatFermionTensor(q_labels, shapes,
                         vector, pattern=self.pattern, idxs=idxs, symmetry=self.symmetry)
         else:
             blocks = []
