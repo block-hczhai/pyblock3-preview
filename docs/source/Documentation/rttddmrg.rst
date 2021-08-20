@@ -16,7 +16,7 @@ the Green's function for H10 (STO6G) (for a wide range of frequencies):
 
 where :math:`|\Psi_0\rangle` is the ground-state, :math:`i = j = 4` (``isite``), :math:`\eta = 0.05`.
 
-This is obtained from a fourier transform from time domain to frequency domain:
+This is obtained from a Fourier transform from time domain to frequency domain:
 
 .. math::
 
@@ -95,7 +95,7 @@ this constant from MPO to let the ``mpo`` object represent :math:`\hat{H}_0 - E_
     isite = 4
     mpo.const -= ener
 
-Here, ``dop`` is the destroy operator :math:`\hat{a}_{4\alpha}`, defined using ``OpElement``,
+Here, ``dop`` is the destruction operator :math:`\hat{a}_{4\alpha}`, defined using ``OpElement``,
 where the first argument ``OpNames.D`` is the operator name,
 the second argument ``(isite, 0)`` is the orbital index (counting from zero) and spin index (0 = alpha, 1 = beta),
 and the last argument ``q_label`` is a quantum number, representing how this operator changes

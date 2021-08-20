@@ -153,7 +153,7 @@ class MPS(NDArrayOperatorsMixin):
         const : float
             Constant term.
         opts : dict or None
-            Options indicating how bond dimension trunctation
+            Options indicating how bond dimension truncation
             should be done after MPO @ MPS, etc.
             Possible options are: max_bond_dim, cutoff, max_dw, norm_cutoff
         dq : SZ
