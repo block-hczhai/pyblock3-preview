@@ -432,7 +432,7 @@ _numpy_func_impls = _sparse_tensor_numpy_func_impls
 class SparseTensor(NDArrayOperatorsMixin):
     """
     block-sparse tensor.
-    Represented as a list of :class:`SubTesnor`.
+    Represented as a list of :class:`SubTensor`.
     """
 
     def __init__(self, blocks=None):

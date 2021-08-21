@@ -53,8 +53,11 @@ Ancilla Approach
     print('Energy = ', ener)
     print('Error  = ', ener - 0.2408363230374028)
 
-Matrix Product Density Operator (MPDO) Approach
+Matrix Product Ancilla Operator Approach
 -----------------------------------------------
+Here, the ancilla MPS is contracted to an MPO,
+where both the physical and the auxiliary dimension
+is located on one site each.
 
 .. code:: python3
 
