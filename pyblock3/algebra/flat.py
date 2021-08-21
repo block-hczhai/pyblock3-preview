@@ -389,7 +389,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def kron_product_info(self, *idxs, pattern=None):
         idxs = np.array([i if i >= 0 else self.ndim +
                          i for i in idxs], dtype=np.int32)
-        return flat_sparse_kron_product_info(np.array(self.infos)[idxs], pattern=pattern)
+        return flat_sparse_kron_product_info(np.array(self.infos, dtype=object)[idxs], pattern=pattern)
 
     @staticmethod
     def _fuse(a, *idxs, info=None, pattern=None):
