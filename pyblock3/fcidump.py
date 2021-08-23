@@ -93,7 +93,7 @@ except Exception:
 class FCIDUMP:
 
     def __init__(self, pg='c1', n_sites=0, n_elec=0, twos=0, ipg=0, uhf=False,
-                 h1e=None, g2e=None, orb_sym=None, const_e=0, mu=0):
+                 h1e=None, g2e=None, orb_sym=None, const_e=0, mu=0, general=False):
         self.pg = pg
         self.n_sites = n_sites
         self.n_elec = n_elec
@@ -103,7 +103,7 @@ class FCIDUMP:
         self.g2e = g2e  # aa, ab, bb
         self.const_e = const_e
         self.uhf = uhf
-        self.general = False
+        self.general = general
         self.tgeneral = False
         self.orb_sym = [0] * self.n_sites if orb_sym is None else orb_sym
         self.mu = mu
@@ -184,6 +184,7 @@ class FCIDUMP:
                             term.ops[1].site_index[0], term.ops[2].site_index[0]] = term.factor
                 else:
                     raise RuntimeError('Unknown term: ', term)
+        return self
 
     def t(self, s, i, j):
         return self.h1e[s][i, j] if self.uhf else self.h1e[i, j]

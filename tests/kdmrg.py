@@ -19,8 +19,9 @@ if not os.path.isdir(scratch):
 os.environ['TMPDIR'] = scratch
 os.environ['OMP_NUM_THREADS'] = str(n_threads)
 
-def build_rspace_hubbard(u=4, t=1, n=16, cutoff=1E-9):
-    fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n, twos=0, ipg=0, orb_sym=[0] * n)
+def build_rspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None):
+    n_elec = n if n_elec is None else n_elec
+    fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n_elec, twos=n_elec % 2, ipg=0, orb_sym=[0] * n)
     hamil = Hamiltonian(fcidump, flat=True)
 
     def generate_terms(n_sites, c, d):
@@ -32,8 +33,9 @@ def build_rspace_hubbard(u=4, t=1, n=16, cutoff=1E-9):
 
     return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff).to_sparse()
 
-def build_kspace_hubbard(u=4, t=1, n=16, cutoff=1E-9):
-    fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n, twos=0, ipg=0, orb_sym=[0] * n)
+def build_kspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None):
+    n_elec = n if n_elec is None else n_elec
+    fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n_elec, twos=n_elec % 2, ipg=0, orb_sym=[0] * n)
     hamil = Hamiltonian(fcidump, flat=True)
 
     def generate_terms(n_sites, c, d):
@@ -48,10 +50,13 @@ def build_kspace_hubbard(u=4, t=1, n=16, cutoff=1E-9):
                             for sij in [0, 1]:
                                 for skl in [0, 1]:
                                     yield (u / n_sites / 2) * (c[k, sij] * c[k3, skl] * d[k4, skl] * d[k2, sij])
+    # FCIDUMP(n_sites=2, n_elec=2, general=True).build(generate_terms).write('FCIDUMP')
 
     return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff).to_sparse()
 
-hamil, mpo = build_kspace_hubbard(n=6, t=1, u=2)
+# hamil = Hamiltonian(FCIDUMP(pg='d2h').read('FCIDUMP'), flat=True)
+# mpo = hamil.build_qc_mpo().to_sparse()
+hamil, mpo = build_kspace_hubbard(n=5, t=1, u=3, n_elec=3)
 
 bond_dim = 500
 mrank = 0
