@@ -146,7 +146,7 @@ size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
                                  py::array_t<FL> &cdata) {
     int nb = (int)plan.shape()[0], ndimp = (int)plan.shape()[1];
     assert(plan.strides()[1] == sizeof(int32_t));
-    assert(ndimp == 9);
+    assert(ndimp == 12);
     const FL *pa = adata.data(), *pb = bdata.data();
     FL *pc = cdata.mutable_data();
     size_t nflop = 0;
@@ -160,8 +160,10 @@ size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
         const int32_t *pp = plan.data() + ndimp * i;
         const int trans_b = pp[0], trans_a = pp[1];
         const int nn = pp[2], mm = pp[3], kk = pp[4];
-        const int pib = pp[5], pia = pp[6], pic = pp[7];
-        alpha[i] = pp[8];
+        const size_t pib = ((size_t)pp[5] << 32) | (size_t)(uint32_t)pp[6],
+                     pia = ((size_t)pp[7] << 32) | (size_t)(uint32_t)pp[8],
+                     pic = ((size_t)pp[9] << 32) | (size_t)(uint32_t)pp[10];
+        alpha[i] = pp[11];
         ta[i] = trans_a == -1 ? CblasNoTrans : CblasTrans;
         tb[i] = trans_b == 1 ? CblasNoTrans : CblasTrans;
         m[i] = mm, n[i] = nn, k[i] = kk;
@@ -420,7 +422,7 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
 
     assert(bqs.shape()[0] != 0);
     if (aqs.shape()[0] == 0)
-        return py::array_t<int32_t>(vector<ssize_t>{0, 9});
+        return py::array_t<int32_t>(vector<ssize_t>{0, 12});
 
     int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
     int n_blocks_b = (int)bqs.shape()[0], ndimb = (int)bqs.shape()[1];
@@ -583,10 +585,12 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
                     ;
                 assert(iq < (int)vq.size());
                 int ic = vq[iq];
-                mr[ic].push_back(vector<int>{trans_b, trans_a, b_free_dim[ib],
-                                             a_free_dim[ia], ctr_dim[ia],
-                                             (int)pib[ib], (int)pia[ia],
-                                             (int)pic[ic], xferm ? -1 : 1});
+                mr[ic].push_back(vector<int>{
+                    trans_b, trans_a, b_free_dim[ib], a_free_dim[ia],
+                    ctr_dim[ia], (int)(pib[ib] >> 32),
+                    (int)(pib[ib] & 0xFFFFFFFFULL), (int)(pia[ia] >> 32),
+                    (int)(pia[ia] & 0xFFFFFFFFULL), (int)(pic[ic] >> 32),
+                    (int)(pic[ic] & 0xFFFFFFFFULL), xferm ? -1 : 1});
                 maxz = max(maxz, (int)mr[ic].size());
             }
         }
@@ -598,7 +602,7 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
                 r.push_back(mmr.second[i]);
     }
     if (r.size() == 0)
-        return py::array_t<int32_t>(vector<ssize_t>{0, 9});
+        return py::array_t<int32_t>(vector<ssize_t>{0, 12});
     assert(r.size() != 0);
     ssize_t rz = (ssize_t)r[0].size();
     vector<ssize_t> sh = {(ssize_t)r.size(), rz};
