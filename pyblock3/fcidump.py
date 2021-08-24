@@ -137,6 +137,8 @@ class FCIDUMP:
             self.h1e = np.zeros((self.n_sites, self.n_sites))
             self.g2e = np.zeros((self.n_sites, self.n_sites,
                                 self.n_sites, self.n_sites))
+            self.g2ec = np.zeros((self.n_sites, self.n_sites,
+                                self.n_sites, self.n_sites), dtype=int)
             for term in terms:
                 assert isinstance(term, OpString)
                 if len(term.ops) == 2:
@@ -147,8 +149,16 @@ class FCIDUMP:
                     assert term.ops[2].name == OpNames.D and term.ops[3].name == OpNames.D
                     self.g2e[term.ops[0].site_index[0], term.ops[3].site_index[0],
                         term.ops[1].site_index[0], term.ops[2].site_index[0]] = term.factor
+                    self.g2ec[term.ops[0].site_index[0], term.ops[3].site_index[0],
+                        term.ops[1].site_index[0], term.ops[2].site_index[0]] += 1
                 else:
                     raise RuntimeError('Unknown term: ', term)
+            for xi in range(self.n_sites):
+                for xj in range(self.n_sites):
+                    for xk in range(self.n_sites):
+                        for xl in range(self.n_sites):
+                            if self.g2ec[xi, xj, xk, xl] == 2 or self.g2ec[xi, xj, xk, xl] == 4:
+                                self.g2e[xi, xj, xk, xl] *= 2
         else:
             self.h1e = (
                 np.zeros((self.n_sites, self.n_sites)),
@@ -159,6 +169,12 @@ class FCIDUMP:
                 np.zeros((self.n_sites, self.n_sites,
                         self.n_sites, self.n_sites)),
                 np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)))
+            self.g2ec = (
+                np.zeros((self.n_sites, self.n_sites,
+                        self.n_sites, self.n_sites), dtype=int),
+                np.zeros((self.n_sites, self.n_sites,
+                        self.n_sites, self.n_sites), dtype=int),
+                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites), dtype=int))
             for term in terms:
                 assert isinstance(term, OpString)
                 if len(term.ops) == 2:
@@ -170,6 +186,7 @@ class FCIDUMP:
                     assert term.ops[2].name == OpNames.D and term.ops[3].name == OpNames.D
                     assert term.ops[0].site_index[1] == term.ops[3].site_index[1]
                     assert term.ops[1].site_index[1] == term.ops[2].site_index[1]
+                    x = -1
                     if term.ops[0].site_index[1] == 0 and term.ops[1].site_index[1] == 0:
                         x = 0
                     elif term.ops[0].site_index[1] == 1 and term.ops[1].site_index[1] == 1:
@@ -179,11 +196,22 @@ class FCIDUMP:
                     else:
                         self.g2e[x][term.ops[1].site_index[0], term.ops[2].site_index[0],
                             term.ops[0].site_index[0], term.ops[3].site_index[0]] = term.factor
+                        self.g2ec[x][term.ops[1].site_index[0], term.ops[2].site_index[0],
+                            term.ops[0].site_index[0], term.ops[3].site_index[0]] += 1
                     if x != -1:
                         self.g2e[x][term.ops[0].site_index[0], term.ops[3].site_index[0],
                             term.ops[1].site_index[0], term.ops[2].site_index[0]] = term.factor
+                        self.g2ec[x][term.ops[0].site_index[0], term.ops[3].site_index[0],
+                            term.ops[1].site_index[0], term.ops[2].site_index[0]] += 1
                 else:
                     raise RuntimeError('Unknown term: ', term)
+            for x in range(3):
+                for xi in range(self.n_sites):
+                    for xj in range(self.n_sites):
+                        for xk in range(self.n_sites):
+                            for xl in range(self.n_sites):
+                                if self.g2ec[x][xi, xj, xk, xl] == 2 or self.g2ec[x][xi, xj, xk, xl] == 4:
+                                    self.g2e[x][xi, xj, xk, xl] *= 2
         return self
 
     def t(self, s, i, j):
@@ -250,7 +278,7 @@ class FCIDUMP:
 
         for k, v in cont_dict.items():
             if ',' in v:
-                v = cont_dict[k] = v.split(',')
+                cont_dict[k] = v.split(',')
 
         self.n_sites = int(cont_dict.get('norb'))
         self.twos = int(cont_dict.get('ms2', 0))

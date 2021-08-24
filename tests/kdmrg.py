@@ -19,7 +19,7 @@ if not os.path.isdir(scratch):
 os.environ['TMPDIR'] = scratch
 os.environ['OMP_NUM_THREADS'] = str(n_threads)
 
-def build_rspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None):
+def build_rspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None, filename=None):
     n_elec = n if n_elec is None else n_elec
     fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n_elec, twos=n_elec % 2, ipg=0, orb_sym=[0] * n)
     hamil = Hamiltonian(fcidump, flat=True)
@@ -30,10 +30,11 @@ def build_rspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None):
                 yield t * c[i, s] * d[(i - 1 + n_sites) % n_sites, s]
                 yield t * c[i, s] * d[(i + 1) % n_sites, s]
             yield u * (c[i, 0] * c[i, 1] * d[i, 1] * d[i, 0])
-
+    if filename is not None:
+        FCIDUMP(n_sites=n, n_elec=n_elec, twos=n_elec % 2).build(generate_terms).write(filename)
     return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff).to_sparse()
 
-def build_kspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None):
+def build_kspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None, filename=None):
     n_elec = n if n_elec is None else n_elec
     fcidump = FCIDUMP(pg='c1', n_sites=n, n_elec=n_elec, twos=n_elec % 2, ipg=0, orb_sym=[0] * n)
     hamil = Hamiltonian(fcidump, flat=True)
@@ -50,13 +51,14 @@ def build_kspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None):
                             for sij in [0, 1]:
                                 for skl in [0, 1]:
                                     yield (u / n_sites / 2) * (c[k, sij] * c[k3, skl] * d[k4, skl] * d[k2, sij])
-    # FCIDUMP(n_sites=2, n_elec=2, general=True).build(generate_terms).write('FCIDUMP')
+    if filename is not None:
+        FCIDUMP(n_sites=n, n_elec=n_elec, twos=n_elec % 2, general=True).build(generate_terms).write(filename)
 
     return hamil, hamil.build_mpo(generate_terms, cutoff=cutoff).to_sparse()
 
 # hamil = Hamiltonian(FCIDUMP(pg='d2h').read('FCIDUMP'), flat=True)
 # mpo = hamil.build_qc_mpo().to_sparse()
-hamil, mpo = build_kspace_hubbard(n=5, t=1, u=3, n_elec=3)
+hamil, mpo = build_rspace_hubbard(n=8, t=1, u=2, n_elec=8, filename=None)
 
 bond_dim = 500
 mrank = 0
