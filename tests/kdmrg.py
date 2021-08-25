@@ -42,7 +42,7 @@ def build_kspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None, filename=None
     def generate_terms(n_sites, c, d):
         for k in range(0, n_sites):
             for s in [0, 1]:
-                yield (-2 * t * np.cos(2 * k * np.pi / n_sites)) * c[k, s] * d[k, s]
+                yield (-2 * t * np.cos(2 * k * np.pi / n_sites + np.pi)) * c[k, s] * d[k, s]
         for k in range(0, n_sites):
             for k2 in range(0, n_sites):
                 for k3 in range(0, n_sites):
@@ -58,7 +58,7 @@ def build_kspace_hubbard(u=4, t=1, n=16, cutoff=1E-9, n_elec=None, filename=None
 
 # hamil = Hamiltonian(FCIDUMP(pg='d2h').read('FCIDUMP'), flat=True)
 # mpo = hamil.build_qc_mpo().to_sparse()
-hamil, mpo = build_rspace_hubbard(n=8, t=1, u=2, n_elec=8, filename=None)
+hamil, mpo = build_rspace_hubbard(n=7, t=1, u=2, n_elec=5, filename=None)
 
 bond_dim = 500
 mrank = 0
