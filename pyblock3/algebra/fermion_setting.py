@@ -2,7 +2,7 @@ import sys
 from .fermion_symmetry import U11, U1, Z4, Z2, Z22
 
 this = sys.modules[__name__]
-this.SVD_SCREENING = 1e-10
+this.SVD_SCREENING = 1e-28
 this.DEFAULT_SYMMETRY = U11
 this.DEFAULT_FLAT = True
 this.DEFAULT_FERMION = True
