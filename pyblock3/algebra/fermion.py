@@ -1665,7 +1665,7 @@ class Constructor:
                     vector.append(T.data[T.idxs[ix]:T.idxs[ix+1]])
                 vector = np.concatenate(vector)
         else:
-            vector = [np.zeros([1]) for _ in range(len(shapes))]
+            vector = [np.zeros(ish).ravel() for ish in shapes]
             for iblk in T.blocks:
                 idx = q_labels.index(iblk.q_labels)
                 vector[idx] = np.asarray(iblk).ravel()
