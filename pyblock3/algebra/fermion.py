@@ -796,7 +796,7 @@ class SparseFermionTensor(SparseTensor):
                     else:
                         shape[ix] += iblk.shape[ix]
                         counted_block[ix].append(iq)
-            self._shape = tuple(shape)
+            self._shape = tuple([int(ish) for ish in shape])
         return self._shape
 
     @shape.setter
@@ -1208,7 +1208,7 @@ class FlatFermionTensor(FlatSparseTensor):
             for idim in range(self.ndim):
                 _, indices = np.unique(self.q_labels[:,idim], return_index=True)
                 shape.append(self.shapes[indices, idim].sum())
-            self._shape = tuple(shape)
+            self._shape = tuple([int(ish) for ish in shape])
         return self._shape
 
     @shape.setter
