@@ -928,6 +928,10 @@ class SparseTensor(NDArrayOperatorsMixin):
             infos = (abi[0] + bbi[0], abi[-1] + bbi[-1])
 
         lb, rb = infos[0], infos[-1]
+        if a.dtype == np.complex128 or b.dtype == np.complex128:
+            dtype = np.complex128
+        else:
+            dtype = a.dtype
 
         sub_mp = {}
         # find required new blocks and their shapes
@@ -939,7 +943,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 mshape[0] = lb[qs[0]]
                 mshape[-1] = rb[qs[-1]]
                 sub_mp[qs] = SubTensor.zeros(shape=tuple(
-                    mshape), q_labels=qs, dtype=a.dtype)
+                    mshape), q_labels=qs, dtype=dtype)
         # copy block self.blocks to smaller index in new block
         for block in a.blocks:
             qs = block.q_labels

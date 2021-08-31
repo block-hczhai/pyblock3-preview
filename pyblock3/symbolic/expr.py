@@ -218,7 +218,7 @@ class OpString(OpExpr):
                 for jx in self.ops[i + 1:]:
                     if ix.site_index > jx.site_index:
                         self.factor = -self.factor
-        self.ops.sort(key=lambda x: x.site_index[0])
+        self.ops.sort(key=lambda x: x.site_index)
 
     def __repr__(self):
         if self.factor == 1:

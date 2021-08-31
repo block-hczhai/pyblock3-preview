@@ -91,7 +91,8 @@ def build_qc(filename, pg='d2h', cutoff=1E-9, max_bond_dim=-1):
     terms = generate_qc_terms(
         fcidump.n_sites, fcidump.h1e, fcidump.g2e, cutoff)
     print('hamil term time = ', time.perf_counter() - tx, len(terms[0]))
-    return hamil, hamil.build_mpo(terms, cutoff=cutoff, max_bond_dim=max_bond_dim).to_sparse()
+    return hamil, hamil.build_mpo(terms, cutoff=cutoff, max_bond_dim=max_bond_dim,
+        const=hamil.fcidump.const_e).to_sparse()
 
 
 tx = time.perf_counter()

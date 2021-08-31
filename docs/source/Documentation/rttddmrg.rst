@@ -123,7 +123,7 @@ The quantum number of ``bra`` is simply the sum of the quantum number of ``dop``
 Then we use :func:`MPE.linear` to fit ``bra`` to ``dmpo @ mps``.
 This is a sweep algorithm similar to DMRG.
 In principle, the following line (and the above line) can be replaced by simply
-``bra = dmpo @ mps`` (which may be slower).
+``bra = dmpo @ mps; bra.fix_pattern()`` (which may be slower).
 
 .. code:: python
 

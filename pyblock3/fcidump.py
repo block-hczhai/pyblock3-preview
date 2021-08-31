@@ -20,7 +20,6 @@
 """One-body/two-body integral object."""
 
 import numpy as np
-import numba as nb
 
 PointGroup = {
     "d2h": [8, 0, 7, 6, 1, 5, 2, 3, 4],
@@ -33,41 +32,68 @@ PointGroup = {
     "c1": [8, 0]
 }
 
+try:
+    import numba as nb
 
-@nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :]))
-def parallelize_h1e(n_sites, mrank, msize, h1e):
-    for i in range(0, n_sites):
-        if mrank != i % msize:
-            h1e[i, :] = 0.0
+    @nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :]))
+    def parallelize_h1e(n_sites, mrank, msize, h1e):
+        for i in range(0, n_sites):
+            if mrank != i % msize:
+                h1e[i, :] = 0.0
 
 
-@nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :, :, :]))
-def parallelize_g2e(n_sites, mrank, msize, g2e):
-    for i in range(0, n_sites):
-        for j in range(0, n_sites):
-            for k in range(0, n_sites):
-                for l in range(0, n_sites):
-                    if g2e[i, j, k, l] == 0:
-                        continue
-                    x = np.array([i, j, k, l], dtype=np.int32)
-                    x.sort()
-                    if x[1] == x[2]:
-                        if mrank != x[1] % msize:
-                            g2e[i, j, k, l] = 0
-                    else:
-                        ii, jj = x[0], x[1]
-                        if ii <= jj:
-                            if mrank != (jj * (jj + 1) // 2 + ii) % msize:
+    @nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :, :, :]))
+    def parallelize_g2e(n_sites, mrank, msize, g2e):
+        for i in range(0, n_sites):
+            for j in range(0, n_sites):
+                for k in range(0, n_sites):
+                    for l in range(0, n_sites):
+                        if g2e[i, j, k, l] == 0:
+                            continue
+                        x = np.array([i, j, k, l], dtype=np.int32)
+                        x.sort()
+                        if x[1] == x[2]:
+                            if mrank != x[1] % msize:
                                 g2e[i, j, k, l] = 0
                         else:
-                            if mrank != (ii * (ii + 1) // 2 + jj) % msize:
-                                g2e[i, j, k, l] = 0
+                            ii, jj = x[0], x[1]
+                            if ii <= jj:
+                                if mrank != (jj * (jj + 1) // 2 + ii) % msize:
+                                    g2e[i, j, k, l] = 0
+                            else:
+                                if mrank != (ii * (ii + 1) // 2 + jj) % msize:
+                                    g2e[i, j, k, l] = 0
+except Exception:
 
+    def parallelize_h1e(n_sites, mrank, msize, h1e):
+        for i in range(0, n_sites):
+            if mrank != i % msize:
+                h1e[i, :] = 0.0
+    def parallelize_g2e(n_sites, mrank, msize, g2e):
+        for i in range(0, n_sites):
+            for j in range(0, n_sites):
+                for k in range(0, n_sites):
+                    for l in range(0, n_sites):
+                        if g2e[i, j, k, l] == 0:
+                            continue
+                        x = np.array([i, j, k, l], dtype=np.int32)
+                        x.sort()
+                        if x[1] == x[2]:
+                            if mrank != x[1] % msize:
+                                g2e[i, j, k, l] = 0
+                        else:
+                            ii, jj = x[0], x[1]
+                            if ii <= jj:
+                                if mrank != (jj * (jj + 1) // 2 + ii) % msize:
+                                    g2e[i, j, k, l] = 0
+                            else:
+                                if mrank != (ii * (ii + 1) // 2 + jj) % msize:
+                                    g2e[i, j, k, l] = 0
 
 class FCIDUMP:
 
     def __init__(self, pg='c1', n_sites=0, n_elec=0, twos=0, ipg=0, uhf=False,
-                 h1e=None, g2e=None, orb_sym=None, const_e=0, mu=0):
+                 h1e=None, g2e=None, orb_sym=None, const_e=0, mu=0, general=False):
         self.pg = pg
         self.n_sites = n_sites
         self.n_elec = n_elec
@@ -77,7 +103,7 @@ class FCIDUMP:
         self.g2e = g2e  # aa, ab, bb
         self.const_e = const_e
         self.uhf = uhf
-        self.general = False
+        self.general = general
         self.tgeneral = False
         self.orb_sym = [0] * self.n_sites if orb_sym is None else orb_sym
         self.mu = mu
@@ -111,6 +137,8 @@ class FCIDUMP:
             self.h1e = np.zeros((self.n_sites, self.n_sites))
             self.g2e = np.zeros((self.n_sites, self.n_sites,
                                 self.n_sites, self.n_sites))
+            self.g2ec = np.zeros((self.n_sites, self.n_sites,
+                                self.n_sites, self.n_sites), dtype=int)
             for term in terms:
                 assert isinstance(term, OpString)
                 if len(term.ops) == 2:
@@ -121,8 +149,16 @@ class FCIDUMP:
                     assert term.ops[2].name == OpNames.D and term.ops[3].name == OpNames.D
                     self.g2e[term.ops[0].site_index[0], term.ops[3].site_index[0],
                         term.ops[1].site_index[0], term.ops[2].site_index[0]] = term.factor
+                    self.g2ec[term.ops[0].site_index[0], term.ops[3].site_index[0],
+                        term.ops[1].site_index[0], term.ops[2].site_index[0]] += 1
                 else:
                     raise RuntimeError('Unknown term: ', term)
+            for xi in range(self.n_sites):
+                for xj in range(self.n_sites):
+                    for xk in range(self.n_sites):
+                        for xl in range(self.n_sites):
+                            if self.g2ec[xi, xj, xk, xl] == 2 or self.g2ec[xi, xj, xk, xl] == 4:
+                                self.g2e[xi, xj, xk, xl] *= 2
         else:
             self.h1e = (
                 np.zeros((self.n_sites, self.n_sites)),
@@ -133,6 +169,12 @@ class FCIDUMP:
                 np.zeros((self.n_sites, self.n_sites,
                         self.n_sites, self.n_sites)),
                 np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites)))
+            self.g2ec = (
+                np.zeros((self.n_sites, self.n_sites,
+                        self.n_sites, self.n_sites), dtype=int),
+                np.zeros((self.n_sites, self.n_sites,
+                        self.n_sites, self.n_sites), dtype=int),
+                np.zeros((self.n_sites, self.n_sites, self.n_sites, self.n_sites), dtype=int))
             for term in terms:
                 assert isinstance(term, OpString)
                 if len(term.ops) == 2:
@@ -144,6 +186,7 @@ class FCIDUMP:
                     assert term.ops[2].name == OpNames.D and term.ops[3].name == OpNames.D
                     assert term.ops[0].site_index[1] == term.ops[3].site_index[1]
                     assert term.ops[1].site_index[1] == term.ops[2].site_index[1]
+                    x = -1
                     if term.ops[0].site_index[1] == 0 and term.ops[1].site_index[1] == 0:
                         x = 0
                     elif term.ops[0].site_index[1] == 1 and term.ops[1].site_index[1] == 1:
@@ -153,11 +196,23 @@ class FCIDUMP:
                     else:
                         self.g2e[x][term.ops[1].site_index[0], term.ops[2].site_index[0],
                             term.ops[0].site_index[0], term.ops[3].site_index[0]] = term.factor
+                        self.g2ec[x][term.ops[1].site_index[0], term.ops[2].site_index[0],
+                            term.ops[0].site_index[0], term.ops[3].site_index[0]] += 1
                     if x != -1:
                         self.g2e[x][term.ops[0].site_index[0], term.ops[3].site_index[0],
                             term.ops[1].site_index[0], term.ops[2].site_index[0]] = term.factor
+                        self.g2ec[x][term.ops[0].site_index[0], term.ops[3].site_index[0],
+                            term.ops[1].site_index[0], term.ops[2].site_index[0]] += 1
                 else:
                     raise RuntimeError('Unknown term: ', term)
+            for x in range(3):
+                for xi in range(self.n_sites):
+                    for xj in range(self.n_sites):
+                        for xk in range(self.n_sites):
+                            for xl in range(self.n_sites):
+                                if self.g2ec[x][xi, xj, xk, xl] == 2 or self.g2ec[x][xi, xj, xk, xl] == 4:
+                                    self.g2e[x][xi, xj, xk, xl] *= 2
+        return self
 
     def t(self, s, i, j):
         return self.h1e[s][i, j] if self.uhf else self.h1e[i, j]
@@ -223,7 +278,7 @@ class FCIDUMP:
 
         for k, v in cont_dict.items():
             if ',' in v:
-                v = cont_dict[k] = v.split(',')
+                cont_dict[k] = v.split(',')
 
         self.n_sites = int(cont_dict.get('norb'))
         self.twos = int(cont_dict.get('ms2', 0))

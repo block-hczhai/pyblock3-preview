@@ -69,6 +69,14 @@ if ENABLE_FAST_IMPLS:
             return block3.flat_sparse_tensor.skeleton(block3.VectorMapUIntUInt(bond_infos), pattern, fdq)
         flat_sparse_skeleton = flat_sparse_skeleton_impl
 
+        def flat_sparse_fix_pattern_impl(qs, pattern=None, dq=None):
+            fdq = dq.to_flat() if dq is not None else SZ(0, 0, 0).to_flat()
+            if pattern is None:
+                pattern = "+" * (qs.shape[1] - 1) + "-"
+            cqs, cdq = block3.flat_sparse_tensor.fix_pattern(qs, pattern, fdq)
+            return cqs, SZ.from_flat(cdq)
+        flat_sparse_fix_pattern = flat_sparse_fix_pattern_impl
+
         def flat_sparse_kron_sum_info_impl(aqs, ashs, pattern=None):
             if pattern is None:
                 pattern = "+" * (aqs.shape[1] if aqs.size != 0 else 0)
@@ -239,6 +247,10 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         else:
             return NotImplementedError('dtype %r not supported!' % dtype)
         return FlatSparseTensor(qs, shs, data, idxs)
+    
+    def fix_pattern(self, pattern=None, dq=None):
+        cqs, cdq = flat_sparse_fix_pattern(self.q_labels, pattern, dq)
+        return FlatSparseTensor(cqs, self.shapes, self.data, self.idxs), cdq
 
     @property
     def infos(self):
@@ -377,7 +389,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def kron_product_info(self, *idxs, pattern=None):
         idxs = np.array([i if i >= 0 else self.ndim +
                          i for i in idxs], dtype=np.int32)
-        return flat_sparse_kron_product_info(np.array(self.infos)[idxs], pattern=pattern)
+        return flat_sparse_kron_product_info(np.array(self.infos, dtype=object)[idxs], pattern=pattern)
 
     @staticmethod
     def _fuse(a, *idxs, info=None, pattern=None):
