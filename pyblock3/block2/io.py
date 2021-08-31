@@ -286,7 +286,7 @@ class MPOTools:
         if isinstance(bmpo, MPOQC):
             assert bmpo.mode == QCTypes.NC or bmpo.mode == QCTypes.CN
         tensors = [None] * bmpo.n_sites
-        # tranlate operator name symbols to quantum labels
+        # translate operator name symbols to quantum labels
         idx_mps, idx_qss, idx_imps = [], [], []
         for i in range(0, bmpo.n_sites - 1):
             lidx_mp = {}
