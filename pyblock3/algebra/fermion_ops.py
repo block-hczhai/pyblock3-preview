@@ -219,8 +219,6 @@ def get_flat_exponential(T, x):
         else:
             return 1
     split_ax = T.ndim//2
-    left_pattern = T.pattern[:split_ax]
-    right_pattern = T.pattern[split_ax:]
     data_map = {}
     from_parent = {}
     to_parent = {}
@@ -233,7 +231,7 @@ def get_flat_exponential(T, x):
     shapes = []
     qlablst = []
     for slab, datasets in data_map.items():
-        row_len = col_len = 0
+        row_len = 0
         row_map = {}
         for iblk in datasets:
             lq = tuple(T.q_labels[iblk,:split_ax])
@@ -290,8 +288,6 @@ def get_sparse_exponential(T, x):
         else:
             return 1
     split_ax = T.ndim//2
-    left_pattern = T.pattern[:split_ax]
-    right_pattern = T.pattern[split_ax:]
     data_map = {}
     from_parent = {}
     to_parent = {}
@@ -303,7 +299,7 @@ def get_sparse_exponential(T, x):
         data_map[parent].append(iblk)
 
     for slab, datasets in data_map.items():
-        row_len = col_len = 0
+        row_len = 0
         row_map = {}
         for iblk in datasets:
             lq = iblk.q_labels[:split_ax]

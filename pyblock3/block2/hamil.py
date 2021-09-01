@@ -138,9 +138,6 @@ class HamilTools:
             idx = np.argsort([optimal_reorder.index(i) for i in orb_sym_str])
             orb_sym = orb_sym[idx]
             mo_coeff = mo_coeff[:, idx]
-            ridx = np.argsort(idx)
-        else:
-            ridx = np.array(list(range(n_mo)), dtype=int)
 
         h1e = mo_coeff.T @ m.get_hcore() @ mo_coeff
         g2e = ao2mo.restore(8, ao2mo.kernel(mol, mo_coeff), n_mo)

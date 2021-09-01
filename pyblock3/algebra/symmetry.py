@@ -115,7 +115,7 @@ class BondInfo(Counter):
         return BondInfo(super().__add__(other))
 
     def __neg__(self):
-        """Negattion of keys."""
+        """Negation of keys."""
         return BondInfo({-k: v for k, v in self.items()})
 
     def __mul__(self, other):

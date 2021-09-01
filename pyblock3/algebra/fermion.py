@@ -1079,9 +1079,7 @@ class FlatFermionTensor(FlatSparseTensor):
     def _local_flip(self, axes):
         if not setting.DEFAULT_FERMION: return
         if isinstance(axes, int):
-            ax = [axes]
-        else:
-            ax = list(axes)
+            axes = [axes]
         idx = self.idxs
         q_labels = np.stack([self.q_labels[:,ix] for ix in axes], axis=1)
         pattern = "".join([self.pattern[ix] for ix in axes])
