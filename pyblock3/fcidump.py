@@ -65,8 +65,7 @@ try:
 
     parallelize_h1e = nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :]))(_parallelize_h1e)
     parallelize_g2e = nb.njit(nb.void(nb.int32, nb.int32, nb.int32, nb.float64[:, :, :, :]))(_parallelize_g2e)
-    from magic import *
-    ipsh()
+
 except Exception:
 
     parallelize_h1e = _parallelize_h1e
