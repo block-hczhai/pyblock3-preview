@@ -601,6 +601,54 @@ class MPS(NDArrayOperatorsMixin):
         return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod
+    def _to_symbolic(a):
+        return a.to_sparse()
+
+    def to_symbolic(self):
+        tensors = [None] * len(self.tensors)
+        for it, ts in enumerate(self.tensors):
+            if isinstance(ts, FlatFermionTensor):
+                tensors[it] = ts.to_fermion()
+            else:
+                tensors[it] = ts
+        infos = [t.infos for t in tensors]
+        bonds = []
+        bonds.append(infos[0][0])
+        for i in range(self.n_sites - 1):
+            bonds.append(infos[i + 1][0] | infos[i][-1])
+        bonds.append(infos[-1][-1])
+        for it, ts in enumerate(tensors):
+            pos = -1 if it == self.n_sites - 1 else int(it != 0)
+            if isinstance(ts, SymbolicSparseTensor):
+                tensors[it] = ts
+            if isinstance(ts, FlatSparseTensor):
+                assert False
+            elif isinstance(ts, FlatFermionTensor):
+                tensors[it] = SymbolicSparseTensor.from_sparse(ts.to_fermion(),
+                    pos=pos, infos=bonds[it:it + 2], dq=None if it == 0 else self.dq)
+            else:
+                tensors[it] = SymbolicSparseTensor.from_sparse(ts,
+                    pos=pos, infos=bonds[it:it + 2], dq=None if it == 0 else self.dq)
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
+
+    @staticmethod
+    def _to_non_flat(a):
+        return a.to_non_flat()
+
+    def to_non_flat(self):
+        tensors = [None] * len(self.tensors)
+        for it, ts in enumerate(self.tensors):
+            if isinstance(ts, FlatSparseTensor):
+                tensors[it] = ts.to_sparse()
+            elif isinstance(ts, FlatFermionTensor):
+                tensors[it] = ts.to_fermion()
+            elif isinstance(ts, SparseTensor) or isinstance(ts, FermionTensor):
+                tensors[it] = ts
+            else:
+                tensors[it] = ts.to_sparse()
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
+
+    @staticmethod
     def _to_flat(a):
         return a.to_flat()
 

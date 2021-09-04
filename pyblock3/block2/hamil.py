@@ -36,7 +36,7 @@ from block2 import VectorUInt8, VectorUInt16, VectorUBond, VectorDouble, PointGr
 from block2 import Random, FCIDUMP, QCTypes, SeqTypes, NoiseTypes
 from block2.sz import HamiltonianQC, MPS, MPSInfo, AncillaMPSInfo
 from block2.sz import PDM1MPOQC, AncillaMPO, SimplifiedMPO, Rule, RuleQC, MPOQC
-from block2.sz import DMRG, MovingEnvironment, NoTransposeRule
+from block2.sz import DMRG, MovingEnvironment, NoTransposeRule, Expect
 
 
 class HamilTools:
@@ -204,6 +204,13 @@ class HamilTools:
         yield mpo
         mpo.deallocate()
 
+    @contextlib.contextmanager
+    def get_simplified_mpo_block2(self):
+        mpo = MPOQC(self.hamil, QCTypes.Conventional)
+        mpo = SimplifiedMPO(mpo, RuleQC(), True)
+        yield mpo
+        mpo.deallocate()
+
     def get_mpo(self, mode="NC", mu=0.0, ancilla=False):
         with self.get_mpo_block2(mode=mode, mu=mu, ancilla=ancilla) as mpo:
             xmpo = MPOTools.from_block2(mpo)
@@ -293,17 +300,26 @@ class HamilTools:
             tensors.append(ts)
         return PYMPS(tensors=tensors)
 
+    def get_expectation(self, bmpo, bmps):
+        me = MovingEnvironment(bmpo, bmps, bmps, "EXPECT")
+        me.init_environments(False)
+        ex = Expect(me, bmps.info.bond_dim, bmps.info.bond_dim)
+        return ex.solve(False)
+
+    def dmrg(self, bmpo, bmps, bond_dim=250, noise=1E-16, n_sweeps=20):
+        me = MovingEnvironment(bmpo, bmps, bmps, "DMRG")
+        me.init_environments(True)
+        dmrg = DMRG(me, VectorUBond([bond_dim]), VectorDouble([noise, 0]))
+        energy = dmrg.solve(n_sweeps, bmps.center == 0)
+        return energy
+
     @contextlib.contextmanager
     def get_ground_state_mps_block2(self, bond_dim=250, noise=1E-16, n_sweeps=20):
         hamil = self.hamil
         with self.get_init_mps_block2(bond_dim=bond_dim, dot=2) as mps:
             mpo = MPOQC(hamil, QCTypes.Conventional)
             mpo = SimplifiedMPO(mpo, RuleQC(), True)
-
-            me = MovingEnvironment(mpo, mps, mps, "DMRG")
-            me.init_environments(True)
-            dmrg = DMRG(me, VectorUBond([bond_dim]), VectorDouble([noise, 0]))
-            energy = dmrg.solve(n_sweeps, mps.center == 0)
+            energy = self.dmrg(mpo, mps, bond_dim, noise, n_sweeps)
 
             print("Ground State Energy = ", energy)
             yield mps

@@ -1,13 +1,13 @@
 
 import sys
-sys.path[:0] = ['..', "../../block2-old/build"]
+sys.path[:0] = ['..', "../../block2-old/build_seq"]
 
 from pyblock3.block2.hamil import HamilTools
 import numpy as np
 import time
 from functools import reduce
 
-flat = False
+flat = True
 
 # hubbard
 

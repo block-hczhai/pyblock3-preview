@@ -79,7 +79,14 @@ class SiteMPO(MPS):
 class QCSymbolicMPO(MPS):
     """Quantum chemistry symbolic Matrix Product Operator for Hamiltonain"""
 
-    def __init__(self, hamil, symmetrized_p=True, opts=None):
+    def __init__(self, *args, **kwargs):
+        if "hamil" not in kwargs and len(args) == 0:
+            super().__init__(**kwargs)
+            return
+        else:
+            hamil = kwargs["hamil"] if len(args) == 0 else args[0]
+            symmetrized_p = kwargs.get("symmetrized_p", True)
+            opts = kwargs.get("opts", True)
         n_sites = hamil.n_sites
         vac = SZ(0, 0, 0)
         sz = [1, -1]

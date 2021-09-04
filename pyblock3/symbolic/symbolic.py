@@ -20,9 +20,10 @@
 """Vector/Matrix of operator symbols."""
 
 import numpy as np
+import numbers
 from .expr import OpSum, OpString, OpElement, OpNames
 from collections import Counter
-from ..algebra.core import FermionTensor, SparseTensor
+from ..algebra.core import FermionTensor, SparseTensor, SubTensor
 from ..algebra.symmetry import BondFusingInfo
 
 
@@ -271,7 +272,7 @@ class SymbolicSparseTensor:
         return self
 
     @staticmethod
-    def ones(bond_infos, pattern=None, dtype=float):
+    def ones(bond_infos, pattern=None, dtype=float, dq=None):
         """Create operator tensor with ones."""
         assert bond_infos[0].n_bonds == 1
         assert bond_infos[-1].n_bonds == 1
@@ -492,6 +493,95 @@ class SymbolicSparseTensor:
         tl = SymbolicSparseTensor(splmat, lops, self.lop, lrop)
         tr = SymbolicSparseTensor(sprmat, rops, rlop, self.rop)
         return tl, tr
+    
+    @staticmethod
+    def from_sparse(spmat, pos=1, infos=None, dq=None):
+        assert isinstance(spmat, FermionTensor)
+        if infos is None:
+            infos = spmat.infos
+            infos = infos[0], infos[-1]
+        xlr = {}, {}
+        cntx = [0, 0]
+        ops = [], []
+        opnames = OpNames.XL, OpNames.XR
+        for it, (st, info) in enumerate(zip(xlr, infos)):
+            cnt = 0
+            for k, v in info.items():
+                st[k] = cnt
+                ops[it].extend([OpElement(opnames[it], (ic % 1000, ic // 1000), q_label=k)
+                    for ic in range(cnt, cnt + v)])
+                cnt += v
+            cntx[it] = cnt
+        if dq is None:
+            dq = list(xlr[0].keys())[0].__class__()
+        for op in ops[0]:
+            op.q_label = dq - op.q_label
+        map_blocks = {}, {}
+        for ioe, oe in enumerate([spmat.odd, spmat.even]):
+            for block in oe.blocks:
+                ql, qr = block.q_labels[0], block.q_labels[-1]
+                nl, nr = block.shape[0], block.shape[-1]
+                iil, iir = xlr[0][ql], xlr[1][qr]
+                for il in range(nl):
+                    for ir in range(nr):
+                        reduced = np.asarray(block)[il, ..., ir]
+                        if np.linalg.norm(reduced) > 1E-20:
+                            if (iil + il, iir + ir) not in map_blocks[ioe]:
+                                map_blocks[ioe][(iil + il, iir + ir)] = []
+                            map_blocks[ioe][(iil + il, iir + ir)].append(
+                                SubTensor(q_labels=block.q_labels[1:-1],
+                                reduced=reduced))
+        lop = SymbolicColumnVector(cntx[0], ops[0])
+        rop = SymbolicRowVector(cntx[1], ops[1])
+        mops = {}
+        assert pos in [-1, 0, 1]
+        if pos == 0:
+            mat = SymbolicRowVector(cntx[1], ops[1])
+            for ioe, oe in enumerate(map_blocks):
+                for k, v in oe.items():
+                    assert k[0] == 0
+                    xop = ops[1][k[1]]
+                    if xop not in mops:
+                        mops[xop] = FermionTensor(odd=[], even=[])
+                    if ioe == 0:
+                        mops[xop].odd.blocks += v
+                    else:
+                        mops[xop].even.blocks += v
+            for ix, x in enumerate(mat.data):
+                if x not in mops:
+                    mat.data[ix] = 0
+        elif pos == -1:
+            mat = SymbolicColumnVector(cntx[0], ops[0])
+            for ioe, oe in enumerate(map_blocks):
+                for k, v in oe.items():
+                    assert k[1] == 0
+                    xop = ops[0][k[0]]
+                    if xop not in mops:
+                        mops[xop] = FermionTensor(odd=[], even=[])
+                    if ioe == 0:
+                        mops[xop].odd.blocks += v
+                    else:
+                        mops[xop].even.blocks += v
+            for ix, x in enumerate(mat.data):
+                if x not in mops:
+                    mat.data[ix] = 0
+        else:
+            mat = SymbolicMatrix(cntx[0], cntx[1])
+            icnt = 0
+            for ioe, oe in enumerate(map_blocks):
+                for k, v in oe.items():
+                    qs = v[0].q_labels
+                    qz = qs[0].__class__()
+                    dq = sum(qs[:len(qs) // 2], qz) - sum(qs[len(qs) // 2:], qz)
+                    expr = OpElement(OpNames.X, (icnt % 1000, icnt // 1000 % 1000,
+                        icnt // 1000000), q_label=dq)
+                    mat[k[0], k[1]] = expr
+                    if dq.is_fermion:
+                        mops[expr] = FermionTensor(odd=v, even=[])
+                    else:
+                        mops[expr] = FermionTensor(odd=[], even=v)
+                    icnt += 1
+        return SymbolicSparseTensor(mat, mops, lop, rop)
 
     def to_sparse(self, infos=None, dq=None):
 
@@ -522,7 +612,7 @@ class SymbolicSparseTensor:
                     continue
                 assert isinstance(expr, OpElement)
                 spmat = ops[abs(expr)]
-                if spmat.n_blocks == 0:
+                if isinstance(spmat, numbers.Number) or spmat.n_blocks == 0:
                     continue
                 qr, ir = rinfo.q_labels[k]
                 nr = rinfo.n_states[qr]
@@ -534,7 +624,7 @@ class SymbolicSparseTensor:
                     continue
                 assert isinstance(expr, OpElement)
                 spmat = ops[abs(expr)]
-                if spmat.n_blocks == 0:
+                if isinstance(spmat, numbers.Number) or spmat.n_blocks == 0:
                     continue
                 ql, il = linfo.q_labels[k]
                 nl = linfo.n_states[ql]

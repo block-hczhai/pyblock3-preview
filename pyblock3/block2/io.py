@@ -19,211 +19,195 @@
 
 """
 Tools for translating block2 objects.
-MPS/MPO format transform between block2 and pyblock2.
+MPS/MPO format transform between block2 and pyblock3.
 """
 
 import numpy as np
-from ..algebra.core import SparseTensor, SubTensor, FermionTensor
+import numbers
+from numpy.core.numeric import tensordot
+from ..algebra.core import SparseTensor as ASparseTensor, SubTensor, FermionTensor
 from ..algebra.mps import MPS
 from ..algebra.symmetry import SZ as ASZ
-from ..symbolic.expr import OpElement, OpNames
-from ..symbolic.symbolic import SymbolicMatrix, SymbolicRowVector, SymbolicColumnVector, SymbolicSparseTensor
+from ..symbolic.expr import OpElement as AOpElement
+from ..symbolic.symbolic import SymbolicSparseTensor
+from ..symbolic.symbolic import SymbolicMatrix as ASymbolicMatrix
+from ..symbolic.symbolic import SymbolicRowVector as ASymbolicRowVector
+from ..symbolic.symbolic import SymbolicColumnVector as ASymbolicColumnVector
 
-from block2 import OpTypes, QCTypes, SZ
-from block2.sz import StateInfo, MPOQC
-
-
-class TensorTools:
-    @staticmethod
-    def from_block2_left_fused(bspmat, l, m, lm, clm):
-        """Translate block2 rank2 left-fused SparseMatrix to pyblock2 rank3 tensor."""
-        blocks = []
-        for i in range(bspmat.info.n):
-            qlm = bspmat.info.quanta[i].get_bra(bspmat.info.delta_quantum)
-            qr = bspmat.info.quanta[i].get_ket()
-            if bspmat.info.is_wavefunction:
-                qr = -qr
-            ib = lm.find_state(qlm)
-            bbed = clm.n if ib == lm.n - 1 else clm.n_states[ib + 1]
-            pmat = np.array(bspmat[i])
-            nr = pmat.shape[1]
-            ip = 0
-            for bb in range(clm.n_states[ib], bbed):
-                ibba = clm.quanta[bb].data >> 16
-                ibbb = clm.quanta[bb].data & 0xFFFF
-                ql, nl = l.quanta[ibba], l.n_states[ibba]
-                qm, nm = m.quanta[ibbb], m.n_states[ibbb]
-                rmat = pmat[ip: ip + nl * nm, :].reshape((nl, nm, nr))
-                blocks.append(
-                    SubTensor(q_labels=(ql, qm, qr), reduced=rmat.copy()))
-                ip += nl * nm
-            assert ip == pmat.shape[0]
-        return SparseTensor(blocks=blocks)
-
-    @staticmethod
-    def from_block2_right_fused(bspmat, m, r, mr, cmr):
-        """Translate block2 rank2 right-fused SparseMatrix to pyblock2 rank3 tensor."""
-        blocks = []
-        for i in range(bspmat.info.n):
-            ql = bspmat.info.quanta[i].get_bra(bspmat.info.delta_quantum)
-            qmr = bspmat.info.quanta[i].get_ket()
-            if bspmat.info.is_wavefunction:
-                qmr = -qmr
-            ik = mr.find_state(qmr)
-            kked = cmr.n if ik == mr.n - 1 else cmr.n_states[ik + 1]
-            pmat = np.array(bspmat[i])
-            nl = pmat.shape[0]
-            ip = 0
-            for kk in range(cmr.n_states[ik], kked):
-                ikka = cmr.quanta[kk].data >> 16
-                ikkb = cmr.quanta[kk].data & 0xFFFF
-                qm, nm = m.quanta[ikka], m.n_states[ikka]
-                qr, nr = r.quanta[ikkb], r.n_states[ikkb]
-                rmat = pmat[:, ip:ip + nm * nr].reshape((nl, nm, nr))
-                blocks.append(
-                    SubTensor(q_labels=(ql, qm, qr), reduced=rmat.copy()))
-                ip += nm * nr
-            assert ip == pmat.shape[1]
-        return SparseTensor(blocks=blocks)
-    
-    @staticmethod
-    def from_block2_left_and_right_fused(bspmat, l, ma, mb, r, lm, clm, mr, cmr):
-        """Translate block2 rank2 left-and-right-fused SparseMatrix to pyblock2 rank4 tensor."""
-        blocks = []
-        for i in range(bspmat.info.n):
-            qlm = bspmat.info.quanta[i].get_bra(bspmat.info.delta_quantum)
-            qmr = bspmat.info.quanta[i].get_ket()
-            if bspmat.info.is_wavefunction:
-                qmr = -qmr
-            ib = lm.find_state(qlm)
-            bbed = clm.n if ib == lm.n - 1 else clm.n_states[ib + 1]
-            ik = mr.find_state(qmr)
-            kked = cmr.n if ik == mr.n - 1 else cmr.n_states[ik + 1]
-            pmat = np.array(bspmat[i])
-            ipl = 0
-            for bb in range(clm.n_states[ib], bbed):
-                ibba = clm.quanta[bb].data >> 16
-                ibbb = clm.quanta[bb].data & 0xFFFF
-                ql, nl = l.quanta[ibba], l.n_states[ibba]
-                qma, nma = ma.quanta[ibbb], ma.n_states[ibbb]
-                ipr = 0
-                for kk in range(cmr.n_states[ik], kked):
-                    ikka = cmr.quanta[kk].data >> 16
-                    ikkb = cmr.quanta[kk].data & 0xFFFF
-                    qmb, nmb = mb.quanta[ikka], mb.n_states[ikka]
-                    qr, nr = r.quanta[ikkb], r.n_states[ikkb]
-                    rmat = pmat[ipl: ipl + nl * nma, ipr: ipr
-                                + nmb * nr].reshape((nl, nma, nmb, nr))
-                    blocks.append(
-                        SubTensor(q_labels=(ql, qma, qmb, qr), reduced=rmat.copy()))
-                    ipr += nmb * nr
-                assert ipr == pmat.shape[1]
-                ipl += nl * nma
-            assert ipl == pmat.shape[0]
-        return SparseTensor(blocks=blocks)
-
+from block2 import OpTypes, QCTypes, SZ, Tensor, Global, init_memory, release_memory
+from block2 import VectorInt, VectorDouble, VectorPIntInt, DoubleVectorAllocator, IntVectorAllocator
+from block2 import OpNames, SiteIndex
+from block2.sz import StateInfo, MPOQC, UnfusedMPS, CG, MPSInfo, VectorStateInfo
+from block2.sz import VectorVectorPSSTensor, VectorPSSTensor, SparseTensor, VectorSpTensor
+from block2.sz import OpElement, MPO, OpExpr, VectorOpExpr, OperatorTensor
+from block2.sz import SymbolicMatrix, SymbolicRowVector, SymbolicColumnVector
+from block2.sz import SparseMatrixInfo, SparseMatrix, TensorFunctions, OperatorFunctions, CG
+from block2.sz import VectorVectorPLMatInfo, VectorPLMatInfo, VectorSymbolic, VectorOpTensor
 
 class MPSTools:
     @staticmethod
     def from_block2(bmps):
-        """Translate block2 MPS to pyblock2 MPS."""
+        """Translate block2 MPS to pyblock3 MPS."""
         tensors = [None] * bmps.n_sites
-        canonical_form = [c for c in bmps.canonical_form]
-        if canonical_form.count('C') + canonical_form.count('K') + canonical_form.count('S') == 1:
-            if canonical_form.count('K') != 0:
-                canonical_form[canonical_form.index('K')] = 'L'
-            elif canonical_form.count('S') != 0:
-                canonical_form[canonical_form.index('S')] = 'R'
-            else:
-                ix = canonical_form.index('C')
-                assert ix == 0 or ix == bmps.n_sites - 1
-                canonical_form[ix] = 'L' if ix == 0 else 'R'
-            bdot = 1
-        else:
-            assert canonical_form.count('C') == 2
-            ix = canonical_form.index('C')
-            assert canonical_form[ix + 1] == 'C'
-            canonical_form[ix:ix + 2] = 'CN'
-            bdot = 2
+        cf = [c for c in bmps.canonical_form]
+        if cf.count('C') + cf.count('K') + cf.count('S') != 1:
+            assert not isinstance(bmps, UnfusedMPS)
+            assert cf.count('C') == 2
+            ix = cf.index('C')
+            assert cf[ix + 1] == 'C'
+            bmps.center = ix
+            bmps.move_right(CG(), None)
+            bmps.save_data()
+        if not isinstance(bmps, UnfusedMPS):
+            bmps.load_data()
+            bmps = UnfusedMPS(bmps)
         for i in range(0, bmps.n_sites):
-            if canonical_form[i] == 'C':
-                bmps.info.load_left_dims(i)
-                bmps.info.load_right_dims(i + 2)
-                l = bmps.info.left_dims[i]
-                ma = bmps.info.basis[i]
-                mb = bmps.info.basis[i + 1]
-                r = bmps.info.right_dims[i + 2]
-                lm = StateInfo.tensor_product_ref(
-                    l, ma, bmps.info.left_dims_fci[i + 1])
-                mr = StateInfo.tensor_product_ref(
-                    mb, r, bmps.info.right_dims_fci[i + 1])
-                clm = StateInfo.get_connection_info(l, ma, lm)
-                cmr = StateInfo.get_connection_info(mb, r, mr)
-                bmps.load_tensor(i)
-                tensors[i] = TensorTools.from_block2_left_and_right_fused(
-                    bmps.tensors[i], l, ma, mb, r, lm, clm, mr, cmr)
-                bmps.unload_tensor(i)
-                cmr.deallocate()
-                clm.deallocate()
-                mr.deallocate()
-                lm.deallocate()
-                r.deallocate()
-                l.deallocate()
-            elif canonical_form[i] == 'N':
-                tensors[i] = None
-            elif canonical_form[i] == 'L':
-                bmps.info.load_left_dims(i)
-                l = bmps.info.left_dims[i]
-                m = bmps.info.basis[i]
-                lm = StateInfo.tensor_product_ref(
-                    l, m, bmps.info.left_dims_fci[i + 1])
-                clm = StateInfo.get_connection_info(l, m, lm)
-                bmps.load_tensor(i)
-                tensors[i] = TensorTools.from_block2_left_fused(
-                    bmps.tensors[i], l, m, lm, clm)
-                bmps.unload_tensor(i)
-                clm.deallocate()
-                lm.deallocate()
-                l.deallocate()
-            else:
-                bmps.info.load_right_dims(i + 1)
-                m = bmps.info.basis[i]
-                r = bmps.info.right_dims[i + 1]
-                mr = StateInfo.tensor_product_ref(
-                    m, r, bmps.info.right_dims_fci[i])
-                cmr = StateInfo.get_connection_info(m, r, mr)
-                bmps.load_tensor(i)
-                tensors[i] = TensorTools.from_block2_right_fused(
-                    bmps.tensors[i], m, r, mr, cmr)
-                bmps.unload_tensor(i)
-                cmr.deallocate()
-                mr.deallocate()
-                r.deallocate()
-        for block in tensors[bmps.center].blocks:
-            block.q_labels = block.q_labels[:-1] + \
-                (bmps.info.target - block.q_labels[-1], )
-        for i in range(bmps.center + bdot, bmps.n_sites):
-            for block in tensors[i].blocks:
-                block.q_labels = (bmps.info.target - block.q_labels[0],
-                                  block.q_labels[1], bmps.info.target - block.q_labels[2])
-        tensors = [t for t in tensors if t is not None]
-        for i in range(0, len(tensors)):
-            for block in tensors[i].blocks:
-                block.q_labels = tuple(ASZ(x.n, x.twos, x.pg)
-                                       for x in block.q_labels)
+            spd = bmps.tensors[i].data
+            blocks = []
+            for im in range(len(spd)):
+                qm = bmps.info.basis[i].quanta[im]
+                for ((ql, qr), ts) in spd[im]:
+                    qx = tuple(ASZ(x.n, x.twos, x.pg) for x in (ql, qm, qr))
+                    blocks.append(SubTensor(q_labels=qx, reduced=np.array(ts, copy=True)))
+            tensors[i] = ASparseTensor(blocks=blocks)
         return MPS(tensors=tensors)
+    
+    @staticmethod
+    def to_block2(mps, center=None, basis=None, tag='KET', save_dir=None):
+        """
+        Translate pyblock3 MPS to block2 MPS.
+        
+        Args:
+            mps : pyblock3 MPS
+                More than one physical index is not supported.
+                But fused index can be supported.
+            center : int or None
+                If not None, the pyblock3 MPS is already canonicalized
+                at the given index of the center.
+                If None (default), the pyblock3 MPS is transformed after
+                canonicalization at site 0.
+            basis : List(BondInfo) or None
+                If None (default), the site basis will be constructed based on
+                blocks in the MPS tensor, which may be incomplete if the
+                bond dimension of the MPS is small.
+                If not None, the given basis will be used.
+            tag : str
+                Tag of the block2 MPS. Default is "KET".
+            save_dir : str or None
+                If not None, the block2 MPS will be saved to the given dir.
+                If None and the block2 global scratch is not set before
+                entering this function, the block2 MPS will be saved to './nodex'.
+                If None and the block2 global scratch is set, the block2 MPS will
+                be saved to the current block2 global scratch folder.
+        
+        Returns:
+            bmps : block2 MPS
+                To inspect this MPS, please make sure that the block2 global
+                scratch folder and stack memory are properly initialized.
+        """
+        frame_back = Global.frame
+        inited = False
+        if Global.frame is None or save_dir is not None:
+            if save_dir is None:
+                save_dir = './nodex'
+            init_memory(isize=1 << 20, dsize=1 << 30, save_dir=save_dir)
+            inited = True
+        if save_dir is None:
+            save_dir = Global.frame.save_dir
+        if center is None:
+            mps = mps.canonicalize(0)
+            center = 0
+        mps = mps.to_non_flat()
+        mps_infos = [x.infos for x in mps.tensors]
+        vacuum = list(mps_infos[0][0].keys())[0]
+        target = list(mps_infos[-1][-1].keys())[0]
+        vacuum = SZ(vacuum.n, vacuum.twos, vacuum.pg)
+        target = SZ(target.n, target.twos, target.pg)
+        if basis is None:
+            basis = [info[1] for info in mps_infos]
+        else:
+            basis = basis.copy()
+        assert len(basis) == len(mps)
+        for ib, b in enumerate(basis):
+            p = StateInfo()
+            p.allocate(len(b))
+            for ix, (k, v) in enumerate(b.items()):
+                p.quanta[ix] = SZ(k.n, k.twos, k.pg)
+                p.n_states[ix] = v
+            basis[ib] = p
+            p.sort_states()
+        minfo = MPSInfo(mps.n_sites, vacuum, target, VectorStateInfo(basis))
+        minfo.left_dims[0] = StateInfo(vacuum)
+        for i, info in enumerate(mps_infos):
+            p = minfo.left_dims[i + 1]
+            p.allocate(len(info[-1]))
+            for ix, (k, v) in enumerate(info[-1].items()):
+                p.quanta[ix] = SZ(k.n, k.twos, k.pg)
+                p.n_states[ix] = v
+            p.sort_states()
+        minfo.right_dims[mps.n_sites] = StateInfo(vacuum)
+        for i, info in enumerate(mps_infos):
+            p = minfo.right_dims[i]
+            p.allocate(len(info[0]))
+            for ix, (k, v) in enumerate(info[0].items()):
+                p.quanta[ix] = target - SZ(k.n, k.twos, k.pg)
+                p.n_states[ix] = v
+            p.sort_states()
+        minfo.tag = tag
+        minfo.save_mutable()
+        minfo.save_data("%s/%s-mps_info.bin" % (save_dir, tag))
+        tensors = [None] * len(mps)
+        for i, b in enumerate(basis):
+            tensors[i] = SparseTensor()
+            tensors[i].data = VectorVectorPSSTensor([VectorPSSTensor() for _ in range(b.n)])
+            for block in mps[i].blocks:
+                ql, qm, qr = [SZ(x.n, x.twos, x.pg) for x in block.q_labels]
+                im = b.find_state(qm)
+                assert im != -1
+                tensors[i].data[im].append(((ql, qr), Tensor(VectorInt(block.shape))))
+                tensors[i].data[im][-1][1].data = VectorDouble(np.asarray(block).flatten())
+        umps = UnfusedMPS()
+        umps.info = minfo
+        umps.n_sites = len(mps)
+        umps.canonical_form = "L" * center + ("S" if center == len(mps) - 1 else "K") + \
+            "R" * (len(mps) - center - 1)
+        umps.center = center
+        umps.dot = 1
+        umps.tensors = VectorSpTensor(tensors)
+        umps = umps.finalize()
+        if inited:
+            release_memory()
+            Global.frame = frame_back
+        return umps
 
 
 class SymbolicMPOTools:
     @staticmethod
-    def trans_expr(expr):
+    def tr_expr_from_block2(expr):
         if expr.get_type() == OpTypes.Zero:
             return 0
         elif expr.get_type() == OpTypes.Elem:
-            op = OpElement.parse(repr(expr.abs())) * expr.factor
+            op = AOpElement.parse(repr(expr.abs())) * expr.factor
             q = expr.q_label
             op.q_label = ASZ(q.n, q.twos, q.pg)
             return op
+        else:
+            assert False
+
+    @staticmethod
+    def tr_expr_to_block2(expr):
+        if expr == 0:
+            return OpExpr()
+        elif isinstance(expr, AOpElement):
+            nsi = len(expr.site_index)
+            if repr(expr.name) in ["X", "XL", "XR"]:
+                si = SiteIndex(expr.site_index, ())
+            else:
+                si = SiteIndex(expr.site_index[:nsi // 2], expr.site_index[nsi // 2:])
+            name = getattr(OpNames, repr(expr.name))
+            q = expr.q_label
+            ql = SZ(q.n, q.twos, q.pg)
+            return OpElement(name, si, ql, expr.factor)
         else:
             assert False
 
@@ -240,19 +224,19 @@ class SymbolicMPOTools:
             ops = bmpo.tensors[i].ops
             lop = bmpo.right_operator_names[i]
             rop = bmpo.left_operator_names[i]
-            matd = np.array([SymbolicMPOTools.trans_expr(expr)
+            matd = np.array([SymbolicMPOTools.tr_expr_from_block2(expr)
                              for expr in mat.data], dtype=object)
             if i == 0:
-                xmat = SymbolicRowVector(n_cols=len(matd), data=matd)
+                xmat = ASymbolicRowVector(n_cols=len(matd), data=matd)
             elif i == bmpo.n_sites - 1:
-                xmat = SymbolicColumnVector(n_rows=len(matd), data=matd)
+                xmat = ASymbolicColumnVector(n_rows=len(matd), data=matd)
             else:
                 idxd = [(j, k) for j, k in mat.indices]
-                xmat = SymbolicMatrix(
+                xmat = ASymbolicMatrix(
                     n_rows=mat.m, n_cols=mat.n, indices=idxd, data=list(matd))
             xops = {}
             for expr, spmat in ops.items():
-                xexpr = SymbolicMPOTools.trans_expr(expr)
+                xexpr = SymbolicMPOTools.tr_expr_from_block2(expr)
                 if spmat.factor == 0 or spmat.info.n == 0:
                     xops[xexpr] = 0
                     continue
@@ -268,14 +252,107 @@ class SymbolicMPOTools:
                         q_labels=qx, reduced=spmat.factor * np.array(spmat[p]))
                 xops[xexpr] = FermionTensor(
                     odd=list(map_blocks_odd.values()), even=list(map_blocks_even.values()))
-            lopd = np.array([SymbolicMPOTools.trans_expr(expr)
+            lopd = np.array([SymbolicMPOTools.tr_expr_from_block2(expr)
                              for expr in lop.data], dtype=object)
-            ropd = np.array([SymbolicMPOTools.trans_expr(expr)
+            ropd = np.array([SymbolicMPOTools.tr_expr_from_block2(expr)
                              for expr in rop.data], dtype=object)
-            xlop = SymbolicColumnVector(n_rows=len(lopd), data=lopd)
-            xrop = SymbolicRowVector(n_cols=len(ropd), data=ropd)
+            xlop = ASymbolicColumnVector(n_rows=len(lopd), data=lopd)
+            xrop = ASymbolicRowVector(n_cols=len(ropd), data=ropd)
             tensors[i] = SymbolicSparseTensor(xmat, xops, xlop, xrop)
         return MPS(tensors=tensors, const=bmpo.const_e)
+
+    @staticmethod
+    def to_block2(mpo):
+        """Translate pyblock2 symbolic MPO to block2 (un-simplified) MPO."""
+        bmpo = MPO(mpo.n_sites)
+        tensors = [None] * mpo.n_sites
+        lops = [None] * mpo.n_sites
+        rops = [None] * mpo.n_sites
+        site_op_infos = [None] * mpo.n_sites
+        site_basis = [None] * mpo.n_sites
+        for i in range(0, mpo.n_sites):
+            ts = mpo.tensors[i]
+            assert isinstance(ts, SymbolicSparseTensor)
+            pinfo = ts.physical_infos
+            pinfo = pinfo[0] | pinfo[1]
+            site_basis[i] = StateInfo()
+            site_basis[i].allocate(len(pinfo))
+            for ix, (k, v) in enumerate(pinfo.items()):
+                site_basis[i].quanta[ix] = SZ(k.n, k.twos, k.pg)
+                site_basis[i].n_states[ix] = v
+            site_basis[i].sort_states()
+            tensors[i] = OperatorTensor()
+            site_op_infos[i] = {}
+            dalloc = DoubleVectorAllocator()
+            ialloc = IntVectorAllocator()
+            matd = [SymbolicMPOTools.tr_expr_to_block2(expr) for expr in ts.mat.data]
+            if isinstance(ts.mat, ASymbolicRowVector):
+                tensors[i].lmat = SymbolicRowVector(ts.mat.n_cols)
+                tensors[i].lmat.data = VectorOpExpr(matd)
+            elif isinstance(ts.mat, ASymbolicColumnVector):
+                tensors[i].lmat = SymbolicColumnVector(ts.mat.n_rows)
+                tensors[i].lmat.data = VectorOpExpr(matd)
+            elif isinstance(ts.mat, ASymbolicMatrix):
+                tensors[i].lmat = SymbolicMatrix(ts.mat.n_rows, ts.mat.n_cols)
+                tensors[i].lmat.data = VectorOpExpr(matd)
+                tensors[i].lmat.indices = VectorPIntInt(ts.mat.indices)
+            tensors[i].rmat = tensors[i].lmat
+            zero = SparseMatrix(dalloc)
+            zero.factor = 0
+            idq = SZ(0, 0, 0)
+            iop = OpElement(OpNames.I, SiteIndex(), idq, 1.0)
+            for expr, spmat in ts.ops.items():
+                xexpr = SymbolicMPOTools.tr_expr_to_block2(expr)
+                if isinstance(spmat, numbers.Number) or spmat.n_blocks == 0:
+                    tensors[i].ops[xexpr] = zero
+                    continue
+                assert isinstance(spmat, FermionTensor)
+                assert spmat.odd.n_blocks == 0 or spmat.even.n_blocks == 0
+                spx = spmat.even if spmat.odd.n_blocks == 0 else spmat.odd
+                dq = spx.blocks[0].q_labels[0] - spx.blocks[0].q_labels[1]
+                dq = SZ(dq.n, dq.twos, dq.pg)
+                if dq not in site_op_infos[i]:
+                    site_op_infos[i][dq] = SparseMatrixInfo(ialloc)
+                    site_op_infos[i][dq].initialize(site_basis[i], site_basis[i],
+                        dq, dq.is_fermion)
+                minfo = site_op_infos[i][dq]
+                xmat = SparseMatrix(dalloc)
+                xmat.allocate(minfo)
+                for block in spx.blocks:
+                    ql, qr = block.q_labels
+                    ql, qr = SZ(ql.n, ql.twos, ql.pg), SZ(qr.n, qr.twos, qr.pg)
+                    iq = xmat.info.find_state(dq.combine(ql, qr))
+                    xmat[iq] = np.asarray(block).flatten()
+                tensors[i].ops[xexpr] = xmat
+            if iop not in tensors[i].ops:
+                if idq not in site_op_infos[i]:
+                    site_op_infos[i][idq] = SparseMatrixInfo(ialloc)
+                    site_op_infos[i][idq].initialize(site_basis[i], site_basis[i],
+                        idq, idq.is_fermion)
+                minfo = site_op_infos[i][idq]
+                xmat = SparseMatrix(dalloc)
+                xmat.allocate(minfo)
+                for ix in range(0, minfo.n):
+                    xmat[ix] = np.identity(minfo.n_states_ket[ix]).flatten()
+                tensors[i].ops[iop] = xmat
+            lopd = [SymbolicMPOTools.tr_expr_to_block2(expr) for expr in ts.lop.data]
+            ropd = [SymbolicMPOTools.tr_expr_to_block2(expr) for expr in ts.rop.data]
+            lops[i] = SymbolicColumnVector(len(lopd))
+            rops[i] = SymbolicRowVector(len(ropd))
+            lops[i].data = VectorOpExpr(lopd)
+            rops[i].data = VectorOpExpr(ropd)
+            site_op_infos[i] = VectorPLMatInfo(
+                sorted([(k, v) for k, v in site_op_infos[i].items()], key=lambda x: x[0]))
+        bmpo.const_e = mpo.const
+        bmpo.tf = TensorFunctions(OperatorFunctions(CG()))
+        bmpo.site_op_infos = VectorVectorPLMatInfo(site_op_infos)
+        bmpo.basis = VectorStateInfo(site_basis)
+        bmpo.sparse_form = "N" * mpo.n_sites
+        bmpo.op = rops[-1][0]
+        bmpo.right_operator_names = VectorSymbolic(lops)
+        bmpo.left_operator_names = VectorSymbolic(rops)
+        bmpo.tensors = VectorOpTensor(tensors)
+        return bmpo
 
 
 class MPOTools:
@@ -397,3 +474,8 @@ class MPOTools:
                 block.q_labels = tuple(ASZ(x.n, x.twos, x.pg)
                                        for x in block.q_labels)
         return MPS(tensors=tensors, const=bmpo.const_e)
+
+    @staticmethod
+    def to_block2(mpo):
+        """Translate pyblock2 MPO to block2 (un-simplified) MPO."""
+        return SymbolicMPOTools.to_block2(mpo.to_symbolic())
