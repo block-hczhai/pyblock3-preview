@@ -672,7 +672,8 @@ class SparseTensor(NDArrayOperatorsMixin):
         """Kron product of quantum numbers along selected indices, for fusing purpose."""
         idxs = np.array([i if i >= 0 else self.ndim +
                          i for i in idxs], dtype=np.int32)
-        return BondFusingInfo.tensor_product(*np.array(self.infos)[idxs], pattern=pattern)
+        return BondFusingInfo.tensor_product(*np.array(list(self.infos) + [[]],
+            dtype=object)[idxs], pattern=pattern)
 
     @staticmethod
     def _unfuse(a, i, info):
@@ -1548,7 +1549,8 @@ class FermionTensor(NDArrayOperatorsMixin):
     def kron_product_info(self, *idxs, pattern=None):
         idxs = np.array([i if i >= 0 else self.ndim +
                          i for i in idxs], dtype=np.int32)
-        return BondFusingInfo.tensor_product(*np.array(self.infos)[idxs], pattern=pattern)
+        return BondFusingInfo.tensor_product(*np.array(list(self.infos) + [[]],
+            dtype=object)[idxs], pattern=pattern)
 
     @staticmethod
     def _unfuse(a, i, info):
