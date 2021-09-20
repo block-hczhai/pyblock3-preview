@@ -128,7 +128,10 @@ class DMRG(SweepAlgorithm):
                 mpe[i:i + dot] = eff
                 for ix, ex in enumerate(extra_mpes):
                     ex[i:i + dot] = extra_effs[ix]
-                self.energies[iw] = min(tuple(self.energies[iw]), tuple(ener))
+                if nroots == 1:
+                    self.energies[iw] = min(self.energies[iw], ener)
+                else:
+                    self.energies[iw] = min(tuple(self.energies[iw]), tuple(ener))
                 if self.iprint >= 2:
                     eners = ener if nroots > 1 else [ener]
                     print((" %3s Site = %4d-%4d .. Mmps = %4d Ndav = %4d E =" + " %20.12f" * nroots + " DW = %5.2E FLOPS = %5.2E Tdav = %8.3f T = %8.3f MEM = %7s") % (
