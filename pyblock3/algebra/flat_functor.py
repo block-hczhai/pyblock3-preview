@@ -91,9 +91,9 @@ if ENABLE_FAST_IMPLS:
             qxr, sxr = ro.q_labels[:, :-1], ro.shapes[:, :-1]
         wdqs, wshs, widxs = block3.flat_sparse_tensor.tensordot_skeleton(
             qxr, sxr, cdqs[:, 1:-1], cshs[:, 1:-1], axru, axrd)
-        vdata = np.zeros((vidxs[-1], ), dtype=float)
-        cdata = vdata if symmetric else np.zeros((cidxs[-1], ), dtype=float)
-        wdata = np.zeros((widxs[-1], ), dtype=float)
+        vdata = np.zeros((vidxs[-1], ), dtype=l.dtype)
+        cdata = vdata if symmetric else np.zeros((cidxs[-1], ), dtype=l.dtype)
+        wdata = np.zeros((widxs[-1], ), dtype=l.dtype)
         return dl, dr, FlatSparseTensor(cdqs, cshs, cdata, cidxs), \
             FlatSparseTensor(vdqs, vshs, vdata, vidxs), FlatSparseTensor(
                 wdqs, wshs, wdata, widxs)
@@ -190,9 +190,12 @@ class FlatSparseFunctor:
         assert other.size == self.cmat.idxs[-1]
         l, r = self.op.tensors
         pro, pre, plo, ple = self.plan
-        self.work.data = np.zeros_like(self.work.data, dtype=other.dtype)
-        self.work2.data = np.zeros_like(self.work2.data, dtype=other.dtype)
-        self.vmat.data = np.zeros_like(self.vmat.data, dtype=other.dtype)
+        dtype = other.dtype
+        if r.dtype == complex:
+            dtype = complex
+        self.work.data = np.zeros_like(self.work.data, dtype=dtype)
+        self.work2.data = np.zeros_like(self.work2.data, dtype=dtype)
+        self.vmat.data = np.zeros_like(self.vmat.data, dtype=dtype)
         self.nflop += flat_sparse_matmul(pro,
                                          r.odd.data, other, self.work.data)
         self.nflop += flat_sparse_matmul(pre,

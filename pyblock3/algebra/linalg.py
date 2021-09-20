@@ -86,11 +86,11 @@ def _olsen_precondition(q, c, ld, diag):
     """Olsen precondition."""
     t = c.copy()
     mask = np.abs(ld - diag) > 1E-12
-    t[mask] /= ld - diag[mask]
+    t[mask] = t[mask] / (ld - diag[mask])
     numerator = np.dot(t.conj(), q)
     denominator = np.dot(c.conj(), t)
     q += (-numerator / denominator) * c
-    q[mask] /= ld - diag[mask]
+    q[mask] = q[mask] / (ld - diag[mask])
 
 
 def _precondition(r, diag):
@@ -164,7 +164,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
             sigma[i] = a @ b[i]
             msig += 1
         if not mpi or rank == 0:
-            atilde = np.zeros((m, m))
+            atilde = np.zeros((m, m), dtype=sigma[0].dtype)
             for i in range(m):
                 for j in range(i + 1):
                     atilde[i, j] = np.dot(b[i].conj(), sigma[j])
@@ -173,7 +173,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
             # b[1:m] = np.dot(b[:], alpha[:, 1:m])
             tmp = [ib.copy() for ib in b[:m]]
             for j in range(m):
-                b[j] *= alpha[j, j]
+                b[j] = b[j] * alpha[j, j]
             for j in range(m):
                 for i in range(m):
                     if i != j:

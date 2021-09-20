@@ -646,6 +646,15 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
         py::arg("plan"), py::arg("adata"), py::arg("bdata"), py::arg("cdata"));
     flat_sparse_tensor.def(
         "matmul",
+        [](const py::object &plan, const py::array_t<complex<double>> &adata,
+           const py::array_t<double> &bdata,
+           py::array_t<complex<double>> &cdata) {
+            return flat_sparse_tensor_matmul<Q, complex<double>>(plan, adata,
+                                                                 bdata, cdata);
+        },
+        py::arg("plan"), py::arg("adata"), py::arg("bdata"), py::arg("cdata"));
+    flat_sparse_tensor.def(
+        "matmul",
         [](const py::object &plan, const py::array_t<double> &adata,
            const py::array_t<complex<double>> &bdata,
            py::array_t<complex<double>> &cdata) {

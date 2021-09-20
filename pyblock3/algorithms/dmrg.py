@@ -121,7 +121,10 @@ class DMRG(SweepAlgorithm):
                     cket, error = eff.ket.compress(
                         left=True, cutoff=self.cutoff, max_bond_dim=self.bdims[iw])
                     eff.ket[:] = cket[:]
-                mmps = eff.ket[0].infos[-1].n_bonds
+                if forward:
+                    mmps = eff.ket[0].infos[-1].n_bonds
+                else:
+                    mmps = eff.ket[-1].infos[0].n_bonds
                 mpe[i:i + dot] = eff
                 for ix, ex in enumerate(extra_mpes):
                     ex[i:i + dot] = extra_effs[ix]
