@@ -87,8 +87,8 @@ def _olsen_precondition(q, c, ld, diag):
     t = c.copy()
     mask = np.abs(ld - diag) > 1E-12
     t[mask] /= ld - diag[mask]
-    numerator = np.dot(t, q)
-    denominator = np.dot(c, t)
+    numerator = np.dot(t.conj(), q)
+    denominator = np.dot(c.conj(), t)
     q += (-numerator / denominator) * c
     q[mask] /= ld - diag[mask]
 
@@ -146,7 +146,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
     aa = a.diag() if hasattr(a, "diag") else None
     for i in range(k):
         for j in range(i):
-            b[i] += -np.dot(b[j], b[i]) * b[j]
+            b[i] += -np.dot(b[j].conj(), b[i]) * b[j]
         b[i] /= np.linalg.norm(b[i])
     sigma = [None] * k
     q = b[0]
@@ -167,8 +167,8 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
             atilde = np.zeros((m, m))
             for i in range(m):
                 for j in range(i + 1):
-                    atilde[i, j] = np.dot(b[i], sigma[j])
-                    atilde[j, i] = atilde[i, j]
+                    atilde[i, j] = np.dot(b[i].conj(), sigma[j])
+                    atilde[j, i] = atilde[i, j].conj()
             ld, alpha = np.linalg.eigh(atilde)
             # b[1:m] = np.dot(b[:], alpha[:, 1:m])
             tmp = [ib.copy() for ib in b[:m]]
@@ -190,14 +190,14 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
             for i in range(ck):
                 q = sigma[i].copy()
                 q += (-ld[i]) * b[i]
-                qq = np.dot(q, q)
+                qq = np.dot(q.conj(), q)
                 if np.sqrt(qq) >= conv_thrd:
                     ck = i
                     break
             # q = sigma[ck] - b[ck] * ld[ck]
             q = sigma[ck].copy()
             q += (-ld[ck]) * b[ck]
-            qq = np.dot(q, q)
+            qq = np.dot(q.conj(), q)
             if iprint:
                 print("%5d %5d %5d %15.8f %9.2E" % (xiter, m, ck, ld[ck], qq))
 
@@ -217,7 +217,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
                 msig = deflation_min_size
             if not mpi or rank == 0:
                 for j in range(m):
-                    q += (-np.dot(b[j], q)) * b[j]
+                    q += (-np.dot(b[j].conj(), q)) * b[j]
                 q /= np.linalg.norm(q)
             if m >= len(b):
                 b.append(None)
@@ -241,9 +241,9 @@ def conjugate_gradient(a, x, b, max_iter=5000, conv_thrd=1E-7, iprint=False):
     aa = a.diag() if hasattr(a, "diag") else None
     r = -(a @ x) + b
     p = _precondition(r, aa)
-    error = np.dot(p, r)
-    if np.sqrt(error) < conv_thrd:
-        func = np.dot(x, b)
+    error = np.dot(p.conj(), r)
+    if np.sqrt(np.abs(error)) < conv_thrd:
+        func = np.dot(x.conj(), b)
         if iprint:
             print("%5d %15.8f %9.2E" % (0, func, error))
         return func, x, 1
@@ -252,15 +252,15 @@ def conjugate_gradient(a, x, b, max_iter=5000, conv_thrd=1E-7, iprint=False):
     while xiter < max_iter:
         xiter += 1
         hp = a @ p
-        alpha = old_error / np.dot(p, hp)
+        alpha = old_error / np.dot(p.conj(), hp)
         x += alpha * p
         r -= alpha * hp
         z = _precondition(r, aa)
-        error = np.dot(z, r)
-        func = np.dot(x, b)
+        error = np.dot(z.conj(), r)
+        func = np.dot(x.conj(), b)
         if iprint:
             print("%5d %15.8f %9.2E" % (xiter, func, error))
-        if np.sqrt(error) < conv_thrd:
+        if np.sqrt(np.abs(error)) < conv_thrd:
             break
         else:
             beta = error / old_error

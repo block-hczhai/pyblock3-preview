@@ -184,6 +184,33 @@ class MPE:
         self.t_rot += time.perf_counter() - t
         return r
 
+    def build_envs_no_contract(self, l=0, r=2):
+        """Canonicalize bra and ket around sites [l, r)."""
+        self.left_envs[-2] = None
+        self.right_envs[self.n_sites + 1] = None
+        for i in range(-1, l):
+            if i not in self.left_envs or self.left_envs[i] is None:
+                if self.do_canon and i != -1:
+                    self._left_canonicalize_site(self.ket, i)
+                    if self.ket is not self.bra:
+                        self._left_canonicalize_site(self.bra, i)
+                    if self.mpi:
+                        self.ket[i] = self.comm.bcast(self.ket[i], root=0)
+                        if self.ket is not self.bra:
+                            self.bra[i] = self.comm.bcast(self.bra[i], root=0)
+                self.left_envs[i] = self.idents[0]
+        for i in range(self.n_sites, r - 1, -1):
+            if i not in self.right_envs or self.right_envs[i] is None:
+                if self.do_canon and i != self.n_sites:
+                    self._right_canonicalize_site(self.ket, i)
+                    if self.ket is not self.bra:
+                        self._right_canonicalize_site(self.bra, i)
+                    if self.mpi:
+                        self.ket[i] = self.comm.bcast(self.ket[i], root=0)
+                        if self.ket is not self.bra:
+                            self.bra[i] = self.comm.bcast(self.bra[i], root=0)
+                self.right_envs[i] = self.idents[1]
+
     def build_envs(self, l=0, r=2):
         """Canonicalize bra and ket around sites [l, r). Contract mpo around sites [l, r)."""
         self.left_envs[-2] = None
@@ -298,27 +325,33 @@ class MPE:
         return r
 
     @staticmethod
-    def _eigs(x, iprint=False, fast=False, conv_thrd=1E-7, max_iter=500):
+    def _eigs(x, iprint=False, fast=False, conv_thrd=1E-7, max_iter=500, extra_mpes=None):
         """Return ground-state energy and ground-state effective MPE."""
         if fast and x.ket.n_sites == 1 and x.mpo.n_sites == 2:
             from .flat_functor import FlatSparseFunctor
             pattern = '++' + '+' * (x.ket[0].ndim - 4) + '-+'
             fst = FlatSparseFunctor(x.mpo, pattern=pattern, mpi=x.mpi)
-            w, v, ndav = davidson(
-                fst, [fst.prepare_vector(x.ket[0])], k=1, max_iter=max_iter, iprint=iprint, conv_thrd=conv_thrd, mpi=x.mpi)
+            init_v = [fst.prepare_vector(x.ket[0])]
+            if extra_mpes is not None:
+                for ex in extra_mpes:
+                    init_v.append(fst.prepare_vector(ex.ket[0]))
+            w, v, ndav = davidson(fst, init_v, k=len(init_v), max_iter=max_iter, iprint=iprint, conv_thrd=conv_thrd, mpi=x.mpi)
             v = [x.ket.__class__(
-                tensors=[fst.finalize_vector(v[0])], opts=x.ket.opts)]
+                tensors=[fst.finalize_vector(vv)], opts=x.ket.opts) for vv in v]
             nflop = fst.nflop
         else:
             w, v, ndav = davidson(
                 x.mpo, [x.ket], k=1, max_iter=max_iter, iprint=iprint, conv_thrd=conv_thrd, mpi=x.mpi)
             nflop = 0
         mpe = x.copy_shell(bra=v[0], mpo=x.mpo, ket=v[0])
-        return w[0], mpe, ndav, nflop
+        if extra_mpes is not None:
+            for ix, ex in enumerate(extra_mpes):
+                extra_mpes[ix] = ex.copy_shell(bra=v[ix + 1], mpo=ex.mpo, ket=v[ix + 1])
+        return w[0] if extra_mpes is None or len(extra_mpes) == 0 else w, mpe, ndav, nflop
 
-    def eigs(self, iprint=False, fast=False, conv_thrd=1E-7, max_iter=500):
+    def eigs(self, iprint=False, fast=False, conv_thrd=1E-7, max_iter=500, extra_mpes=None):
         """Return ground-state energy and ground-state effective MPE."""
-        return self._eigs(self, iprint=iprint, fast=fast, conv_thrd=conv_thrd, max_iter=max_iter)
+        return self._eigs(self, iprint=iprint, fast=fast, conv_thrd=conv_thrd, max_iter=max_iter, extra_mpes=extra_mpes)
 
     def multiply(self, fast=False):
         if fast and self.ket.n_sites == 1 and self.mpo.n_sites == 2:
@@ -382,8 +415,8 @@ class MPE:
         mpe = self.copy_shell(bra=r, mpo=self.mpo, ket=x)
         return rw + iw * 1j, mpe, ncg
 
-    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, max_iter=500, dot=2, iprint=2, forward=True):
-        return DMRG(self, bdims, noises, dav_thrds, max_iter=max_iter, iprint=iprint).solve(n_sweeps, tol, dot, forward=forward)
+    def dmrg(self, bdims, noises=None, dav_thrds=None, n_sweeps=10, tol=1E-6, max_iter=500, dot=2, iprint=2, forward=True, **kwargs):
+        return DMRG(self, bdims, noises, dav_thrds, max_iter=max_iter, iprint=iprint, **kwargs).solve(n_sweeps, tol, dot, forward=forward)
 
     def tddmrg(self, bdims, dt, n_sweeps=10, n_sub_sweeps=2, dot=2, iprint=2, forward=True, normalize=True, **kwargs):
         return TDDMRG(self, bdims, iprint=iprint, **kwargs).solve(dt, n_sweeps, n_sub_sweeps, dot, forward=forward, normalize=normalize)

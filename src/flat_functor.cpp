@@ -23,12 +23,12 @@
 #include <cstring>
 #include <map>
 
-template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>>
 flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
                         const py::array_t<uint32_t> &ashs,
-                        const py::array_t<double> &adata,
+                        const py::array_t<FL> &adata,
                         const py::array_t<uint64_t> &aidxs,
                         const py::array_t<int> &idxa,
                         const py::array_t<int> &idxb) {
@@ -104,11 +104,11 @@ flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
     py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
     assert(cqs.strides()[1] == sizeof(uint32_t));
     assert(cshs.strides()[1] == sizeof(uint32_t));
-    py::array_t<double> cdata(vector<ssize_t>{csize});
+    py::array_t<FL> cdata(vector<ssize_t>{csize});
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
     uint64_t *pcidxs = cidxs.mutable_data();
-    double *pc = cdata.mutable_data();
-    const double *pa = adata.data();
+    FL *pc = cdata.mutable_data();
+    const FL *pa = adata.data();
     const uint64_t *pia = aidxs.data();
     pcidxs[0] = 0;
     for (int ia = 0, ic = 0; ia < n_blocks_a; ia++) {
@@ -131,8 +131,8 @@ flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
         int incc = b_free_dim[ia];
         for (int i = 0; i < a_free_dim[ia]; i++)
             for (int j = 0; j < b_free_dim[ia]; j++)
-                dcopy(&a_ctr_dim[ia], &pa[pia[ia] + i * shape_ai + j], &inca,
-                      &pc[pcidxs[ic] + i * shape_ci + j], &incc);
+                xcopy<FL>(&a_ctr_dim[ia], &pa[pia[ia] + i * shape_ai + j],
+                          &inca, &pc[pcidxs[ic] + i * shape_ci + j], &incc);
         pcidxs[ic + 1] = pcidxs[ic] + csize;
         ic++;
     }

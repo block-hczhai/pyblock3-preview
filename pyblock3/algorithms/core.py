@@ -111,13 +111,20 @@ class SweepAlgorithm:
                     for ex_wfn, w in zip(wfns[1:], weights[1:]):
                         dm = dm + w * np.tensordot(
                             ex_wfn[0].conj(), ex_wfn[0], axes=((-3, -2, -1), ) * 2).real
-                dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
+                if isinstance(wfns, list):
+                    for ex_wfn, w in zip(wfns, weights):
+                        dm = self.add_dm_noise(dm, mpo, ex_wfn, noise * w, forward)
+                else:
+                    dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
                 if not self.mpi or self.mrank == 0:
                     lsr = dm.tensor_svd(idx=3, pattern='+++---')
                     l, _, _, error = pbalg.truncate_svd(
                         *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
-                    wfn[:] = [l, np.tensordot(
-                        l.conj(), wfn[0], axes=((0, 1, 2), ) * 2)]
+                    if isinstance(wfns, list):
+                        for xwfn in wfns:
+                            xwfn[:] = [l, np.tensordot(l.conj(), xwfn[0], axes=((0, 1, 2), ) * 2)]
+                    else:
+                        wfn[:] = [l, np.tensordot(l.conj(), wfn[0], axes=((0, 1, 2), ) * 2)]
             else:
                 dm = np.tensordot(
                     wfn[0].conj(), wfn[0], axes=((0, 1, 2), ) * 2).real
@@ -126,13 +133,20 @@ class SweepAlgorithm:
                     for ex_wfn, w in zip(wfns[1:], weights[1:]):
                         dm = dm + w * np.tensordot(
                             ex_wfn[0].conj(), ex_wfn[0], axes=((0, 1, 2), ) * 2).real
-                dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
+                if isinstance(wfns, list):
+                     for ex_wfn, w in zip(wfns, weights):
+                        dm = self.add_dm_noise(dm, mpo, ex_wfn, noise * w, forward)
+                else:
+                    dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
                 if not self.mpi or self.mrank == 0:
                     lsr = dm.tensor_svd(idx=3, pattern='-+-+-+')
                     _, _, r, error = pbalg.truncate_svd(
                         *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
-                    wfn[:] = [np.tensordot(
-                        wfn[0], r.conj(), axes=((-3, -2, -1), ) * 2), r]
+                    if isinstance(wfns, list):
+                        for xwfn in wfns:
+                            xwfn[:] = [np.tensordot(xwfn[0], r.conj(), axes=((-3, -2, -1), ) * 2), r]
+                    else:
+                        wfn[:] = [np.tensordot(wfn[0], r.conj(), axes=((-3, -2, -1), ) * 2), r]
         elif self.decomp_type == DecompositionTypes.SVD:
             assert not isinstance(wfns, list)
             if not self.mpi or self.mrank == 0:
@@ -159,5 +173,8 @@ class SweepAlgorithm:
             assert False
         if self.mpi:
             error = self.comm.bcast(error if self.mrank == 0 else 0, root=0)
+            if isinstance(wfns, list):
+                for xwfn in wfns:
+                    xwfn[:] = self.comm.bcast(xwfn[:], root=0)
             wfn[:] = self.comm.bcast(wfn[:], root=0)
         return error

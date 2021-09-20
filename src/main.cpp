@@ -290,32 +290,34 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
                 aqs, ashs, adata, aidxs);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("left_svd", 
+    flat_sparse_tensor.def(
+        "left_svd",
         [](const py::object &aqs, const py::object &ashs,
            const py::array_t<double> &adata, const py::object &aidxs) {
-            return flat_sparse_left_svd<Q, double>(aqs, ashs, adata,
+            return flat_sparse_left_svd<Q, double>(aqs, ashs, adata, aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def(
+        "right_svd",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs) {
+            return flat_sparse_right_svd<Q, double>(aqs, ashs, adata, aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def(
+        "left_svd_indexed",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs) {
+            return flat_sparse_left_svd_indexed<Q, double>(aqs, ashs, adata,
+                                                           aidxs);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
+    flat_sparse_tensor.def(
+        "right_svd_indexed",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs) {
+            return flat_sparse_right_svd_indexed<Q, double>(aqs, ashs, adata,
                                                             aidxs);
-        },
-        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("right_svd", 
-        [](const py::object &aqs, const py::object &ashs,
-           const py::array_t<double> &adata, const py::object &aidxs) {
-            return flat_sparse_right_svd<Q, double>(aqs, ashs, adata,
-                                                             aidxs);
-        },
-        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("left_svd_indexed",
-        [](const py::object &aqs, const py::object &ashs,
-           const py::array_t<double> &adata, const py::object &aidxs) {
-            return flat_sparse_left_svd_indexed<Q, double>(
-                aqs, ashs, adata, aidxs);
-        },
-        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("right_svd_indexed",
-        [](const py::object &aqs, const py::object &ashs,
-           const py::array_t<double> &adata, const py::object &aidxs) {
-            return flat_sparse_right_svd_indexed<Q, double>(
-                aqs, ashs, adata, aidxs);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
     flat_sparse_tensor.def(
@@ -442,28 +444,32 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
                 aqs, ashs, adata, aidxs);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-     flat_sparse_tensor.def("left_svd", 
+    flat_sparse_tensor.def(
+        "left_svd",
         [](const py::object &aqs, const py::object &ashs,
            const py::array_t<complex<double>> &adata, const py::object &aidxs) {
             return flat_sparse_left_svd<Q, complex<double>>(aqs, ashs, adata,
                                                             aidxs);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("right_svd", 
+    flat_sparse_tensor.def(
+        "right_svd",
         [](const py::object &aqs, const py::object &ashs,
            const py::array_t<complex<double>> &adata, const py::object &aidxs) {
             return flat_sparse_right_svd<Q, complex<double>>(aqs, ashs, adata,
                                                              aidxs);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("left_svd_indexed",
+    flat_sparse_tensor.def(
+        "left_svd_indexed",
         [](const py::object &aqs, const py::object &ashs,
            const py::array_t<complex<double>> &adata, const py::object &aidxs) {
             return flat_sparse_left_svd_indexed<Q, complex<double>>(
                 aqs, ashs, adata, aidxs);
         },
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"));
-    flat_sparse_tensor.def("right_svd_indexed",
+    flat_sparse_tensor.def(
+        "right_svd_indexed",
         [](const py::object &aqs, const py::object &ashs,
            const py::array_t<complex<double>> &adata, const py::object &aidxs) {
             return flat_sparse_right_svd_indexed<Q, complex<double>>(
@@ -581,9 +587,6 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
         py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
         py::arg("infol"), py::arg("infor"));
 
-    flat_sparse_tensor.def("diag", &flat_sparse_tensor_diag<Q>, py::arg("aqs"),
-                           py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
-                           py::arg("idxa"), py::arg("idxb"));
     flat_sparse_tensor.def("matmul_init", &flat_sparse_tensor_matmul_init<Q>,
                            py::arg("loqs"), py::arg("loshs"), py::arg("leqs"),
                            py::arg("leshs"), py::arg("roqs"), py::arg("roshs"),
@@ -593,6 +596,27 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
                            py::arg("bqs"), py::arg("bshs"), py::arg("bidxs"),
                            py::arg("idxa"), py::arg("idxb"), py::arg("cqs"),
                            py::arg("cidxs"), py::arg("ferm_op"));
+
+    flat_sparse_tensor.def(
+        "diag",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<double> &adata, const py::object &aidxs,
+           const py::object &idxa, const py::object &idxb) {
+            return flat_sparse_tensor_diag<Q, double>(aqs, ashs, adata, aidxs,
+                                                      idxa, idxb);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("idxa"), py::arg("idxb"));
+    flat_sparse_tensor.def(
+        "diag",
+        [](const py::object &aqs, const py::object &ashs,
+           const py::array_t<complex<double>> &adata, const py::object &aidxs,
+           const py::object &idxa, const py::object &idxb) {
+            return flat_sparse_tensor_diag<Q, complex<double>>(
+                aqs, ashs, adata, aidxs, idxa, idxb);
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
+        py::arg("idxa"), py::arg("idxb"));
 
     flat_sparse_tensor.def(
         "matmul",
@@ -739,9 +763,24 @@ template <typename Q = void>
 void bind_hamiltonian(py::module &m, const string &name) {
 
     py::module hamiltonian = m.def_submodule("hamiltonian", "Hamiltonian");
-    hamiltonian.def("build_mpo", &build_mpo, py::arg("orb_sym"),
-                    py::arg("h_values"), py::arg("h_terms"), py::arg("cutoff"),
-                    py::arg("max_bond_dim"));
+    hamiltonian.def(
+        "build_mpo",
+        [](py::object orb_sym, py::array_t<double> h_values, py::object h_terms,
+           double cutoff, int max_bond_dim) {
+            return build_mpo<double>(orb_sym, h_values, h_terms, cutoff,
+                                     max_bond_dim);
+        },
+        py::arg("orb_sym"), py::arg("h_values"), py::arg("h_terms"),
+        py::arg("cutoff"), py::arg("max_bond_dim"));
+    hamiltonian.def(
+        "build_mpo",
+        [](py::object orb_sym, py::array_t<complex<double>> h_values,
+           py::object h_terms, double cutoff, int max_bond_dim) {
+            return build_mpo<complex<double>>(orb_sym, h_values, h_terms,
+                                              cutoff, max_bond_dim);
+        },
+        py::arg("orb_sym"), py::arg("h_values"), py::arg("h_terms"),
+        py::arg("cutoff"), py::arg("max_bond_dim"));
     hamiltonian.def("build_mpo_ptree", &build_mpo_ptree, py::arg("orb_sym"),
                     py::arg("h_values"), py::arg("h_terms"));
     hamiltonian.def("build_qc_mpo", &build_qc_mpo, py::arg("orb_sym"),

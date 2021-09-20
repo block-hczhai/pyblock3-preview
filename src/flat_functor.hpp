@@ -31,12 +31,12 @@
 namespace py = pybind11;
 using namespace std;
 
-template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename Q, typename FL>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>>
 flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
                         const py::array_t<uint32_t> &ashs,
-                        const py::array_t<double> &adata,
+                        const py::array_t<FL> &adata,
                         const py::array_t<uint64_t> &aidxs,
                         const py::array_t<int> &idxa,
                         const py::array_t<int> &idxb);

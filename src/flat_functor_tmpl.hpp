@@ -32,16 +32,16 @@ TMPL_EXTERN template size_t flat_sparse_tensor_matmul<TMPL_Q, TMPL_FL>(
     const py::array_t<int32_t> &plan, const py::array_t<TMPL_FL> &adata,
     const py::array_t<TMPL_FL> &bdata, py::array_t<TMPL_FL> &cdata);
 
-#else
-
 TMPL_EXTERN template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                           py::array_t<double>, py::array_t<uint64_t>>
-flat_sparse_tensor_diag<TMPL_Q>(const py::array_t<uint32_t> &aqs,
-                                const py::array_t<uint32_t> &ashs,
-                                const py::array_t<double> &adata,
-                                const py::array_t<uint64_t> &aidxs,
-                                const py::array_t<int> &idxa,
-                                const py::array_t<int> &idxb);
+                           py::array_t<TMPL_FL>, py::array_t<uint64_t>>
+flat_sparse_tensor_diag<TMPL_Q, TMPL_FL>(const py::array_t<uint32_t> &aqs,
+                                         const py::array_t<uint32_t> &ashs,
+                                         const py::array_t<TMPL_FL> &adata,
+                                         const py::array_t<uint64_t> &aidxs,
+                                         const py::array_t<int> &idxa,
+                                         const py::array_t<int> &idxb);
+
+#else
 
 TMPL_EXTERN template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
                            py::array_t<uint64_t>>

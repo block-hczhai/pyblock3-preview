@@ -32,8 +32,22 @@
 namespace py = pybind11;
 using namespace std;
 
-vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
+template <typename FL>
+vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
              py::array_t<uint64_t>>>
+build_mpo(py::array_t<int32_t> orb_sym, py::array_t<FL> h_values,
+          py::array_t<int32_t> h_terms, double cutoff = 1E-20,
+          int max_bond_dim = -1);
+
+extern template vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+                             py::array_t<double>, py::array_t<uint64_t>>>
 build_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> h_values,
+          py::array_t<int32_t> h_terms, double cutoff = 1E-20,
+          int max_bond_dim = -1);
+
+extern template vector<
+    tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
+          py::array_t<complex<double>>, py::array_t<uint64_t>>>
+build_mpo(py::array_t<int32_t> orb_sym, py::array_t<complex<double>> h_values,
           py::array_t<int32_t> h_terms, double cutoff = 1E-20,
           int max_bond_dim = -1);
