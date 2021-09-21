@@ -53,15 +53,17 @@ hsoao[0, 3, 4] = hsoao[1, 4, 2] = hsoao[2, 2, 3] = -v
 hso = np.einsum('rij,ip,jq->rpq', hsoao, mf.mo_coeff, mf.mo_coeff)
 
 for i in range(n * 2):
-    for j in range(i % 2, n * 2, 2):
+    for j in range(n * 2):
         if i % 2 == 0 and j % 2 == 0: # aa
-            gh1e[i, j] += hso[2, i // 2, j // 2]
+            gh1e[i, j] += hso[2, i // 2, j // 2] * 0.5
         elif i % 2 == 1 and j % 2 == 1: # bb
-            gh1e[i, j] -= hso[2, i // 2, j // 2]
+            gh1e[i, j] -= hso[2, i // 2, j // 2] * 0.5
         elif i % 2 == 0 and j % 2 == 1: # ab
-            gh1e[i, j] += hso[0, i // 2, j // 2] - hso[1, i // 2, j // 2] * 1j
+            gh1e[i, j] += (hso[0, i // 2, j // 2] - hso[1, i // 2, j // 2] * 1j) * 0.5
         elif i % 2 == 1 and j % 2 == 0: # ba
-            gh1e[i, j] += hso[0, i // 2, j // 2] + hso[1, i // 2, j // 2] * 1j
+            gh1e[i, j] += (hso[0, i // 2, j // 2] + hso[1, i // 2, j // 2] * 1j) * 0.5
+        else:
+            assert False
 
 from pyblock3.fcidump import FCIDUMP
 from pyblock3.hamiltonian import Hamiltonian
@@ -116,17 +118,17 @@ mpo = build_qc(hamil, max_bond_dim=-5)
 mpo, error = mpo.compress(left=True, cutoff=1E-9, norm_cutoff=1E-9)
 mps = hamil.build_mps(250)
 
-bdims = [250] * 5 + [500] * 5
+bdims = [250] * 5 + [500] * 5 + [750] * 5
 noises = [1E-5] * 2 + [1E-6] * 4 + [1E-7] * 3 + [0]
 davthrds = [5E-3] * 4 + [1E-4] * 4 + [1E-5]
 
-nroots = 4
+nroots = 6
 extra_mpes = [None] * (nroots - 1)
 for ix in range(nroots - 1):
     xmps = hamil.build_mps(250)
     extra_mpes[ix] = MPE(xmps, mpo, xmps)
 
-dmrg = MPE(mps, mpo, mps).dmrg(bdims=bdims, noises=noises,
+dmrg = MPE(mps, mpo, mps).dmrg(bdims=bdims, noises=noises, cutoff=1E-16, max_iter=2000,
     dav_thrds=davthrds, iprint=2, n_sweeps=10, extra_mpes=extra_mpes)
 ener = dmrg.energies[-1]
 print("FINAL ENERGY          = ", ener)
