@@ -438,8 +438,8 @@ class CachedMPE(MPE):
     def __init__(self, bra, mpo, ket, opts=None, do_canon=True, idents=None, tag='MPE', scratch=None, maxsize=3, mpi=False):
         super().__init__(bra, mpo, ket, opts=opts, do_canon=do_canon, idents=idents, mpi=mpi)
         self.tag = tag
-        self.scratch = scratch if scratch is not None else os.environ['TMPDIR']
         import os
+        self.scratch = scratch if scratch is not None else os.environ['TMPDIR']
         if not os.path.isdir(self.scratch):
             os.mkdir(self.scratch)
         self.cached = []

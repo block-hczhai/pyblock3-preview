@@ -30,13 +30,16 @@ import psutil
 class DMRG(SweepAlgorithm):
     """Density Matrix Renormalization Group (DMRG)."""
 
-    def __init__(self, mpe, bdims, noises=None, dav_thrds=None, max_iter=500, iprint=2, cutoff=1E-14, extra_mpes=None):
+    def __init__(self, mpe, bdims, noises=None, dav_thrds=None, max_iter=500, iprint=2, cutoff=1E-14,
+                 extra_mpes=None, weights=None, init_site=None):
         self.mpe = mpe
         self.extra_mpes = [] if extra_mpes is None else extra_mpes
+        self.weights = weights
         self.bdims = bdims
         self.noises = noises
         self.dav_thrds = dav_thrds
         self.max_iter = max_iter
+        self.init_site = init_site
         if self.noises is None:
             self.noises = [1E-6, 1E-7, 0.0]
         if self.dav_thrds is None:
@@ -80,6 +83,8 @@ class DMRG(SweepAlgorithm):
             peak_mem = 0
             dw = 0
             for i in range(0, mpe.n_sites - dot + 1)[::1 if forward else -1]:
+                if self.init_site is not None and forward and i < self.init_site:
+                    continue
                 tt = time.perf_counter()
                 mpe.build_envs(i, i + dot)
                 eff = mpe[i:i + dot]
@@ -108,7 +113,7 @@ class DMRG(SweepAlgorithm):
                         for xe in extra_effs:
                             wfns.append(xe.ket)
                         error = self.decomp_two_site(
-                            eff.mpo, wfns, forward, self.noises[iw], self.bdims[iw])
+                            eff.mpo, wfns, forward, self.noises[iw], self.bdims[iw], weights=self.weights)
                         tdec_tot += time.perf_counter() - tx
                     else:
                         error = 0
