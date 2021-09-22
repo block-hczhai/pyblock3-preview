@@ -1654,6 +1654,8 @@ class Constructor:
         return T
 
     def tensor_to_vector(self, T):
+        if T.pattern != self.pattern:
+            raise NotImplementedError
         shapes, q_labels, _ = self.get_info(T.dq)
         if self.flat:
             if (q_labels==T.q_labels).all():
