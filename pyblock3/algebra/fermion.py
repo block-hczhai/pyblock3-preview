@@ -17,7 +17,7 @@
 #
 
 """
-General Fermionic sparse tensor.
+Fermionic Tensor with Block Sparsity from Symmetry.
 Author: Yang Gao
 """
 
@@ -25,19 +25,23 @@ import numbers
 import numpy as np
 import string
 import block3.sz as _block3
-from .core import SparseTensor, SubTensor, _sparse_tensor_numpy_func_impls
-from .flat import FlatSparseTensor, _flat_sparse_tensor_numpy_func_impls
+from .core import (SparseTensor, SubTensor, 
+                   _sparse_tensor_numpy_func_impls)
+from .flat import (FlatSparseTensor, 
+                   _flat_sparse_tensor_numpy_func_impls)
 from .symmetry import BondInfo
 from . import fermion_setting as setting
 
 SVD_SCREENING = setting.SVD_SCREENING
+Q_LABELS_DTYPE = SHAPES_DTYPE = np.uint32
+INDEX_DTYPE = np.uint64
 
 def get_backend(symmetry):
     """Get the C++ backend for the input symmetry
 
     Parameters
     ----------
-    symmetry : str or symmetry object
+    symmetry : str or symmetry class
     """
     if not setting.DEFAULT_FERMION:
         return _block3
@@ -59,19 +63,6 @@ def get_backend(symmetry):
         raise NotImplementedError("symmetry %s not supported"%key)
     return backend
 
-def method_alias(name):
-    def ff(f):
-        def fff(obj, *args, **kwargs):
-            if hasattr(obj, name):
-                if isinstance(getattr(obj, name), staticmethod):
-                    return getattr(obj, name)(obj, *args, **kwargs)
-                else:
-                    return getattr(obj, name)(*args, **kwargs)
-            else:
-                return f(obj, *args, **kwargs)
-        return fff
-    return ff
-
 def implements(np_func):
     global _numpy_func_impls
     return lambda f: (_numpy_func_impls.update({np_func: f})
@@ -85,7 +76,15 @@ _sparse_fermion_tensor_numpy_func_impls = _sparse_tensor_numpy_func_impls.copy()
 _numpy_func_impls = _sparse_fermion_tensor_numpy_func_impls
 
 def _gen_default_pattern(obj):
-    """Generate a default algebraic pattern
+    """Get a default algebraic pattern for given dimension
+
+    Parameters
+    ----------
+    obj : int or list/array list object
+
+    Returns
+    ----------
+    pattern : str
     """
     ndim = obj if isinstance(obj, int) else len(obj)
     pattern = "+" * (ndim-1) + '-'
@@ -93,56 +92,119 @@ def _gen_default_pattern(obj):
 
 def _flip_pattern(pattern):
     """Flip the algebraic pattern, eg, "+" -> "-" and "-" -> "+"
+
+    Parameters
+    ----------
+    pattern : str made of '+' and '-'
     """
     flip_dict = {"+":"-", "-":"+"}
     return "".join([flip_dict[ip] for ip in pattern])
 
 def _contract_patterns(patterna, patternb, idxa, idxb):
-    """Get the output pattern from contracting two input patterns. Return the axes that needs to be flipped for the second pattern if the two patterns does not fit directly
+    """Get the output pattern from contracting two input patterns.
+    Compute the axes that needs to be flipped for the second pattern 
+    if the two patterns does not fit directly
+
+    Parameters
+    ----------
+    patterna : str
+        symmetry pattern for the first input
+    patternb : str
+        symmetry pattern for the second input
+    idxa: list/tuple of int
+        indices to be contracted on the first input
+    idxb: list/tuple of int
+        indices to be contracted on the second input
+    
+    Returns
+    -------
+
+    output_pattern: str
+        symmetry pattern for the output
+    b_flip_idxs: list of int
+        the indices that needs to be flipped on b due to input pattern misfit
     """
     conc_a = "".join([patterna[ix] for ix in idxa])
-    out_a = "".join([ip for ix, ip in enumerate(patterna) if ix not in idxa])
+    out_a = "".join([ip for ix, ip in enumerate(patterna) 
+                    if ix not in idxa])
     conc_b = "".join([patternb[ix] for ix in idxb])
-    out_b = "".join([ip for ix, ip in enumerate(patternb) if ix not in idxb])
+    out_b = "".join([ip for ix, ip in enumerate(patternb) 
+                    if ix not in idxb])
 
-    b_flip_axes = []
+    b_flip_idxs = []
     if conc_a != _flip_pattern(conc_b):
         for ind, ixa, ixb in zip(idxb, conc_a, conc_b):
             if ixa == ixb:
-                b_flip_axes.append(ind)
-    return out_a + out_b, b_flip_axes
+                b_flip_idxs.append(ind)
+    output_pattern = out_a + out_b
+    return output_pattern, b_flip_idxs
 
 def _trace_preprocess(T, ax1, ax2):
+    """Preprocessing for the tracing operation Tr(T)_{ax1, ax2}
+
+    Parameters
+    ----------
+    T : SparseFermionTensor or FlatFermionTensor
+        input tensor
+    ax1 : int or list/tuple of int
+        sequence of the first dimensions
+    ax2: int or list/tuple of int
+        sequence of the second dimensions, must correpsond
+        to ax1
+    
+    Returns
+    -------
+
+    new_ax1: list of int
+        first sequence of contracted axes for the transposed input
+    new_ax2: list of int
+        second sequence of contracted axes for the transposed input
+    einsum_subs: str
+        einsum subscript for the trace operation (using transposed input)
+    output_axes: list of int
+        remaining axes in the output
+    output_pattern: str
+        symmetry pattern in the output
+    transpose_order: list of int
+        transposition order so that the trace operation is equivalent
+        to normal trace operation
+    """
     if isinstance(ax1, int):
         ax1 = (ax1, )
     if isinstance(ax2, int):
         ax2 = (ax2, )
     input_subs = output_subs = string.ascii_lowercase[:T.ndim]
-    T_axes = []
+    transpose_order = []
     new_ax1 = []
     new_ax2 = []
     for ix, iy in zip(ax1, ax2):
         ix, iy = sorted([ix, iy])
         new_ax1.append(ix)
         new_ax2.append(iy)
-        T_axes.extend([ix, iy])
+        transpose_order.extend([ix, iy])
         output_subs = output_subs.replace(input_subs[ix], "")
         output_subs = output_subs.replace(input_subs[iy], "")
         input_subs = input_subs.replace(input_subs[iy],input_subs[ix])
     einsum_subs = input_subs + "->" + output_subs
-    rem_axes = [ix for ix in range(T.ndim) if ix not in ax1+ax2]
+    output_axes = [ix for ix in range(T.ndim) if ix not in ax1+ax2]
     output_pattern = "".join([T.pattern[ix]
-                        for ix in rem_axes])
+                        for ix in output_axes])
+    return (new_ax1, new_ax2, einsum_subs, 
+            output_axes, output_pattern, transpose_order)
 
-    return new_ax1, new_ax2, einsum_subs, rem_axes, output_pattern, T_axes
-
-def _trim_singular_vals(s_data, cutoff, cutoff_mode, max_bond=None):
+def _trim_singular_vals(
+    s_data, 
+    cutoff, 
+    cutoff_mode, 
+    max_bond=None
+):
     """Find the number of singular values to keep of ``s`` given ``cutoff`` and
     ``cutoff_mode``.
+
     Parameters
     ----------
-    s : array
-        Singular values.
+    s_data : a list of array
+        Singular values for different blocks.
     cutoff : float
         Cutoff.
     cutoff_mode : {1, 2, 3, 4, 5, 6}
@@ -153,6 +215,11 @@ def _trim_singular_vals(s_data, cutoff, cutoff_mode, max_bond=None):
             - 4: ['rsum2'], trim s.t. ``sum(s_trim**2) < sum(s**2) * cutoff``.
             - 5: ['sum1'], trim s.t. ``sum(s_trim**1) < cutoff``.
             - 6: ['rsum1'], trim s.t. ``sum(s_trim**1) < sum(s**1) * cutoff``.
+    
+    Returns
+    -------
+    n_chis: a list of int
+        The number of remaining singular values for each block
     """
     if cutoff_mode in (1, 2):
         s = None
@@ -220,16 +287,26 @@ def _renorm_singular_vals(s_data, n_chis, renorm_power):
 
     return ((s_tot_keep + s_tot_lose) / s_tot_keep)**(1 / renorm_power)
 
-def _trim_and_renorm_SVD(s_data, uv_data, **svdopts):
-    cutoff = svdopts.pop("cutoff", 1e-12)
-    cutoff_mode = svdopts.pop("cutoff_mode", 3)
-    max_bond = svdopts.pop("max_bond", None)
-    renorm_power = svdopts.pop("renorm_power", 0)
-    n_chis = _trim_singular_vals(s_data, cutoff, cutoff_mode, max_bond)
+def _trim_and_renorm_SVD(
+    s_data, 
+    uv_data,
+    cutoff=SVD_SCREENING,
+    cutoff_mode=3,
+    max_bond=None,
+    renorm_power=0
+):
+#    **opts):
+    #cutoff = opts.pop("cutoff", SVD_SCREENING)
+    #cutoff_mode = opts.pop("cutoff_mode", 3)
+    #max_bond = opts.pop("max_bond", None)
+    #renorm_power = opts.pop("renorm_power", 0)
+    n_chis = _trim_singular_vals(s_data, cutoff, 
+                        cutoff_mode, max_bond)
     n_chi = np.sum(n_chis)
-    all_size = np.sum([iblk.size for iblk in s_data])
-    if n_chi < all_size and renorm_power > 0:
-        renorm_fac = _renorm_singular_vals(s_data, n_chis, renorm_power)
+    tot_size = np.sum([iblk.size for iblk in s_data])
+    if n_chi < tot_size and renorm_power > 0:
+        renorm_fac = _renorm_singular_vals(s_data, 
+                        n_chis, renorm_power)
         for sblk in s_data:
             sblk *= renorm_fac
 
@@ -241,6 +318,19 @@ def _trim_and_renorm_SVD(s_data, uv_data, **svdopts):
     return s_data, uv_data
 
 def _absorb_svd(u, s, v, absorb):
+    """absorb the singular values s onto left u or right side v
+
+    Parameters
+    ----------
+    u : array
+    s : array
+    v : array
+    absorb : {1, -1, None}
+        absorpsion mode:
+            - -1: s onto u
+            - 1: s onto `v`
+            - None: ``s**.5`` onto both u and v
+    """
     if absorb == -1:
         u = u * s.reshape((1, -1))
     elif absorb == 1:
@@ -251,73 +341,150 @@ def _absorb_svd(u, s, v, absorb):
         v = v * s.reshape((-1, 1))
     return u, None, v
 
-def _index_partition(T, left_idx, right_idx):
-    if right_idx is None:
-        right_idx = [idim for idim in range(T.ndim) if idim not in left_idx]
-    elif left_idx is None:
-        left_idx = [idim for idim in range(T.ndim) if idim not in right_idx]
+def _maybe_transpose_tensor(T, left_idx, right_idx):
+    """transpose the tensor if needed to make sure 
+    it's in specified order
+
+    Parameters
+    ----------
+    T : SparseFermionTensor or FlatFermionTensor
+    left_idx : tuple/list of int
+    right_idx : tuple/list of int
+    
+    Returns
+    -------
+    new_T: SparseFermionTensor or FlatFermionTensor in the right order
+    """
     neworder = list(left_idx) + list(right_idx)
     if neworder == list(range(T.ndim)):
         new_T = T
     else:
         new_T = T.transpose(neworder)
-    return new_T, left_idx, right_idx
+    return new_T
 
 def _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb):
-    cls = T.dq.__class__
+    """transpose the tensor if needed to make sure 
+    it's in specified order
+
+    Parameters
+    ----------
+    T : SparseFermionTensor or FlatFermionTensor
+    left_idx : tuple/list of int
+        left indices for SVD
+    right_idx : tuple/list of int
+        right indices for SVD
+    qpn_partition: tuple/list of symmetry object
+        partition of symmetry on the left and right
+    absorb: {-1,1,0,None}
+        absorpsion mode:
+            - -1: s onto left
+            - 1: s onto right
+            - 0: do not absorb s onto left/right
+            - None: ``s**.5`` onto both u and v
+    Returns
+    -------
+    new_T: SparseFermionTensor or FlatFermionTensor in the right order
+    qpn_partition: tuple of symmetry object
+        partition of symmetry on the left and right
+    symmetry_cls: symmetry class
+        symmetry class for the undering data
+    """
+    symmetry_cls = T.dq.__class__
+    if max(len(left_idx), len(right_idx)) == T.ndim:
+        raise ValueError
     if qpn_partition is None:
         if absorb ==-1:
-            qpn_partition = (T.dq, cls(0))
+            qpn_partition = (T.dq, symmetry_cls(0))
         else:
-            qpn_partition = (cls(0), T.dq)
+            qpn_partition = (symmetry_cls(0), T.dq)
     else:
         assert np.sum(qpn_partition) == T.dq
+    new_T = _maybe_transpose_tensor(T, left_idx, right_idx)
+    return new_T, qpn_partition, symmetry_cls
 
-    new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
-    return new_T, left_idx, right_idx, qpn_partition, cls
+def flat_svd(
+    T,
+    left_idx, 
+    right_idx=None, 
+    qpn_partition=None, 
+    **opts
+):
+    """Perform tensor SVD on FlatFermionTensor
 
-def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
+    Parameters
+    ----------
+    T : FlatFermionTensor
+    left_idx : tuple/list of int
+        left indices for SVD
+    right_idx : optional, tuple/list of int
+        right indices for SVD
+    qpn_partition: optional, tuple/list of symmetry object
+        partition of symmetry on the left and right, 
+        must add up to total symmetry of the input tensor
+    
+    Returns
+    -------
+    u: FlatFermionTensor
+    s: FlatFermionTensor or None
+    v: FlatFermionTensor
+    """
     absorb = opts.pop("absorb", 0)
-    new_T, left_idx, right_idx, qpn_partition, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb)
-    if left_idx is not None and len(left_idx) == T.ndim:
-        raise NotImplementedError
-    elif right_idx is not None and len(right_idx) == T.ndim:
+    if right_idx is None:
+        right_idx = [idim for idim in range(T.ndim) 
+                        if idim not in left_idx]
+    new_T, qpn_partition, symmetry = _svd_preprocess(
+                T, left_idx, right_idx, 
+                qpn_partition, absorb)
+    if max(len(left_idx), len(right_idx)) == T.ndim:
         raise NotImplementedError
 
     split_ax = len(left_idx)
-    left_q = symmetry._compute(new_T.pattern[:split_ax], new_T.q_labels[:,:split_ax], offset=("-", qpn_partition[0]))
-    right_q = symmetry._compute(new_T.pattern[split_ax:], new_T.q_labels[:,split_ax:], offset=("-", qpn_partition[1]), neg=True)
+    left_q = symmetry._compute(new_T.pattern[:split_ax], 
+                new_T.q_labels[:,:split_ax], 
+                offset=("-", qpn_partition[0]))
+    right_q = symmetry._compute(new_T.pattern[split_ax:], 
+                new_T.q_labels[:,split_ax:], 
+                offset=("-", qpn_partition[1]), neg=True)
 
     aux_q = list(set(np.unique(left_q)) & set(np.unique(right_q)))
 
-    full_left = np.hstack([new_T.q_labels[:,:split_ax], left_q.reshape(-1,1)])
-    full_right = np.hstack([left_q.reshape(-1,1), new_T.q_labels[:,split_ax:]])
-    full = [(tuple(il), tuple(ir)) for il, ir in zip(full_left, full_right)]
+    full_left_qs = np.hstack([new_T.q_labels[:,:split_ax], 
+                              left_q.reshape(-1,1)])
+    full_right_qs = np.hstack([left_q.reshape(-1,1), 
+                               new_T.q_labels[:,split_ax:]])
+    full_qs = [(tuple(il), tuple(ir)) for il, ir \
+            in zip(full_left_qs, full_right_qs)]
 
-    row_shapes = np.prod(new_T.shapes[:,:split_ax], axis=1, dtype=int)
-    col_shapes = np.prod(new_T.shapes[:,split_ax:], axis=1, dtype=int)
+    row_shapes = np.prod(new_T.shapes[:,:split_ax], 
+                         axis=1, dtype=int)
+    col_shapes = np.prod(new_T.shapes[:,split_ax:], 
+                         axis=1, dtype=int)
     s_data =[]
     uv_data = []
     all_maps = []
-    for slab in aux_q:
-        blocks = np.where(left_q == slab)[0]
+
+    # finding data mapping to correpsonding symmetry sector
+    for sblk_q_label in aux_q:
+        blocks = np.where(left_q == sblk_q_label)[0]
         row_map = {}
         col_map = {}
         row_len = 0
         col_len = 0
         alldatas = {}
         for iblk in blocks:
-            lq, rq = full[iblk]
+            lq, rq = full_qs[iblk]
             if lq not in row_map:
                 new_row_len = row_shapes[iblk] + row_len
-                row_map[lq] = (row_len, new_row_len, new_T.shapes[iblk,:split_ax])
+                row_map[lq] = (row_len, new_row_len, 
+                               new_T.shapes[iblk,:split_ax])
                 ist, ied = row_len, new_row_len
                 row_len = new_row_len
             else:
                 ist, ied = row_map[lq][:2]
             if rq not in col_map:
                 new_col_len = col_shapes[iblk] + col_len
-                col_map[rq] = (col_len, new_col_len, new_T.shapes[iblk,split_ax:])
+                col_map[rq] = (col_len, new_col_len, 
+                               new_T.shapes[iblk,split_ax:])
                 jst, jed = col_len, new_col_len
                 col_len = new_col_len
             else:
@@ -340,8 +507,9 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
         v = v[ind,:]
         s_data.append(s)
         uv_data.append([u,v])
-        all_maps.append([slab, row_map, col_map])
+        all_maps.append([sblk_q_label, row_map, col_map])
 
+    # truncate the singular values for each block
     s_data, uv_data = _trim_and_renorm_SVD(s_data, uv_data, **opts)
 
     if absorb is not None:
@@ -365,14 +533,15 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     shv = []
     shs = []
 
-    for s, (u, v), (slab, row_map, col_map) in zip(s_data, uv_data, all_maps):
+    for s, (u, v), (sblk_q_label, row_map, col_map) \
+                in zip(s_data, uv_data, all_maps):
         if u.size==0:
             continue
         if absorb is None:
             s = np.diag(s)
             shs.append(s.shape)
             sdata.append(s.ravel())
-            qs.append([slab, slab])
+            qs.append([sblk_q_label, sblk_q_label])
 
         for lq, (lst, led, lsh) in row_map.items():
             udata.append(u[lst:led].ravel())
@@ -385,41 +554,74 @@ def flat_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
             shv.append((v.shape[0],)+tuple(rsh))
 
     if absorb is None:
-        qs = np.asarray(qs, dtype=np.uint32)
-        shs = np.asarray(shs, dtype=np.uint32)
+        qs = np.asarray(qs, dtype=Q_LABELS_DTYPE)
+        shs = np.asarray(shs, dtype=SHAPES_DTYPE)
         sdata = np.concatenate(sdata)
-        s = T.__class__(qs, shs, sdata, pattern="+-", symmetry=T.symmetry)
+        s = T.__class__(qs, shs, sdata, 
+                        pattern="+-", symmetry=T.symmetry)
     else:
         s = None
 
-    qu = np.asarray(qu, dtype=np.uint32)
-    shu = np.asarray(shu, dtype=np.uint32)
+    qu = np.asarray(qu, dtype=Q_LABELS_DTYPE)
+    shu = np.asarray(shu, dtype=SHAPES_DTYPE)
     udata = np.concatenate(udata)
 
-    qv = np.asarray(qv, dtype=np.uint32)
-    shv = np.asarray(shv, dtype=np.uint32)
+    qv = np.asarray(qv, dtype=Q_LABELS_DTYPE)
+    shv = np.asarray(shv, dtype=SHAPES_DTYPE)
     vdata = np.concatenate(vdata)
-    u = T.__class__(qu, shu, udata, pattern=new_T.pattern[:split_ax]+"-", symmetry=T.symmetry)
-    v = T.__class__(qv, shv, vdata, pattern="+"+new_T.pattern[split_ax:], symmetry=T.symmetry)
+    u = T.__class__(qu, shu, udata, 
+                    pattern=new_T.pattern[:split_ax]+"-", 
+                    symmetry=T.symmetry)
+    v = T.__class__(qv, shv, vdata, 
+                    pattern="+"+new_T.pattern[split_ax:], 
+                    symmetry=T.symmetry)
+    # fix shape if not consistent
     if u.shape[:split_ax] != new_T.shape[:split_ax]:
         u.shape = new_T.shape[:split_ax] + (u.shape[-1],)
     if v.shape[1:] != new_T.shape[split_ax:]:
         v.shape = (v.shape[0],)+new_T.shape[split_ax:]
     return u, s, v
 
-def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
+def sparse_svd(
+    T, 
+    left_idx, 
+    right_idx=None, 
+    qpn_partition=None, 
+    **opts
+):
+    """Perform tensor SVD on SparseFermionTensor
+
+    Parameters
+    ----------
+    T : SparseFermionTensor
+    left_idx : tuple/list of int
+        left indices for SVD
+    right_idx : optional, tuple/list of int
+        right indices for SVD
+    qpn_partition: optional, tuple/list of symmetry object
+        partition of symmetry on the left and right, 
+        must add up to total symmetry of the input tensor
+    
+    Returns
+    -------
+    u: SparseFermionTensor
+    s: SparseFermionTensor or None
+    v: SparseFermionTensor
+    """
     absorb = opts.pop("absorb", 0)
-    new_T, left_idx, right_idx, qpn_partition, symmetry = _svd_preprocess(T, left_idx, right_idx, qpn_partition, absorb)
-    if len(left_idx) == T.ndim:
-        raise NotImplementedError
-    elif len(right_idx) == T.ndim:
-        raise NotImplementedError
+    if right_idx is None:
+        right_idx = [idim for idim in range(T.ndim) 
+                        if idim not in left_idx]
+    new_T, qpn_partition, symmetry = _svd_preprocess(
+                    T, left_idx, right_idx, 
+                    qpn_partition, absorb)
     split_ax = len(left_idx)
     left_pattern = new_T.pattern[:split_ax]
-    right_pattern = new_T.pattern[split_ax:]
     data_map = {}
     for iblk in new_T.blocks:
-        left_q = symmetry._compute(left_pattern, iblk.q_labels[:split_ax], offset=("-", qpn_partition[0]))
+        left_q = symmetry._compute(left_pattern, 
+                    iblk.q_labels[:split_ax], 
+                    offset=("-", qpn_partition[0]))
         if left_q not in data_map:
             data_map[left_q] = []
         data_map[left_q].append(iblk)
@@ -428,13 +630,13 @@ def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     uv_data = []
     all_maps = []
 
-    for slab, datasets in data_map.items():
+    for sblk_q_label, datasets in data_map.items():
         row_len = col_len = 0
         row_map = {}
         col_map = {}
         for iblk in datasets:
-            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
-            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
+            lq = tuple(iblk.q_labels[:split_ax]) + (sblk_q_label,)
+            rq = (sblk_q_label,) + tuple(iblk.q_labels[split_ax:])
             if lq not in row_map:
                 new_row_len = row_len + np.prod(iblk.shape[:split_ax], dtype=int)
                 row_map[lq] = (row_len, new_row_len, iblk.shape[:split_ax])
@@ -445,8 +647,8 @@ def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
                 col_len = new_col_len
         data = np.zeros([row_len, col_len], dtype=T.dtype)
         for iblk in datasets:
-            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
-            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
+            lq = tuple(iblk.q_labels[:split_ax]) + (sblk_q_label,)
+            rq = (sblk_q_label,) + tuple(iblk.q_labels[split_ax:])
             ist, ied = row_map[lq][:2]
             jst, jed = col_map[rq][:2]
             data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jst-jed)
@@ -462,7 +664,7 @@ def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
         v = v[ind,:]
         s_data.append(s)
         uv_data.append([u,v])
-        all_maps.append([slab, row_map, col_map])
+        all_maps.append([sblk_q_label, row_map, col_map])
 
     s_data, uv_data = _trim_and_renorm_SVD(s_data, uv_data, **opts)
 
@@ -480,15 +682,18 @@ def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     vblocks = []
     sblocks = []
 
-    for s, (u, v), (slab, row_map, col_map) in zip(s_data, uv_data, all_maps):
+    for s, (u, v), (sblk_q_label, row_map, col_map) \
+            in zip(s_data, uv_data, all_maps):
         if u.size==0:
             continue
         if absorb is None:
             s = np.diag(s)
-            sblocks.append(SubTensor(reduced=s, q_labels=(slab,)*2))
+            sblocks.append(
+                SubTensor(reduced=s, q_labels=(sblk_q_label,)*2))
 
         for lq, (lst, led, lsh) in row_map.items():
-            ublocks.append(SubTensor(reduced=u[lst:led].reshape(tuple(lsh)+(-1,)), q_labels=lq))
+            ublocks.append(
+                SubTensor(reduced=u[lst:led].reshape(tuple(lsh)+(-1,)), q_labels=lq))
 
         for rq, (rst, red, rsh) in col_map.items():
             vblocks.append(SubTensor(reduced=v[:,rst:red].reshape((-1,)+tuple(rsh)), q_labels=rq))
@@ -496,6 +701,8 @@ def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
     if absorb is None:
         s = T.__class__(blocks=sblocks, pattern="+-")
     u = T.__class__(blocks=ublocks, pattern=new_T.pattern[:split_ax]+"-")
+
+    # make sure shape is consistent
     if u.shape[:split_ax] != new_T.shape[:split_ax]:
         u.shape = new_T.shape[:split_ax] + (u.shape[-1],)
     v = T.__class__(blocks=vblocks, pattern="+"+new_T.pattern[split_ax:])
@@ -503,13 +710,35 @@ def sparse_svd(T, left_idx, right_idx=None, qpn_partition=None, **opts):
         v.shape = (v.shape[0],)+new_T.shape[split_ax:]
     return u, s, v
 
-def _gen_null_qr_partition(T, mod):
+def _gen_qr_qpn_partition(T, mod):
+    """
+    Generate the default symmetry partition for QR/LQ
+    """
     return {"qr": ("-"+T.pattern, 0, slice(None)),
             "lq": (T.pattern+"-", T.ndim, slice(None,None,-1))}[mod]
 
-def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
+def sparse_qr(T, 
+    left_idx, 
+    right_idx=None, 
+    mod="qr"
+):
+    """Perform tensor QR on SparseFermionTensor
+
+    Parameters
+    ----------
+    T : SparseFermionTensor
+    left_idx : tuple/list of int
+        left indices for QR
+    right_idx : optional, tuple/list of int
+        right indices for QR
+    mod: optional, {"qr", "lq"}
+    
+    """
     assert mod in ["qr", "lq"]
-    new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
+    if right_idx is None:
+        right_idx = [idim for idim in range(T.ndim) 
+        if idim not in left_idx]
+    new_T = _maybe_transpose_tensor(T, left_idx, right_idx)
     if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
         dq = T.dq
         qblks = [SubTensor(reduced=np.ones([1]), q_labels=(dq, ))]
@@ -521,7 +750,7 @@ def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
             arr = np.asarray(blk).reshape(new_shape)
             return blk.__class__(reduced=arr, q_labels=new_q_labels)
 
-        new_pattern, inds, return_order = _gen_null_qr_partition(T, mod)
+        new_pattern, inds, return_order = _gen_qr_qpn_partition(T, mod)
         if return_order == slice(None):
             shape = (1,)+T.shape
         else:
@@ -543,13 +772,13 @@ def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
         data_map[left_q].append(iblk)
     qblocks = []
     rblocks = []
-    for slab, datasets in data_map.items():
+    for sblk_q_label, datasets in data_map.items():
         row_len = col_len = 0
         row_map = {}
         col_map = {}
         for iblk in datasets:
-            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
-            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
+            lq = tuple(iblk.q_labels[:split_ax]) + (sblk_q_label,)
+            rq = (sblk_q_label,) + tuple(iblk.q_labels[split_ax:])
             if lq not in row_map:
                 new_row_len = row_len + np.prod(iblk.shape[:split_ax], dtype=int)
                 row_map[lq] = (row_len, new_row_len, iblk.shape[:split_ax])
@@ -560,8 +789,8 @@ def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
                 col_len = new_col_len
         data = np.zeros([row_len, col_len], dtype=T.dtype)
         for iblk in datasets:
-            lq = tuple(iblk.q_labels[:split_ax]) + (slab,)
-            rq = (slab,) + tuple(iblk.q_labels[split_ax:])
+            lq = tuple(iblk.q_labels[:split_ax]) + (sblk_q_label,)
+            rq = (sblk_q_label,) + tuple(iblk.q_labels[split_ax:])
             ist, ied = row_map[lq][:2]
             jst, jed = col_map[rq][:2]
             data[ist:ied,jst:jed] = np.asarray(iblk).reshape(ied-ist, jst-jed)
@@ -586,16 +815,24 @@ def sparse_qr(T, left_idx, right_idx=None, mod="qr"):
         r.shape = (r.shape[0],)+new_T.shape[split_ax:]
     return q, r
 
-def flat_qr(T, left_idx, right_idx=None, mod="qr"):
+def flat_qr(T, 
+    left_idx, 
+    right_idx=None, 
+    mod="qr"
+):
     assert mod in ["qr", "lq"]
-    new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
+    if right_idx is None:
+        right_idx = [idim for idim in range(T.ndim) 
+                        if idim not in left_idx]
+    new_T = _maybe_transpose_tensor(T, left_idx, right_idx)
     if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
         flat_q = T.dq.to_flat()
-        flat_qs = np.asarray([[flat_q]], dtype=np.uint32)
-        ishapes = np.asarray([[1,]], dtype=np.uint32)
+        flat_qs = np.asarray([[flat_q]], dtype=Q_LABELS_DTYPE)
+        ishapes = np.asarray([[1,]], dtype=SHAPES_DTYPE)
         data = np.asarray([1,])
-        Q = T.__class__(flat_qs, ishapes, data, pattern="+", symmetry=T.symmetry)
-        new_pattern, inds, return_order = _gen_null_qr_partition(T, mod)
+        Q = T.__class__(flat_qs, ishapes, data, 
+                        pattern="+", symmetry=T.symmetry)
+        new_pattern, inds, return_order = _gen_qr_qpn_partition(T, mod)
         new_shapes = np.insert(T.shapes, inds, 1, axis=1)
         new_q_labels = np.insert(T.q_labels, inds, flat_q, axis=1)
         if return_order == slice(None):
@@ -610,11 +847,16 @@ def flat_qr(T, left_idx, right_idx=None, mod="qr"):
     dq = {"lq": symmetry(0),
           "qr": T.dq}[mod]
     split_ax = len(left_idx)
-    left_q = symmetry._compute(new_T.pattern[:split_ax], new_T.q_labels[:,:split_ax], offset=("-", dq))
+    left_q = symmetry._compute(new_T.pattern[:split_ax], 
+                               new_T.q_labels[:,:split_ax], 
+                               offset=("-", dq))
     aux_q = list(set(np.unique(left_q)) )
-    full_left = np.hstack([new_T.q_labels[:,:split_ax], left_q.reshape(-1,1)])
-    full_right = np.hstack([left_q.reshape(-1,1), new_T.q_labels[:,split_ax:]])
-    full = [(tuple(il), tuple(ir)) for il, ir in zip(full_left, full_right)]
+    full_left_qs = np.hstack([new_T.q_labels[:,:split_ax], 
+                              left_q.reshape(-1,1)])
+    full_right_qs = np.hstack([left_q.reshape(-1,1), 
+                               new_T.q_labels[:,split_ax:]])
+    full_qs = [(tuple(il), tuple(ir)) for il, ir in 
+                    zip(full_left_qs, full_right_qs)]
 
     qdata = []
     rdata = []
@@ -622,17 +864,19 @@ def flat_qr(T, left_idx, right_idx=None, mod="qr"):
     qr = []
     shq = []
     shr = []
-    row_shapes = np.prod(new_T.shapes[:,:split_ax], axis=1, dtype=int)
-    col_shapes = np.prod(new_T.shapes[:,split_ax:], axis=1, dtype=int)
-    for slab in aux_q:
-        blocks = np.where(left_q == slab)[0]
+    row_shapes = np.prod(new_T.shapes[:,:split_ax], 
+                         axis=1, dtype=int)
+    col_shapes = np.prod(new_T.shapes[:,split_ax:], 
+                         axis=1, dtype=int)
+    for sblk_q_label in aux_q:
+        blocks = np.where(left_q == sblk_q_label)[0]
         row_map = {}
         col_map = {}
         row_len = 0
         col_len = 0
         alldatas = {}
         for iblk in blocks:
-            lq, rq = full[iblk]
+            lq, rq = full_qs[iblk]
             if lq not in row_map:
                 new_row_len = row_shapes[iblk] + row_len
                 row_map[lq] = (row_len, new_row_len, new_T.shapes[iblk,:split_ax])
@@ -671,32 +915,47 @@ def flat_qr(T, left_idx, right_idx=None, mod="qr"):
             qr.append(rq)
             shr.append((r.shape[0],)+tuple(rsh))
 
-    qq = np.asarray(qq, dtype=np.uint32)
-    shq = np.asarray(shq, dtype=np.uint32)
+    qq = np.asarray(qq, dtype=Q_LABELS_DTYPE)
+    shq = np.asarray(shq, dtype=SHAPES_DTYPE)
     qdata = np.concatenate(qdata)
 
-    qr = np.asarray(qr, dtype=np.uint32)
-    shr = np.asarray(shr, dtype=np.uint32)
+    qr = np.asarray(qr, dtype=Q_LABELS_DTYPE)
+    shr = np.asarray(shr, dtype=SHAPES_DTYPE)
     rdata = np.concatenate(rdata)
     q = T.__class__(qq, shq, qdata, pattern=new_T.pattern[:split_ax]+"-", symmetry=T.symmetry)
     r = T.__class__(qr, shr, rdata, pattern="+"+new_T.pattern[split_ax:], symmetry=T.symmetry)
+    # inherit shape
     if q.shape[:split_ax] != new_T.shape[:split_ax]:
         q.shape = new_T.shape[:split_ax] + (q.shape[-1],)
     if r.shape[1:] != new_T.shape[split_ax:]:
         r.shape = (r.shape[0],)+new_T.shape[split_ax:]
     return q, r
 
-def flat_qr_fast(T, left_idx, right_idx=None, mod="qr"):
+def flat_qr_fast(
+    T, 
+    left_idx, 
+    right_idx=None, 
+    mod="qr"
+):
     assert mod in ["qr", "lq"]
-    new_T, left_idx, right_idx = _index_partition(T, left_idx, right_idx)
+    if right_idx is None:
+        right_idx = [idim for idim in range(T.ndim) 
+        if idim not in left_idx]
+    new_T = _maybe_transpose_tensor(T, left_idx, right_idx)
     if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
         raise NotImplementedError
     split_ax = len(left_idx)
     backend = get_backend(T.symmetry)
-    qq, shq, qdata, qidxs, qr, shr, rdata, ridxs = backend.flat_fermion_tensor.tensor_qr(
-        new_T.q_labels, new_T.shapes, new_T.data, new_T.idxs, split_ax, new_T.pattern, mod == "qr")
-    q = T.__class__(qq, shq, qdata, pattern=new_T.pattern[:split_ax]+"-", idxs=qidxs, symmetry=T.symmetry)
-    r = T.__class__(qr, shr, rdata, pattern="+"+new_T.pattern[split_ax:], idxs=ridxs, symmetry=T.symmetry)
+    qq, shq, qdata, qidxs, qr, shr, rdata, ridxs = \
+            backend.flat_fermion_tensor.tensor_qr(
+            new_T.q_labels, new_T.shapes, new_T.data, 
+            new_T.idxs, split_ax, new_T.pattern, mod == "qr")
+    q = T.__class__(qq, shq, qdata, 
+                    pattern=new_T.pattern[:split_ax]+"-", 
+                    idxs=qidxs, symmetry=T.symmetry)
+    r = T.__class__(qr, shr, rdata, 
+                    pattern="+"+new_T.pattern[split_ax:], 
+                    idxs=ridxs, symmetry=T.symmetry)
     return q, r
 
 def _adjust_block(block, flip_axes):
@@ -706,7 +965,7 @@ def _adjust_block(block, flip_axes):
         new_q_labels = list(block.q_labels)
         for ix in flip_axes:
             new_q_labels[ix] = - block.q_labels[ix]
-        new_block = SubTensor(reduced=np.asarray(block), q_labels=tuple(new_q_labels))
+        new_block = SubTensor(reduced=np.asarray(block), q_labels=new_q_labels)
         return new_block
 
 def _adjust_q_labels(symmetry, q_labels, flip_axes):
@@ -718,7 +977,12 @@ def _adjust_q_labels(symmetry, q_labels, flip_axes):
             new_q_labels[:,ix] = symmetry.flip_flat(q_labels[:,ix])
         return new_q_labels
 
-def compute_phase(q_labels, axes, direction="left", symmetry=None):
+def compute_phase(
+    q_labels, 
+    axes, 
+    direction="left", 
+    symmetry=None
+):
     if not setting.DEFAULT_FERMION: return 1
     if isinstance(q_labels, np.ndarray):
         if symmetry is None:
@@ -759,8 +1023,9 @@ class SparseFermionTensor(SparseTensor):
 
     @property
     def dq(self):
-        cls = self.blocks[0].q_labels[0].__class__
-        dq = cls._compute(self.pattern, self.blocks[0].q_labels)
+        symmetry_cls = self.blocks[0].q_labels[0].__class__
+        dq = symmetry_cls._compute(self.pattern, 
+                self.blocks[0].q_labels)
         return dq
 
     @property
@@ -772,7 +1037,6 @@ class SparseFermionTensor(SparseTensor):
         if not isinstance(pattern_string, str) or \
               not set(pattern_string).issubset(set("+-")):
             raise TypeError("Pattern must be a string of +-")
-
         elif len(pattern_string) != self.ndim:
             raise ValueError("Pattern string length must match the dimension of the tensor")
         self._pattern = pattern_string
@@ -780,7 +1044,8 @@ class SparseFermionTensor(SparseTensor):
     @property
     def dagger(self):
         axes = list(range(self.ndim))[::-1]
-        blocks = [np.transpose(block.conj(), axes=axes) for block in self.blocks]
+        blocks = [np.transpose(block.conj(), axes=axes) 
+                                for block in self.blocks]
         shape = self.shape[::-1]
         return self.__class__(blocks=blocks, pattern=_flip_pattern(self.pattern[::-1]), shape=shape)
 
@@ -885,7 +1150,13 @@ class SparseFermionTensor(SparseTensor):
                 yield xsh, xqs
 
     @staticmethod
-    def random(bond_infos, pattern=None, dq=None, dtype=float, shape=None):
+    def random(
+        bond_infos, 
+        pattern=None, 
+        dq=None, 
+        dtype=float, 
+        shape=None
+    ):
         """Create tensor from tuple of BondInfo with random elements."""
         blocks = []
         for sh, qs in SparseFermionTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
@@ -893,7 +1164,13 @@ class SparseFermionTensor(SparseTensor):
         return SparseFermionTensor(blocks=blocks, pattern=pattern, shape=shape)
 
     @staticmethod
-    def zeros(bond_infos, pattern=None, dq=None, dtype=float, shape=None):
+    def zeros(
+        bond_infos, 
+        pattern=None, 
+        dq=None, 
+        dtype=float, 
+        shape=None
+    ):
         """Create tensor from tuple of BondInfo with zero elements."""
         blocks = []
         for sh, qs in SparseFermionTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
@@ -901,7 +1178,13 @@ class SparseFermionTensor(SparseTensor):
         return SparseFermionTensor(blocks=blocks, pattern=pattern, shape=shape)
 
     @staticmethod
-    def ones(bond_infos, pattern=None, dq=None, dtype=float, shape=None):
+    def ones(
+        bond_infos, 
+        pattern=None, 
+        dq=None, 
+        dtype=float, 
+        shape=None
+    ):
         """Create tensor from tuple of BondInfo with one elements."""
         blocks = []
         for sh, qs in SparseFermionTensor._skeleton(bond_infos, pattern=pattern, dq=dq):
@@ -969,8 +1252,8 @@ class SparseFermionTensor(SparseTensor):
         return self._subtract(self, b)
 
     def trace(self, ax1, ax2):
-        ax1, ax2, einsum_subs, rem_axes, \
-            output_pattern, T_axes= _trace_preprocess(self, ax1, ax2)
+        ax1, ax2, einsum_subs, output_axes, \
+            output_pattern, transpose_order= _trace_preprocess(self, ax1, ax2)
         symmetry = self.dq.__class__
         if len(ax1+ax2) == self.ndim and self.dq != symmetry(0):
             return 0
@@ -988,9 +1271,9 @@ class SparseFermionTensor(SparseTensor):
                 blks_to_trace.append(iblk)
         data = {}
         for iblk in blks_to_trace:
-            phase = compute_phase(iblk.q_labels, T_axes)
+            phase = compute_phase(iblk.q_labels, transpose_order)
             out = np.einsum(einsum_subs, np.asarray(iblk)) * phase
-            q_labels = tuple([iblk.q_labels[ix] for ix in rem_axes])
+            q_labels = tuple([iblk.q_labels[ix] for ix in output_axes])
             if output_pattern:
                 out = iblk.__class__(reduced=out, q_labels=q_labels)
             if q_labels not in data:
@@ -1120,11 +1403,26 @@ class SparseFermionTensor(SparseTensor):
         shape = [a.shape[ix] for ix in axes]
         return a.__class__(blocks=blocks, pattern=pattern, shape=tuple(shape))
 
-    def tensor_svd(self, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=None, **opts):
-        return sparse_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
+    def tensor_svd(
+        self, 
+        left_idx, 
+        right_idx=None, 
+        qpn_partition=None, 
+        **opts
+    ):
+        return sparse_svd(self, left_idx, 
+                          right_idx=right_idx, 
+                          qpn_partition=qpn_partition, 
+                          **opts)
 
-    def tensor_qr(self, left_idx, right_idx=None, mod="qr"):
-        return sparse_qr(self, left_idx, right_idx=right_idx, mod=mod)
+    def tensor_qr(
+        self, 
+        left_idx, 
+        right_idx=None, 
+        mod="qr"
+    ):
+        return sparse_qr(self, left_idx, 
+                         right_idx=right_idx, mod=mod)
 
     def to_exponential(self, x):
         from pyblock3.algebra.fermion_ops import get_sparse_exponential
@@ -1136,7 +1434,9 @@ _numpy_func_impls = _flat_fermion_tensor_numpy_func_impls
 
 class FlatFermionTensor(FlatSparseTensor):
 
-    def __init__(self, q_labels, shapes, data, pattern=None, idxs=None, symmetry=None, shape=None):
+    def __init__(self, q_labels, shapes, data, 
+                 pattern=None, idxs=None, 
+                 symmetry=None, shape=None):
         self.n_blocks = len(q_labels)
         self.ndim = q_labels.shape[1] if self.n_blocks != 0 else 0
         self.shapes = shapes
@@ -1148,8 +1448,8 @@ class FlatFermionTensor(FlatSparseTensor):
         self._pattern = pattern
 
         if idxs is None:
-            self.idxs = np.zeros((self.n_blocks + 1, ), dtype=np.uint64)
-            self.idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
+            self.idxs = np.zeros((self.n_blocks + 1, ), dtype=INDEX_DTYPE)
+            self.idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=INDEX_DTYPE)
         else:
             self.idxs = idxs
         if self.n_blocks != 0:
@@ -1273,14 +1573,14 @@ class FlatFermionTensor(FlatSparseTensor):
     def from_sparse(spt):
         ndim = spt.ndim
         n_blocks = spt.n_blocks
-        shapes = np.zeros((n_blocks, ndim), dtype=np.uint32)
-        q_labels = np.zeros((n_blocks, ndim), dtype=np.uint32)
+        shapes = np.zeros((n_blocks, ndim), dtype=SHAPES_DTYPE)
+        q_labels = np.zeros((n_blocks, ndim), dtype=Q_LABELS_DTYPE)
         cls = spt.blocks[0].q_labels[0].__class__
         for i in range(n_blocks):
             shapes[i] = spt.blocks[i].shape
             q_labels[i] = list(map(cls.to_flat, spt.blocks[i].q_labels))
-        idxs = np.zeros((n_blocks + 1, ), dtype=np.uint64)
-        idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
+        idxs = np.zeros((n_blocks + 1, ), dtype=INDEX_DTYPE)
+        idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=INDEX_DTYPE)
         data = np.zeros((idxs[-1], ), dtype=spt.dtype)
         for i in range(n_blocks):
             data[idxs[i]:idxs[i + 1]] = spt.blocks[i].flatten()
@@ -1333,8 +1633,8 @@ class FlatFermionTensor(FlatSparseTensor):
         return self._subtract(self, b)
 
     def trace(self, ax1, ax2):
-        ax1, ax2, einsum_subs, rem_axes, \
-            output_pattern, T_axes= _trace_preprocess(self, ax1, ax2)
+        ax1, ax2, einsum_subs, output_axes, \
+            output_pattern, transpose_order= _trace_preprocess(self, ax1, ax2)
         symmetry = self.dq.__class__
         if len(ax1+ax2) == self.ndim and self.dq != symmetry(0):
             return 0
@@ -1350,7 +1650,7 @@ class FlatFermionTensor(FlatSparseTensor):
         blks_to_trace = np.where(diff==0)[0]
         blk_map = dict()
         for iblk in blks_to_trace:
-            q_labels = tuple(self.q_labels[iblk,rem_axes])
+            q_labels = tuple(self.q_labels[iblk,output_axes])
             if q_labels not in blk_map:
                 blk_map[q_labels] = [iblk]
             else:
@@ -1361,12 +1661,12 @@ class FlatFermionTensor(FlatSparseTensor):
         output_shapes = []
         for qlab, blks in blk_map.items():
             output_q_labels.append(qlab)
-            ish = self.shapes[blks[0],rem_axes]
+            ish = self.shapes[blks[0],output_axes]
             output_shapes.append(ish)
             out = 0
             for iblk in blks:
                 jsh = self.shapes[iblk]
-                phase = compute_phase(self.q_labels[iblk], T_axes, symmetry=symmetry)
+                phase = compute_phase(self.q_labels[iblk], transpose_order, symmetry=symmetry)
                 dat = self.data[self.idxs[iblk]:self.idxs[iblk+1]].reshape(jsh)
                 out = out + np.einsum(einsum_subs, dat).ravel() * phase
             data.append(out)
@@ -1505,10 +1805,21 @@ class FlatFermionTensor(FlatSparseTensor):
             return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, pattern, a.idxs, a.symmetry, shape=tuple(shape))
 
-    def tensor_svd(self, left_idx, right_idx=None, qpn_partition=None, qpn_cutoff_func=None, **opts):
-        return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, qpn_cutoff_func=qpn_cutoff_func, **opts)
+    def tensor_svd(
+        self, 
+        left_idx, 
+        right_idx=None, 
+        qpn_partition=None, 
+        **opts
+    ):
+        return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, **opts)
 
-    def tensor_qr(self, left_idx, right_idx=None, mod="qr"):
+    def tensor_qr(
+        self, 
+        left_idx, 
+        right_idx=None, 
+        mod="qr"
+    ):
         return flat_qr(self, left_idx, right_idx=right_idx, mod=mod)
 
     def to_exponential(self, x):
@@ -1516,7 +1827,8 @@ class FlatFermionTensor(FlatSparseTensor):
         return get_flat_exponential(self, x)
 
 class Constructor:
-    def __init__(self, pattern, flat=None, symmetry=None, info_generator=None):
+    def __init__(self, pattern, flat=None, 
+                 symmetry=None, info_generator=None):
         self._pattern = pattern
         self.flat = setting.dispatch_settings(flat=flat)
         self.symmetry = setting.dispatch_settings(symmetry=symmetry)
@@ -1542,7 +1854,12 @@ class Constructor:
         return self.shapes_tab[dq], self.q_labels_tab[dq], self.idxs_tab[dq]
 
     @classmethod
-    def from_bond_infos(cls, bond_infos, pattern, flat=None):
+    def from_bond_infos(
+        cls, 
+        bond_infos, 
+        pattern, 
+        flat=None
+    ):
         flat = setting.dispatch_settings(flat=flat)
         symmetry = list(bond_infos[0].keys())[0].__class__
         def generator(dq):
@@ -1556,16 +1873,21 @@ class Constructor:
                 else:
                     q_labels.append(qs)
             isize = np.prod(shapes, axis=1)
-            idxs = np.zeros(len(isize)+1, dtype=np.uint64)
+            idxs = np.zeros(len(isize)+1, dtype=INDEX_DTYPE)
             idxs[1:] = np.cumsum(isize)
             if flat:
-                q_labels = np.vstack(q_labels).astype(np.uint32)
-                shapes = np.vstack(shapes).astype(np.uint32)
+                q_labels = np.vstack(q_labels).astype(Q_LABELS_DTYPE)
+                shapes = np.vstack(shapes).astype(SHAPES_DTYPE)
             return shapes, q_labels, idxs
         return Constructor(pattern, flat=flat, info_generator=generator, symmetry=symmetry)
 
     @classmethod
-    def from_sparse_tensor(cls, T, axes, inv=True):
+    def from_sparse_tensor(
+        cls, 
+        T, 
+        axes, 
+        inv=True
+    ):
         if isinstance(axes, int):
             axes = (axes, )
         input_pattern = [T.pattern[ix] for ix in axes]
@@ -1598,7 +1920,12 @@ class Constructor:
         return mycon
 
     @classmethod
-    def from_flat_tensor(cls, T, axes, inv=True):
+    def from_flat_tensor(
+        cls, 
+        T, 
+        axes, 
+        inv=True
+    ):
         if isinstance(axes, int):
             axes = (axes, )
         q_tab = dict()
@@ -1627,7 +1954,7 @@ class Constructor:
 
         for idq, shapes in shape_tab.items():
             isize = np.prod(shapes, axis=1)
-            idxs = np.zeros(len(isize)+1, dtype=np.uint64)
+            idxs = np.zeros(len(isize)+1, dtype=INDEX_DTYPE)
             idxs[1:] = np.cumsum(isize)
             q_labels = np.vstack(q_tab.pop(idq))
             shapes = np.vstack(shapes)
@@ -1674,7 +2001,13 @@ class Constructor:
             vector = np.concatenate(vector)
         return vector
 
-    def update(self, dq, shapes=None, q_labels=None, idxs=None):
+    def update(
+        self, 
+        dq, 
+        shapes=None, 
+        q_labels=None, 
+        idxs=None
+    ):
         if shapes is not None:
             self.shapes_tab[dq] = shapes
         if q_labels is not None:
