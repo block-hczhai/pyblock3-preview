@@ -93,6 +93,45 @@ def onsite_U(u=1, symmetry=None, flat=None):
     else:
         return T
 
+def creation(spin='a', symmetry=None, flat=None):
+    assert spin in ['a', 'b', 'sum']
+    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+    state_map = fermion_encoding.get_state_map(symmetry)
+    block_dict = dict()
+    if spin == 'a':
+        creation_map = {0:1,
+                        2:3}
+    elif spin== 'b':
+        creation_map = {0:2,
+                        1:3}
+    else:
+        creation_map = {0:(1,2),
+                        1:3,
+                        2:3}
+    for s1 in cre_map.keys():
+        q1, ix1, d1 = state_map[s1]
+        if s1 not in creation_map:
+            continue
+        output_s1 = creation_map[s1]
+        if isinstance(output_s1, int):
+            output_s1 = (output_s1, )
+        for os1 in output_s1:
+            q2, ix2, d2 = state_map[os1]
+            if (q2, q1) not in block_dict:
+                block_dict[(q2, q1)] = np.zeros([d2, d1])
+            dat = block_dict[(q2, q1)]
+            phase = _compute_swap_phase(os1, s1)
+            dat[ix2, ix1] += phase
+    blocks = [SubTensor(reduced=dat, q_labels=qlab) for qlab, dat in block_dict.items()]
+    T = SparseFermionTensor(blocks=blocks, pattern="+-")
+    if flat:
+        return T.to_flat()
+    else:
+        return T
+
+def annihilation(spin='a', symmetry=None, flat=None):
+    return creation(spin, symmetry, flat).dagger
+
 def H1(h=1, symmetry=None, flat=None):
     symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
     state_map = fermion_encoding.get_state_map(symmetry)
