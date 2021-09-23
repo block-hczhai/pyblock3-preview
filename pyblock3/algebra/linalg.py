@@ -197,7 +197,7 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
             # q = sigma[ck] - b[ck] * ld[ck]
             q = sigma[ck].copy()
             q += (-ld[ck]) * b[ck]
-            qq = np.dot(q.conj(), q)
+            qq = np.abs(np.dot(q.conj(), q))
             if iprint:
                 print("%5d %5d %5d %15.8f %9.2E" % (xiter, m, ck, ld[ck], qq))
 

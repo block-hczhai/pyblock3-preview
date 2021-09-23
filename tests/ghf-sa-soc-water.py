@@ -1,6 +1,20 @@
 
 from pyscf import gto, scf, ci, mcscf, ao2mo, symm
 import numpy as np
+import os
+import ctypes
+
+mkl_rt = ctypes.CDLL('libmkl_rt.so')
+mkl_set_num_threads = mkl_rt.MKL_Set_Num_Threads
+mkl_get_max_threads = mkl_rt.MKL_Get_Max_Threads
+
+np.random.seed(1000)
+
+n_threads = 16
+os.environ['OMP_NUM_THREADS'] = str(n_threads)
+
+mkl_set_num_threads(n_threads)
+print(mkl_get_max_threads())
 
 mol = gto.M(atom="""
         O  0.000000  0.000000  0.000000
@@ -120,15 +134,15 @@ mps = hamil.build_mps(250)
 
 bdims = [250] * 5 + [500] * 5 + [750] * 5
 noises = [1E-5] * 2 + [1E-6] * 4 + [1E-7] * 3 + [0]
-davthrds = [5E-3] * 4 + [1E-4] * 4 + [1E-5]
+davthrds = [5E-3] * 4 + [1E-4] * 4 + [5E-5] * 100
 
-nroots = 6
+nroots = 16
 extra_mpes = [None] * (nroots - 1)
 for ix in range(nroots - 1):
     xmps = hamil.build_mps(250)
     extra_mpes[ix] = MPE(xmps, mpo, xmps)
 
 dmrg = MPE(mps, mpo, mps).dmrg(bdims=bdims, noises=noises, cutoff=1E-16, max_iter=2000,
-    dav_thrds=davthrds, iprint=2, n_sweeps=10, extra_mpes=extra_mpes)
+    dav_thrds=davthrds, iprint=2, n_sweeps=18, extra_mpes=extra_mpes, init_site=3)
 ener = dmrg.energies[-1]
 print("FINAL ENERGY          = ", ener)
