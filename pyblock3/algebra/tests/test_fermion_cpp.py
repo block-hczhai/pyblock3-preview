@@ -9,15 +9,10 @@ from pyblock3.algebra import fermion_setting
 fermion_setting.set_options(flat=True, fermion=True)
 rand = SparseFermionTensor.random
 
-def _get_phase(q_label):
-    if fermion_setting.DEFAULT_FERMION and q_label.parity==1:
-        return -1
-    return 1
-
 class TestU11(unittest.TestCase):
     def setUp(self):
         bond = BondInfo({U11(0):2, U11(1,1):3, U11(1,-1):4,
-                        U11(-1,1):4, U11(-1,-1):3})
+                        U11(2,0):4})
         self.bond = bond
         self.T = rand((bond,)*4, pattern="++--", dq=U11(0))
         self.Tf = self.T.to_flat()
@@ -28,9 +23,9 @@ class TestU11(unittest.TestCase):
         self.shift = U11(1,1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=U11(2))
         self.T1f = self.T1.to_flat()
-        self.Tt1 = rand((bond,)*4, pattern="++++", dq=U11(0)).to_flat()
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=U11(0)).to_flat()
         self.Tt2 = rand((bond,)*4, pattern="++--", dq=U11(1,1)).to_flat()
-
+    
     def test_trace(self):
         out1 = self.Tt1.trace((0,1), (3,2))
         out2 = self.Tt1.trace(0,3).trace(0,1)
@@ -136,13 +131,12 @@ class TestZ22(TestU11):
         self.shift = Z22(1,1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=Z22(0,1))
         self.T1f = self.T1.to_flat()
-        self.Tt1 = rand((bond,)*4, pattern="++++", dq=Z22(0)).to_flat()
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=Z22(0)).to_flat()
         self.Tt2 = rand((bond,)*4, pattern="++--", dq=Z22(1,0)).to_flat()
 
 class TestU1(TestU11):
     def setUp(self):
-        bond = BondInfo({U1(0):2, U1(1):1, U1(2):4, U1(3):5,
-                    U1(-1):1, U1(-2):4, U1(-3):5})
+        bond = BondInfo({U1(0):2, U1(1):1, U1(2):4, U1(3):5})
         self.bond = bond
         self.T = rand((bond,)*4, pattern="++--", dq=U1(1))
         self.Tf = self.T.to_flat()
@@ -153,7 +147,7 @@ class TestU1(TestU11):
         self.shift = U1(1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=U1(2))
         self.T1f = self.T1.to_flat()
-        self.Tt1 = rand((bond,)*4, pattern="++++", dq=U1(0)).to_flat()
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=U1(0)).to_flat()
         self.Tt2 = rand((bond,)*4, pattern="++--", dq=U1(2)).to_flat()
 
 class TestZ4(TestU11):
@@ -185,7 +179,7 @@ class TestZ2(TestU11):
         self.shift = Z2(0)
         self.T1 = rand((bond,)*4, pattern="++--", dq=Z2(0))
         self.T1f = self.T1.to_flat()
-        self.Tt1 = rand((bond,)*4, pattern="++++", dq=Z2(0)).to_flat()
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=Z2(0)).to_flat()
         self.Tt2 = rand((bond,)*4, pattern="++--", dq=Z2(1)).to_flat()
 
 if __name__ == "__main__":
