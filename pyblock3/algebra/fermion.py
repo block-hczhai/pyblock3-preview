@@ -270,7 +270,7 @@ def _trim_singular_vals(
             n_chis[group_ind] -= 1
     return n_chis
 
-def _renorm_singular_vals(s_data, n_chis, renorm_power):
+def _renorm_singular_vals(s_data, n_chis, renorm):
     """Find the normalization constant for ``s`` such that the new sum squared
     of the ``n_chi`` largest values equals the sum squared of all the old ones.
     """
@@ -278,14 +278,14 @@ def _renorm_singular_vals(s_data, n_chis, renorm_power):
     s_tot_lose = 0.0
     for sblk, n_chi in zip(s_data, n_chis):
         for i in range(sblk.size):
-            s2 = sblk[i]**renorm_power
+            s2 = sblk[i]**renorm
             if not np.isnan(s2):
                 if i < n_chi:
                     s_tot_keep += s2
                 else:
                     s_tot_lose += s2
 
-    return ((s_tot_keep + s_tot_lose) / s_tot_keep)**(1 / renorm_power)
+    return ((s_tot_keep + s_tot_lose) / s_tot_keep)**(1 / renorm)
 
 def _trim_and_renorm_SVD(
     s_data, 
@@ -293,20 +293,17 @@ def _trim_and_renorm_SVD(
     cutoff=SVD_SCREENING,
     cutoff_mode=3,
     max_bond=None,
-    renorm_power=0
+    renorm=0
 ):
-#    **opts):
-    #cutoff = opts.pop("cutoff", SVD_SCREENING)
-    #cutoff_mode = opts.pop("cutoff_mode", 3)
-    #max_bond = opts.pop("max_bond", None)
-    #renorm_power = opts.pop("renorm_power", 0)
+    """Truncate and renormalize the singular values for each block
+    """
     n_chis = _trim_singular_vals(s_data, cutoff, 
                         cutoff_mode, max_bond)
     n_chi = np.sum(n_chis)
     tot_size = np.sum([iblk.size for iblk in s_data])
-    if n_chi < tot_size and renorm_power > 0:
+    if n_chi < tot_size and renorm > 0:
         renorm_fac = _renorm_singular_vals(s_data, 
-                        n_chis, renorm_power)
+                        n_chis, renorm)
         for sblk in s_data:
             sblk *= renorm_fac
 
@@ -689,30 +686,32 @@ def sparse_svd(
         if absorb is None:
             s = np.diag(s)
             sblocks.append(
-                SubTensor(reduced=s, q_labels=(sblk_q_label,)*2))
+                SubTensor(reduced=s, 
+                          q_labels=(sblk_q_label,)*2))
 
         for lq, (lst, led, lsh) in row_map.items():
-            ublocks.append(
-                SubTensor(reduced=u[lst:led].reshape(tuple(lsh)+(-1,)), q_labels=lq))
+            utrunk = u[lst:led].reshape(tuple(lsh)+(-1,))
+            ublocks.append(SubTensor(reduced=utrunk, q_labels=lq))
 
         for rq, (rst, red, rsh) in col_map.items():
-            vblocks.append(SubTensor(reduced=v[:,rst:red].reshape((-1,)+tuple(rsh)), q_labels=rq))
+            vtrunk = v[:,rst:red].reshape((-1,)+tuple(rsh))
+            vblocks.append(SubTensor(reduced=vtrunk, q_labels=rq))
 
     if absorb is None:
         s = T.__class__(blocks=sblocks, pattern="+-")
-    u = T.__class__(blocks=ublocks, pattern=new_T.pattern[:split_ax]+"-")
-
+    u_pattern = new_T.pattern[:split_ax]+"-"
+    v_pattern = "+"+new_T.pattern[split_ax:]
+    u = T.__class__(blocks=ublocks, pattern=u_pattern)
+    v = T.__class__(blocks=vblocks, pattern=v_pattern)
     # make sure shape is consistent
-    if u.shape[:split_ax] != new_T.shape[:split_ax]:
-        u.shape = new_T.shape[:split_ax] + (u.shape[-1],)
-    v = T.__class__(blocks=vblocks, pattern="+"+new_T.pattern[split_ax:])
-    if v.shape[1:] != new_T.shape[split_ax:]:
-        v.shape = (v.shape[0],)+new_T.shape[split_ax:]
+    u.shape = new_T.shape[:split_ax] + (u.shape[-1],)
+    v.shape = (v.shape[0],)+new_T.shape[split_ax:]
     return u, s, v
 
-def _gen_qr_qpn_partition(T, mod):
+def _gen_null_qr_info(T, mod):
     """
-    Generate the default symmetry partition for QR/LQ
+    Generate the information for a fake QR/LQ decomposition
+    T = QR/LQ where Q is 1
     """
     return {"qr": ("-"+T.pattern, 0, slice(None)),
             "lq": (T.pattern+"-", T.ndim, slice(None,None,-1))}[mod]
@@ -722,7 +721,8 @@ def sparse_qr(T,
     right_idx=None, 
     mod="qr"
 ):
-    """Perform tensor QR on SparseFermionTensor
+    """Perform tensor QR on SparseFermionTensor, this will partition
+    the quantum number fully on Q and net zero symmetry on R
 
     Parameters
     ----------
@@ -750,7 +750,7 @@ def sparse_qr(T,
             arr = np.asarray(blk).reshape(new_shape)
             return blk.__class__(reduced=arr, q_labels=new_q_labels)
 
-        new_pattern, inds, return_order = _gen_qr_qpn_partition(T, mod)
+        new_pattern, inds, return_order = _gen_null_qr_info(T, mod)
         if return_order == slice(None):
             shape = (1,)+T.shape
         else:
@@ -766,7 +766,8 @@ def sparse_qr(T,
     left_pattern = new_T.pattern[:split_ax]
     data_map = {}
     for iblk in new_T.blocks:
-        left_q = symmetry._compute(left_pattern, iblk.q_labels[:split_ax], offset=("-", dq))
+        left_q = symmetry._compute(left_pattern, 
+                    iblk.q_labels[:split_ax], offset=("-", dq))
         if left_q not in data_map:
             data_map[left_q] = []
         data_map[left_q].append(iblk)
@@ -803,16 +804,19 @@ def sparse_qr(T,
             q, r = q.T, r.T
 
         for lq, (lst, led, lsh) in row_map.items():
-            qblocks.append(SubTensor(reduced=q[lst:led].reshape(tuple(lsh)+(-1,)), q_labels=lq))
-
+            qtrunk = q[lst:led].reshape(tuple(lsh)+(-1,))
+            qblocks.append(SubTensor(reduced=qtrunk,
+                                     q_labels=lq))
         for rq, (rst, red, rsh) in col_map.items():
-            rblocks.append(SubTensor(reduced=r[:,rst:red].reshape((-1,)+tuple(rsh)), q_labels=rq))
-    q = T.__class__(blocks=qblocks, pattern=new_T.pattern[:split_ax]+"-")
-    r = T.__class__(blocks=rblocks, pattern="+"+new_T.pattern[split_ax:])
-    if q.shape[:split_ax] != new_T.shape[:split_ax]:
-        q.shape = new_T.shape[:split_ax] + (q.shape[-1],)
-    if r.shape[1:] != new_T.shape[split_ax:]:
-        r.shape = (r.shape[0],)+new_T.shape[split_ax:]
+            rtrunk = r[:,rst:red].reshape((-1,)+tuple(rsh))
+            rblocks.append(SubTensor(reduced=rtrunk, q_labels=rq))
+    
+    q_pattern = new_T.pattern[:split_ax]+"-"
+    r_pattern = "+"+new_T.pattern[split_ax:]
+    q = T.__class__(blocks=qblocks, pattern=q_pattern)
+    r = T.__class__(blocks=rblocks, pattern=r_pattern)
+    q.shape = new_T.shape[:split_ax] + (q.shape[-1],)
+    r.shape = (r.shape[0],)+new_T.shape[split_ax:]
     return q, r
 
 def flat_qr(T, 
@@ -820,6 +824,19 @@ def flat_qr(T,
     right_idx=None, 
     mod="qr"
 ):
+    """Perform tensor QR on FlatFermionTensor, this will partition
+    the quantum number fully on Q and net zero symmetry on R
+
+    Parameters
+    ----------
+    T : FlatFermionTensor
+    left_idx : tuple/list of int
+        left indices for QR
+    right_idx : optional, tuple/list of int
+        right indices for QR
+    mod: optional, {"qr", "lq"}
+    
+    """
     assert mod in ["qr", "lq"]
     if right_idx is None:
         right_idx = [idim for idim in range(T.ndim) 
@@ -832,7 +849,7 @@ def flat_qr(T,
         data = np.asarray([1,])
         Q = T.__class__(flat_qs, ishapes, data, 
                         pattern="+", symmetry=T.symmetry)
-        new_pattern, inds, return_order = _gen_qr_qpn_partition(T, mod)
+        new_pattern, inds, return_order = _gen_null_qr_info(T, mod)
         new_shapes = np.insert(T.shapes, inds, 1, axis=1)
         new_q_labels = np.insert(T.q_labels, inds, flat_q, axis=1)
         if return_order == slice(None):
@@ -922,13 +939,15 @@ def flat_qr(T,
     qr = np.asarray(qr, dtype=Q_LABELS_DTYPE)
     shr = np.asarray(shr, dtype=SHAPES_DTYPE)
     rdata = np.concatenate(rdata)
-    q = T.__class__(qq, shq, qdata, pattern=new_T.pattern[:split_ax]+"-", symmetry=T.symmetry)
-    r = T.__class__(qr, shr, rdata, pattern="+"+new_T.pattern[split_ax:], symmetry=T.symmetry)
+    q_pattern = new_T.pattern[:split_ax]+"-"
+    r_pattern = "+"+new_T.pattern[split_ax:]
+    q = T.__class__(qq, shq, qdata, 
+                    pattern=q_pattern, symmetry=T.symmetry)
+    r = T.__class__(qr, shr, rdata, 
+                    pattern=r_pattern, symmetry=T.symmetry)
     # inherit shape
-    if q.shape[:split_ax] != new_T.shape[:split_ax]:
-        q.shape = new_T.shape[:split_ax] + (q.shape[-1],)
-    if r.shape[1:] != new_T.shape[split_ax:]:
-        r.shape = (r.shape[0],)+new_T.shape[split_ax:]
+    q.shape = new_T.shape[:split_ax] + (q.shape[-1],)
+    r.shape = (r.shape[0],)+new_T.shape[split_ax:]
     return q, r
 
 def flat_qr_fast(
@@ -962,6 +981,7 @@ def _adjust_block(block, flip_axes):
     if len(flip_axes)==0:
         return block
     else:
+        raise NotImplementedError
         new_q_labels = list(block.q_labels)
         for ix in flip_axes:
             new_q_labels[ix] = - block.q_labels[ix]
@@ -972,6 +992,7 @@ def _adjust_q_labels(symmetry, q_labels, flip_axes):
     if len(flip_axes)==0:
         return q_labels
     else:
+        raise NotImplementedError
         new_q_labels = q_labels.copy(order="K")
         for ix in flip_axes:
             new_q_labels[:,ix] = symmetry.flip_flat(q_labels[:,ix])
