@@ -123,7 +123,7 @@ def creation(spin='a', symmetry=None, flat=None):
             phase = _compute_swap_phase(os1, s1)
             dat[ix2, ix1] += phase
     blocks = [SubTensor(reduced=dat, q_labels=qlab) for qlab, dat in block_dict.items()]
-    T = SparseFermionTensor(blocks=blocks, pattern="+-")
+    T = SparseFermionTensor(blocks=blocks, pattern="+-", shape=(4,4))
     if flat:
         return T.to_flat()
     else:
@@ -131,6 +131,42 @@ def creation(spin='a', symmetry=None, flat=None):
 
 def annihilation(spin='a', symmetry=None, flat=None):
     return creation(spin, symmetry, flat).dagger
+
+def vaccum(n=1, symmetry=None, flat=None):
+    dense_shape = (4,) * n
+    symmetry, flat = setting.dispatch_settings(
+                             symmetry=symmetry, flat=flat)
+    state_map = fermion_encoding.get_state_map(symmetry)
+    q_label, idx, ish = state_map[0]
+    arr = np.zeros((ish,)*n)
+    index = (idx,) * n
+    arr[index] = 1
+    q_labels = (q_label, ) * n
+    blocks = [SubTensor(reduced=arr, q_labels=q_labels)]
+    T = SparseFermionTensor(blocks=blocks, pattern="+"*n, shape=dense_shape)
+    if flat:
+        return T.to_flat()
+    else:
+        return T
+
+def bonded_vaccum(vir_shape, pattern, normalize=True, symmetry=None, flat=None):
+    symmetry, flat = setting.dispatch_settings(
+                             symmetry=symmetry, flat=flat)
+    state_map = fermion_encoding.get_state_map(symmetry)
+    q_label, idx, ish = state_map[0]
+    vir_shape = tuple(vir_shape)
+    shape = vir_shape + (ish,)
+    arr = np.zeros(shape)
+    arr[...,idx] = 1
+    q_labels = (q_label, ) * len(pattern)
+    blocks = [SubTensor(reduced=arr, q_labels=q_labels)]
+    T = SparseFermionTensor(blocks=blocks, pattern=pattern, shape=vir_shape+(4,))
+    if normalize:
+        T = T / T.norm()
+    if flat:
+        return T.to_flat()
+    else:
+        return T
 
 def H1(h=1, symmetry=None, flat=None):
     symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)

@@ -176,7 +176,7 @@ class TestZ22(TestU11):
 
 class TestU1(TestU11):
     def setUp(self):
-        bond = BondInfo({U1(0):2, U1(1):1, U1(2):4, U1(3):5, U1(-1):1, U1(-2):4})
+        bond = BondInfo({U1(0):2, U1(1):1, U1(2):4, U1(3):5})
         self.bond = bond
         self.T = rand((bond,)*4, pattern="++--", dq=U1(1))
         self.symmetry = U1
@@ -185,7 +185,7 @@ class TestU1(TestU11):
         self.svd_dq_iterator = [U1(0), U1(1), U1(2), U1(3)]
         self.shift = U1(1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=U1(2))
-        self.Tt1 = rand((bond,)*4, pattern="++++", dq=U1(0))
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=U1(0))
         self.Tt2 = rand((bond,)*4, pattern="++--", dq=U1(1))
 
 class TestZ4(TestU11):
