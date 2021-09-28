@@ -234,7 +234,6 @@ class MPS(NDArrayOperatorsMixin):
         dq = None
         for i in range(self.n_sites):
             self.tensors[i], dq = self.tensors[i].fix_pattern(pattern=pattern, dq=dq)
-            print(i, dq)
         return dq
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
