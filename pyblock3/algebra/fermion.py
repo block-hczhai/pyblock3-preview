@@ -297,8 +297,17 @@ def _trim_and_renorm_SVD(
 ):
     """Truncate and renormalize the singular values for each block
     """
-    n_chis = _trim_singular_vals(s_data, cutoff,
-                        cutoff_mode, max_bond)
+    if isinstance(max_bond, (tuple, list)):
+        if len(max_bond) != len(s_data):
+            raise ValueError("max_bond must be an integer or a tuple "
+                             "with same length as the number of blocks")
+        if len(set(max_bond)) != 1:
+            raise ValueError("max_bond in each dimension must be equal")
+        n_chis = max_bond
+    else:
+
+        n_chis = _trim_singular_vals(s_data, cutoff,
+                                cutoff_mode, max_bond)
     n_chi = np.sum(n_chis)
     tot_size = np.sum([iblk.size for iblk in s_data])
     if n_chi < tot_size and renorm > 0:
