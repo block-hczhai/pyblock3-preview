@@ -117,7 +117,7 @@ class SubTensor(np.ndarray):
     def random(cls, shape, q_labels=None, dtype=float):
         if dtype == float:
             obj = np.random.random(shape)
-        elif dtype == complex:
+        elif dtype == complex or dtype == np.complex128:
             obj = np.random.random(shape) + np.random.random(shape) * 1j
         else:
             return NotImplementedError('dtype %r not supported!' % dtype)

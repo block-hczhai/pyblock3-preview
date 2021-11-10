@@ -241,7 +241,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         qs, shs, idxs = flat_sparse_skeleton(bond_infos, pattern, dq)
         if dtype == float:
             data = np.random.random((idxs[-1], ))
-        elif dtype == complex:
+        elif dtype == complex or dtype == np.complex128:
             data = np.random.random(
                 (idxs[-1], )) + np.random.random((idxs[-1], )) * 1j
         else:

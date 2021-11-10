@@ -61,10 +61,10 @@ class TestDMRG(unittest.TestCase):
         assert err < 1E-12
 
         bond_dim = 250
-        mps = hamil.build_mps(250)
-
+        mps = hamil.build_complex_mps(250)
         mps = mps.canonicalize(center=0)
         mps /= mps.norm()
+
         assert np.abs(np.dot(mps.conj(), mps) - 1.0) < 1E-10
 
         with tempfile.TemporaryDirectory() as scratch:
@@ -72,7 +72,9 @@ class TestDMRG(unittest.TestCase):
             nroots = 4
             extra_mpes = [None] * (nroots - 1)
             for ix in range(nroots - 1):
-                xmps = hamil.build_mps(250)
+                xmps = hamil.build_complex_mps(250)
+                xmps = xmps.canonicalize(center=0)
+                xmps /= xmps.norm()
                 extra_mpes[ix] = CachedMPE(xmps, mpo, xmps, tag='CP%d' % ix, scratch=scratch)
 
             dmrg = CachedMPE(mps, mpo, mps, scratch=scratch).dmrg(bdims=[400], noises=[1E-6, 0],

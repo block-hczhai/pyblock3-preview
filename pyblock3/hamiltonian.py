@@ -83,7 +83,7 @@ class Hamiltonian:
             self.FT = FermionTensor
         self.flat = flat
 
-    def build_mps(self, bond_dim, target=None, occ=None, bias=1):
+    def build_mps(self, bond_dim, target=None, occ=None, bias=1, dtype=float):
         if target is None:
             target = self.target
         mps_info = MPSInfo(self.n_sites, self.vacuum, target, self.basis)
@@ -92,7 +92,10 @@ class Hamiltonian:
         else:
             assert len(occ) == len(self.basis)
             mps_info.set_bond_dimension_occ(bond_dim, occ, bias)
-        return MPS.random(mps_info)
+        return MPS.random(mps_info, dtype=dtype)
+    
+    def build_complex_mps(self, bond_dim, target=None, occ=None, bias=1):
+        return self.build_mps(bond_dim, target, occ, bias, np.complex128)
     
     def build_ancilla_mps(self, target=None):
         if target is None:
