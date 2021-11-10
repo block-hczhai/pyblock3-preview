@@ -63,12 +63,12 @@ def ParticleNumber(symmetry=None, flat=None):
     block_dict = dict()
     for key in pn_dict.keys():
         qlab, ind, dim = state_map[key]
-        if key not in block_dict:
-            dat = np.zeros([dim, dim])
-            block_dict[key] = (dat, [qlab, qlab])
-        dat = block_dict[key][0]
-        dat[ind, ind] +=  pn_dict[key]
-    blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
+        irreps = (qlab, qlab)
+        if irreps not in block_dict:
+            block_dict[irreps] = np.zeros([dim, dim])
+        block_dict[irreps][ind,ind] += pn_dict[key]
+
+    blocks = [SubTensor(reduced=dat, q_labels=q_lab) for q_lab, dat in block_dict.items()]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
     if flat:
         return T.to_flat()
