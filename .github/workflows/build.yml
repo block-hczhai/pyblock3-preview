@@ -22,9 +22,6 @@ jobs:
         manylinux: [ 2010 ]
         plat: [ x86_64 ]
         parallel: [ serial ]
-        exclude:
-          - os: macos-latest
-            python: 3.7
       fail-fast: false
 
     steps:
@@ -63,7 +60,7 @@ jobs:
           MKLROOT: ~/.local
         run: |
           py.test pyblock3/algebra
-          py.test pyblock3/algorithms
+          py.test pyblock3/algorithms --ignore=pyblock3/algorithms/tests/test_soc.py
 
       - name: build wheels (macos)
         if: startsWith(github.ref, 'refs/tags/v') && matrix.os == 'macos-latest'

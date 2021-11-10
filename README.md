@@ -1,5 +1,8 @@
 
 [![Documentation Status](https://readthedocs.org/projects/pyblock3/badge/?version=latest)](https://pyblock3.readthedocs.io/en/latest/?badge=latest)
+[![Build Status](https://github.com/block-hczhai/pyblock3-preview/workflows/build/badge.svg)](https://github.com/block-hczhai/pyblock3-preview/actions/workflows/build.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![PyPI version](https://badge.fury.io/py/pyblock3.svg)](https://badge.fury.io/py/pyblock3)
 
 pyblock3
 ========
