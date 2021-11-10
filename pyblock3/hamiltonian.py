@@ -135,6 +135,44 @@ class Hamiltonian:
                 tensors.append(mpo.tensors[m])
         return MPS(tensors=tensors, const=mpo.const, opts=mpo.opts)
 
+    def build_complex_qc_mpo(self, cutoff=1E-12, max_bond_dim=-1):
+
+        SPIN, SITE, OP = 1, 2, 16384
+        def generate_qc_terms(n_sites, h1e, g2e, cutoff=1E-9):
+            OP_C, OP_D = 0 * OP, 1 * OP
+            h_values = []
+            h_terms = []
+            for i in range(0, n_sites):
+                for j in range(0, n_sites):
+                    t = h1e[i, j]
+                    if abs(t) > cutoff:
+                        for s in [0, 1]:
+                            h_values.append(t)
+                            h_terms.append([OP_C + i * SITE + s * SPIN,
+                                            OP_D + j * SITE + s * SPIN, -1, -1])
+            for i in range(0, n_sites):
+                for j in range(0, n_sites):
+                    for k in range(0, n_sites):
+                        for l in range(0, n_sites):
+                            v = g2e[i, j, k, l]
+                            if abs(v) > cutoff:
+                                for sij in [0, 1]:
+                                    for skl in [0, 1]:
+                                        h_values.append(0.5 * v)
+                                        h_terms.append([OP_C + i * SITE + sij * SPIN,
+                                                        OP_C + k * SITE + skl * SPIN,
+                                                        OP_D + l * SITE + skl * SPIN,
+                                                        OP_D + j * SITE + sij * SPIN])
+            if len(h_values) == 0:
+                return np.zeros((0, ), dtype=np.complex128), np.zeros((0, 4), dtype=np.int32)
+            else:
+                return np.array(h_values, dtype=np.complex128), np.array(h_terms, dtype=np.int32)
+
+        terms = generate_qc_terms(
+            self.fcidump.n_sites, self.fcidump.h1e, self.fcidump.g2e, cutoff)
+        return self.build_mpo(terms, cutoff=cutoff, max_bond_dim=max_bond_dim,
+            const=self.fcidump.const_e)
+
     def build_qc_mpo(self):
         if self.flat:
             import block3.sz.hamiltonian as hm

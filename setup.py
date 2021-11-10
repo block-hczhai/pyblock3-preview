@@ -83,7 +83,7 @@ setup(name='pyblock3',
       author_email='hczhai@ucla.edu',
       url='https://github.com/block-hczhai/pyblock3-preview',
       install_requires=[
-          "mkl",
+          "mkl==2019",
           "mkl-include",
           "numpy",
           "psutil",
