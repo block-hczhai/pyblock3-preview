@@ -61,7 +61,7 @@ class TestDMRG(unittest.TestCase):
         assert err < 1E-12
 
         bond_dim = 250
-        mps = hamil.build_complex_mps(250)
+        mps = hamil.build_mps(250)
         mps = mps.canonicalize(center=0)
         mps /= mps.norm()
 
@@ -72,13 +72,12 @@ class TestDMRG(unittest.TestCase):
             nroots = 4
             extra_mpes = [None] * (nroots - 1)
             for ix in range(nroots - 1):
-                xmps = hamil.build_complex_mps(250)
-                xmps = xmps.canonicalize(center=0)
-                xmps /= xmps.norm()
+                xmps = hamil.build_mps(250)
                 extra_mpes[ix] = CachedMPE(xmps, mpo, xmps, tag='CP%d' % ix, scratch=scratch)
 
             dmrg = CachedMPE(mps, mpo, mps, scratch=scratch).dmrg(bdims=[400], noises=[1E-6, 0],
-                dav_thrds=[1E-3, 1E-6], iprint=2, n_sweeps=10, extra_mpes=extra_mpes, tol=1E-14)
+                dav_thrds=[1E-3, 1E-6], iprint=2, n_sweeps=10, extra_mpes=extra_mpes,
+                tol=1E-14)
             eners = dmrg.energies[-1]
             eners_std = (-74.931919519513997, -74.513038645127153, -74.513038556765679)
 

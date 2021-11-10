@@ -46,6 +46,12 @@ Features
 Installation
 ------------
 
+Using ``pip``:
+
+    pip install pyblock3
+
+Or you can compile it manually:
+
 Dependence: `python3`, `psutil`, `numba`, and `numpy` (version >= 1.17.0). pyblock3 can run in pure python mode,
 in which no C++ source code is required to be compiled.
 
@@ -77,13 +83,13 @@ To compile the C++ part of the code (for better performance):
     cmake .. -DUSE_MKL=ON -DUSE_HPTT=ON
     make
 
-Examples
---------
-
 Add package root directory to `PYTHONPATH` before running the following examples.
 
 If you used directory names other than `build` for the build directory (which contains the compiled python extension),
 you also need to add the build directory to `PYTHONPATH`.
+
+Examples
+--------
 
 Ground-state DMRG (H8 STO6G) in pure python (52 seconds):
 
