@@ -89,6 +89,11 @@ orb_sym = [0] * (n * 2)
 fd = FCIDUMP(pg='d2h', n_sites=n * 2, n_elec=n_elec, twos=n_elec, ipg=0, h1e=gh1e,
     g2e=gg2e, orb_sym=orb_sym, const_e=e_core)
 
+# fd.tgeneral = True
+# fd.general = True
+# fd.write("../data/H2O.STO3G.GSOC")
+# quit()
+
 hamil = Hamiltonian(fd, flat=True)
 mpo = hamil.build_complex_qc_mpo(max_bond_dim=-5)
 mpo, error = mpo.compress(left=True, cutoff=1E-9, norm_cutoff=1E-9)
