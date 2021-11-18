@@ -63,12 +63,12 @@ def ParticleNumber(symmetry=None, flat=None):
     block_dict = dict()
     for key in pn_dict.keys():
         qlab, ind, dim = state_map[key]
-        if key not in block_dict:
-            dat = np.zeros([dim, dim])
-            block_dict[key] = (dat, [qlab, qlab])
-        dat = block_dict[key][0]
-        dat[ind, ind] +=  pn_dict[key]
-    blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
+        irreps = (qlab, qlab)
+        if irreps not in block_dict:
+            block_dict[irreps] = np.zeros([dim, dim])
+        block_dict[irreps][ind,ind] += pn_dict[key]
+
+    blocks = [SubTensor(reduced=dat, q_labels=q_lab) for q_lab, dat in block_dict.items()]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
     if flat:
         return T.to_flat()
@@ -88,6 +88,81 @@ def onsite_U(u=1, symmetry=None, flat=None):
         dat[ind, ind] += (pn==2) * u
     blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
+    if flat:
+        return T.to_flat()
+    else:
+        return T
+
+def creation(spin='a', symmetry=None, flat=None):
+    assert spin in ['a', 'b', 'sum']
+    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+    state_map = fermion_encoding.get_state_map(symmetry)
+    block_dict = dict()
+    if spin == 'a':
+        creation_map = {0:1,
+                        2:3}
+    elif spin== 'b':
+        creation_map = {0:2,
+                        1:3}
+    else:
+        creation_map = {0:(1,2),
+                        1:3,
+                        2:3}
+    for s1 in cre_map.keys():
+        q1, ix1, d1 = state_map[s1]
+        if s1 not in creation_map:
+            continue
+        output_s1 = creation_map[s1]
+        if isinstance(output_s1, int):
+            output_s1 = (output_s1, )
+        for os1 in output_s1:
+            q2, ix2, d2 = state_map[os1]
+            if (q2, q1) not in block_dict:
+                block_dict[(q2, q1)] = np.zeros([d2, d1])
+            dat = block_dict[(q2, q1)]
+            phase = _compute_swap_phase(os1, s1)
+            dat[ix2, ix1] += phase
+    blocks = [SubTensor(reduced=dat, q_labels=qlab) for qlab, dat in block_dict.items()]
+    T = SparseFermionTensor(blocks=blocks, pattern="+-", shape=(4,4))
+    if flat:
+        return T.to_flat()
+    else:
+        return T
+
+def annihilation(spin='a', symmetry=None, flat=None):
+    return creation(spin, symmetry, flat).dagger
+
+def vaccum(n=1, symmetry=None, flat=None):
+    dense_shape = (4,) * n
+    symmetry, flat = setting.dispatch_settings(
+                             symmetry=symmetry, flat=flat)
+    state_map = fermion_encoding.get_state_map(symmetry)
+    q_label, idx, ish = state_map[0]
+    arr = np.zeros((ish,)*n)
+    index = (idx,) * n
+    arr[index] = 1
+    q_labels = (q_label, ) * n
+    blocks = [SubTensor(reduced=arr, q_labels=q_labels)]
+    T = SparseFermionTensor(blocks=blocks, pattern="+"*n, shape=dense_shape)
+    if flat:
+        return T.to_flat()
+    else:
+        return T
+
+def bonded_vaccum(vir_shape, pattern, normalize=True, symmetry=None, flat=None):
+    symmetry, flat = setting.dispatch_settings(
+                             symmetry=symmetry, flat=flat)
+    state_map = fermion_encoding.get_state_map(symmetry)
+    q_label, idx, ish = state_map[0]
+    vir_shape = tuple(vir_shape)
+    shape = vir_shape + (ish,)
+    arr = np.zeros(shape)
+    arr[...,idx] = 1
+    q_labels = (q_label, ) * len(pattern)
+    blocks = [SubTensor(reduced=arr, q_labels=q_labels)]
+    T = SparseFermionTensor(blocks=blocks, pattern=pattern, shape=vir_shape+(4,))
+    if normalize:
+        T = T / T.norm()
     if flat:
         return T.to_flat()
     else:
