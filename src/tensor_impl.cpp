@@ -25,39 +25,6 @@
 int hptt_num_threads = 1;
 
 template <typename FL>
-void x_tensor_transpose(const int *perm, const int dim, const FL alpha,
-                        const FL *A, const int *sizeA, const int *outerSizeA,
-                        const FL beta, FL *B, const int *outerSizeB,
-                        const int numThreads, const int useRowMajor);
-
-template <>
-void x_tensor_transpose<double>(const int *perm, const int dim,
-                                const double alpha, const double *A,
-                                const int *sizeA, const int *outerSizeA,
-                                const double beta, double *B,
-                                const int *outerSizeB, const int numThreads,
-                                const int useRowMajor) {
-#ifdef _HAS_HPTT
-    dTensorTranspose(perm, dim, alpha, A, sizeA, outerSizeA, beta, B,
-                     outerSizeB, numThreads, useRowMajor);
-#endif
-}
-
-template <>
-void x_tensor_transpose<complex<double>>(
-    const int *perm, const int dim, const complex<double> alpha,
-    const complex<double> *A, const int *sizeA, const int *outerSizeA,
-    const complex<double> beta, complex<double> *B, const int *outerSizeB,
-    const int numThreads, const int useRowMajor) {
-#ifdef _HAS_HPTT
-    zTensorTranspose(perm, dim, (double _Complex &)alpha, false,
-                     (const double _Complex *)A, sizeA, outerSizeA,
-                     (double _Complex &)beta, (double _Complex *)B, outerSizeB,
-                     numThreads, useRowMajor);
-#endif
-}
-
-template <typename FL>
 void tensor_transpose_impl(int ndim, size_t size, const int *perm,
                            const int *shape, const FL *a, FL *c, const FL alpha,
                            const FL beta) {

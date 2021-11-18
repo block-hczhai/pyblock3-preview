@@ -26,7 +26,7 @@ class U1:
         return hash((self.n, ))
 
     def __repr__(self):
-        return "< N=%d >" % (self.n)
+        return "< U1(%d) >" % (self.n)
 
     @property
     def parity(self):
@@ -88,8 +88,6 @@ class U1:
                 newdat = qpns.copy().astype(int).reshape(1,nsec)
             else:
                 newdat = qpns.copy().astype(int)
-            nplus = pattern.count("+")
-            nmin = pattern.count("-")
             narr = cls.flat_to_qpn(newdat)
             if offset is not None:
                 ix, dq = offset
@@ -137,12 +135,17 @@ class Z2(U1):
     @classmethod
     def flip_flat(cls, flat_array):
         return (-flat_array) % cls._modulus
+    
+    def __repr__(self):
+        return "< Z2(%d) >" % (self.n)
 
 class Z4(Z2):
     '''
     Z4 symmetry class
     '''
     _modulus = 4
+    def __repr__(self):
+        return "< Z4(%d) >" % (self.n)
 
 class U11:
     '''
@@ -198,7 +201,7 @@ class U11:
         return cls(*cls.flat_to_qpn(x))
 
     def __repr__(self):
-        return "< N=%d SZ=%d >" % (self.n, self.sz)
+        return "< U1(%d) dot U1(%d) >" % (self.n, self.sz)
 
     @classmethod
     def _compute(cls, pattern, qpns, offset=None, neg=False):
@@ -224,8 +227,6 @@ class U11:
                 newdat = qpns.copy().astype(int).reshape(1,nsec)
             else:
                 newdat = qpns.copy().astype(int)
-            nplus = pattern.count("+")
-            nmin = pattern.count("-")
             narr, zarr = cls.flat_to_qpn(newdat)
             if offset is not None:
                 ix, dq = offset
@@ -278,4 +279,7 @@ class Z22(U11):
 
     @classmethod
     def flip_flat(cls, flat_array):
-        return - flat_array % (cls._mod1 * cls._mod2)
+        return  flat_array % (cls._mod1 * cls._mod2)
+    
+    def __repr__(self):
+        return "< Z2(%d) dot Z2(%d) >" % (self.n, self.sz)

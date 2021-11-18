@@ -32,7 +32,7 @@ using namespace std;
 using namespace block2;
 
 typedef tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-              py::array_t<uint32_t>>
+              py::array_t<uint64_t>>
     op_skeleton;
 
 void op_matmul(const op_skeleton &ska, const op_skeleton &skb,
@@ -44,7 +44,7 @@ void op_matmul(const op_skeleton &ska, const op_skeleton &skb,
                    *pqc = get<0>(skc).data();
     const uint32_t *psha = get<1>(ska).data(), *pshb = get<1>(skb).data(),
                    *pshc = get<1>(skc).data();
-    const uint32_t *pia = get<2>(ska).data(), *pib = get<2>(skb).data(),
+    const uint64_t *pia = get<2>(ska).data(), *pib = get<2>(skb).data(),
                    *pic = get<2>(skc).data();
     for (int ic = 0; ic < nc; ic++)
         for (int ia = 0; ia < na; ia++) {
@@ -87,7 +87,7 @@ inline int idx(op_skeleton &skt, SZ sz) {
 }
 
 vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
-             py::array_t<uint32_t>>>
+             py::array_t<uint64_t>>>
 build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
              py::array_t<double> v) {
     int n_sites = (int)orb_sym.size();
@@ -98,7 +98,7 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
     shared_ptr<RHFFCIDUMP> fd = make_shared<RHFFCIDUMP>(t, v);
     shared_ptr<MPOQC<SZ>> mpo_qc = make_shared<MPOQC<SZ>>(v_orb_sym, fd);
     vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                 py::array_t<double>, py::array_t<uint32_t>>>
+                 py::array_t<double>, py::array_t<uint64_t>>>
         rr(n_sites * 2);
 
     SZ vacuum;
@@ -142,7 +142,7 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
         vector<bool> skf(n_total, false);
         const uint32_t *psklqs = get<0>(skl).data();
         const uint32_t *psklshs = get<1>(skl).data();
-        const uint32_t *psklis = get<2>(skl).data();
+        const uint64_t *psklis = get<2>(skl).data();
         const ssize_t sklqi = get<0>(skl).strides()[0] / sizeof(uint32_t),
                       sklqj = get<0>(skl).strides()[1] / sizeof(uint32_t);
         for (int i = 0; i < n_total; i++)
@@ -152,20 +152,22 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
         int n_even = n_total - n_odd;
         ssize_t size_even = psklis[n_total] - size_odd;
         auto &rodd = rr[ii * 2], &reven = rr[ii * 2 + 1];
-        auto &oqs = get<0>(rodd), &oshs = get<1>(rodd), &oi = get<3>(rodd);
-        auto &eqs = get<0>(reven), &eshs = get<1>(reven), &ei = get<3>(reven);
+        auto &oqs = get<0>(rodd), &oshs = get<1>(rodd);
+        auto &oi = get<3>(rodd);
+        auto &eqs = get<0>(reven), &eshs = get<1>(reven);
+        auto &ei = get<3>(reven);
         oqs = py::array_t<uint32_t>(vector<ssize_t>{n_odd, 4});
         oshs = py::array_t<uint32_t>(vector<ssize_t>{n_odd, 4});
-        oi = py::array_t<uint32_t>(vector<ssize_t>{n_odd + 1});
+        oi = py::array_t<uint64_t>(vector<ssize_t>{n_odd + 1});
         eqs = py::array_t<uint32_t>(vector<ssize_t>{n_even, 4});
         eshs = py::array_t<uint32_t>(vector<ssize_t>{n_even, 4});
         auto odata = py::array_t<double>(vector<ssize_t>{size_odd});
         auto edata = py::array_t<double>(vector<ssize_t>{size_even});
-        ei = py::array_t<uint32_t>(vector<ssize_t>{n_even + 1});
-        uint32_t *poqs = oqs.mutable_data(), *poshs = oshs.mutable_data(),
-                 *poi = oi.mutable_data();
-        uint32_t *peqs = eqs.mutable_data(), *peshs = eshs.mutable_data(),
-                 *pei = ei.mutable_data();
+        ei = py::array_t<uint64_t>(vector<ssize_t>{n_even + 1});
+        uint32_t *poqs = oqs.mutable_data(), *poshs = oshs.mutable_data();
+        uint64_t *poi = oi.mutable_data();
+        uint32_t *peqs = eqs.mutable_data(), *peshs = eshs.mutable_data();
+        uint64_t *pei = ei.mutable_data();
         double *po = odata.mutable_data(), *pe = edata.mutable_data();
         memset(po, 0, sizeof(double) * size_odd);
         memset(pe, 0, sizeof(double) * size_even);
@@ -450,7 +452,7 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
                     double factor = op->factor;
                     skt = sk_map.at(SZ::from_q(op->q_label));
                     const int n_blocks = get<0>(skt).shape()[0];
-                    const uint32_t *pb = get<2>(skt).data();
+                    const uint64_t *pb = get<2>(skt).data();
                     assert(pb[n_blocks] == xv.size());
                     for (int ib = 0; ib < n_blocks; ib++) {
                         int nb = pb[ib + 1] - pb[ib];
@@ -472,7 +474,7 @@ build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
                         double factor = op->factor;
                         skt = sk_map.at(SZ::from_q(op->q_label));
                         const int n_blocks = get<0>(skt).shape()[0];
-                        const uint32_t *pb = get<2>(skt).data();
+                        const uint64_t *pb = get<2>(skt).data();
                         assert(pb[n_blocks] == xv.size());
                         for (int ib = 0; ib < n_blocks; ib++) {
                             int nb = pb[ib + 1] - pb[ib];

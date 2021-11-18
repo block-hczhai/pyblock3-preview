@@ -16,7 +16,7 @@ def _get_phase(q_label):
 
 class TestU11(unittest.TestCase):
     def setUp(self):
-        bond = BondInfo({U11(0):2, U11(1,1):3, U11(1,-1):4, U11(2):5})
+        bond = BondInfo({U11(0):2, U11(1,1):3, U11(1,-1):4})
         self.bond = bond
         self.T = rand((bond,)*4, pattern="++--", dq=U11(0))
         self.symmetry = U11
@@ -25,6 +25,22 @@ class TestU11(unittest.TestCase):
         self.svd_dq_iterator = [U11(0), U11(1,1), U11(1,-1),U11(2)]
         self.shift = U11(1,1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=U11(2))
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=U11(0))
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=U11(1,1))
+
+    def test_trace(self):
+        out1 = self.Tt1.trace((0,1), (3,2))
+        out2 = self.Tt1.trace(0,3).trace(0,1)
+        out3 = self.Tt1.trace(1,2).trace(0,1)
+        self.assertAlmostEqual(out1, out2, 8)
+        self.assertAlmostEqual(out1, out3, 8)
+
+        out1 = self.Tt2.trace((0,1), (3,2))
+        out2 = self.Tt2.trace(0,3).trace(0,1)
+        out3 = self.Tt2.trace(1,2).trace(0,1)
+        assert out1==0
+        assert out2==0
+        assert out3==0
 
     def test_skeleton(self):
         bond = self.bond
@@ -154,6 +170,8 @@ class TestZ22(TestU11):
         self.svd_dq_iterator = [Z22(0), Z22(0,1), Z22(1,0),Z22(1,1)]
         self.shift = Z22(1,1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=Z22(0,1))
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=Z22(0))
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=Z22(1,0))
 
 
 class TestU1(TestU11):
@@ -167,10 +185,12 @@ class TestU1(TestU11):
         self.svd_dq_iterator = [U1(0), U1(1), U1(2), U1(3)]
         self.shift = U1(1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=U1(2))
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=U1(0))
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=U1(1))
 
 class TestZ4(TestU11):
     def setUp(self):
-        bond = BondInfo({Z4(0):2, Z4(1):1, Z4(2):4, Z4(3):5})
+        bond = BondInfo({Z4(0):2, Z4(1):5, Z4(2):4, Z4(3):5})
         self.bond = bond
         self.T = rand((bond,)*4, pattern="++--", dq=Z4(1))
         self.symmetry = Z4
@@ -179,6 +199,8 @@ class TestZ4(TestU11):
         self.svd_dq_iterator = [Z4(0), Z4(1), Z4(2), Z4(3)]
         self.shift = Z4(1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=Z4(2))
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=Z4(0))
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=Z4(2))
 
 class TestZ2(TestU11):
     def setUp(self):
@@ -191,6 +213,8 @@ class TestZ2(TestU11):
         self.svd_dq_iterator = [Z2(0), Z2(1)]
         self.shift = Z2(0)
         self.T1 = rand((bond,)*4, pattern="++--", dq=Z2(0))
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=Z2(0))
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=Z2(1))
 
 if __name__ == "__main__":
     print("Full Tests for fermion python backend")

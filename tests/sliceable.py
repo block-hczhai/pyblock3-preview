@@ -2,7 +2,7 @@
 import sys
 sys.path[:0] = ['..', "../../block2/build"]
 
-from pyblock3.aux.hamil import HamilTools
+from pyblock3.block2.hamil import HamilTools
 from pyblock3.algebra.mpe import MPE
 import numpy as np
 import time
