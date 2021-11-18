@@ -1,0 +1,135 @@
+name: general
+
+on:
+  push:
+    branches: [ general ]
+    tags:
+      - v*
+  pull_request:
+    branches: [ general ]
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.python }} ${{ matrix.os }} ${{ matrix.plat }} ${{ matrix.parallel }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+        python: [ 3.7, 3.8, 3.9 ]
+        manylinux: [ 2010 ]
+        plat: [ x86_64 ]
+        parallel: [ serial ]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: install requirements
+        env:
+          MKLROOT: ~/.local
+        run: |
+          export PYT=$(which python)
+          python -m pip install pip build twine pytest --upgrade
+          python -m pip install mkl==2019 mkl-include intel-openmp numpy psutil cmake==3.17 pybind11
+
+      - name: install requirements (linux / mpi)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get install libopenmpi-dev
+          python -m pip install mpi4py
+
+      - name: build test
+        env:
+          MKLROOT: ~/.local
+        run: |
+          mkdir build
+          cd build
+          cmake .. -DUSE_MKL=ON
+          make -j 4
+          cd ..
+          echo "PYTHONPATH=./build:${PYTHONPATH}" >> $GITHUB_ENV
+
+      - name: run test (serial)
+        env:
+          MKLROOT: ~/.local
+        run: |
+          py.test pyblock3/algebra
+
+      - name: build wheels (macos)
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.os == 'macos-latest'
+        env:
+          TAG_STRING: ${{ github.event.ref }}
+        run: |
+          echo ${TAG_STRING:11}
+          sed -i "" "s/version=.*/version='${TAG_STRING:11}',/" setup.py
+          python -m pip install wheel
+          python -m pip wheel . -w ./dist --no-deps
+
+      - name: prepare build wheels (manylinux)
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.os == 'ubuntu-latest'
+        env:
+          TAG_STRING: ${{ github.event.ref }}
+        run: |
+          echo ${TAG_STRING:11}
+          sed -i "s/version=.*/version='${TAG_STRING:11}',/" setup.py
+          cp ./.github/actions/build-wheel/Dockerfile.manylinux${{ matrix.manylinux }} ./.github/actions/build-wheel/Dockerfile
+
+      - name: build wheels (manylinux)
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.os == 'ubuntu-latest'
+        uses: ./.github/actions/build-wheel
+        with:
+          python-version: ${{ matrix.python }}
+          parallel: ${{ matrix.parallel }}
+
+      - name: release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*
+
+      - name: upload artifacts
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v2
+        with:
+          name: dist-${{ matrix.parallel }}
+          path: dist
+          retention-days: 2
+
+  publish:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+
+      - name: build source dist (serial)
+        env:
+          TAG_STRING: ${{ github.event.ref }}
+        run: |
+          echo ${TAG_STRING:11}
+          sed -i "s/version=.*/version='${TAG_STRING:11}',/" setup.py
+          python -m pip install pip build twine --upgrade
+          python -m build --sdist
+
+      - name: download wheels
+        uses: actions/download-artifact@v2
+        with:
+          name: dist-serial
+          path: dist
+
+      - name: publish to pypi
+        uses: pypa/gh-action-pypi-publish@v1.4.2
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN_GENERAL }}
+
