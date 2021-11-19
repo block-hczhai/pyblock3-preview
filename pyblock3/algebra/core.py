@@ -137,6 +137,24 @@ class SubTensor(np.ndarray):
         return SubTensor(reduced=np.asarray(self).conj(), q_labels=self.q_labels)
 
     @staticmethod
+    @implements(np.real)
+    def _real(x):
+        return SubTensor(reduced=np.ascontiguousarray(np.asarray(x).real), q_labels=x.q_labels)
+
+    @property
+    def real(self):
+        return np.real(self)
+
+    @staticmethod
+    @implements(np.imag)
+    def _imag(x):
+        return SubTensor(reduced=np.ascontiguousarray(np.asarray(x).imag), q_labels=x.q_labels)
+
+    @property
+    def imag(self):
+        return np.imag(self)
+
+    @staticmethod
     @implements(np.linalg.norm)
     def _norm(x):
         return np.linalg.norm(np.asarray(x))
@@ -169,8 +187,8 @@ class SubTensor(np.ndarray):
             idxa, idxb = axes
         idxa = [x if x >= 0 else a.ndim + x for x in idxa]
         idxb = [x if x >= 0 else b.ndim + x for x in idxb]
-        out_idx_a = list(set(range(0, a.ndim)) - set(idxa))
-        out_idx_b = list(set(range(0, b.ndim)) - set(idxb))
+        out_idx_a = sorted(list(set(range(0, a.ndim)) - set(idxa)))
+        out_idx_b = sorted(list(set(range(0, b.ndim)) - set(idxb)))
 
         assert all(a.q_labels[ia] == b.q_labels[ib]
                    for ia, ib in zip(idxa, idxb))
@@ -515,6 +533,32 @@ class SparseTensor(NDArrayOperatorsMixin):
                     bond_infos[iq][q] = block.shape[iq]
         return bond_infos
 
+    def conj(self):
+        """
+        Complex conjugate.
+        Note that np.conj() is a ufunc (no need to be defined).
+        But np.real and np.imag are array_functions
+        """
+        return self.__class__(blocks=[b.conj() for b in self.blocks])
+
+    @staticmethod
+    @implements(np.real)
+    def _real(x):
+        return x.__class__(blocks=[b.real for b in x.blocks])
+
+    @property
+    def real(self):
+        return np.real(self)
+
+    @staticmethod
+    @implements(np.imag)
+    def _imag(x):
+        return x.__class__(blocks=[b.imag for b in x.blocks])
+
+    @property
+    def imag(self):
+        return np.imag(self)
+
     def quick_deflate(self):
         return self.__class__(blocks=[b for b in self.blocks if b is not None])
 
@@ -837,7 +881,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             for block in b.blocks:
                 if block.q_labels in blocks_map:
                     mb = blocks_map[block.q_labels]
-                    np.add(mb, block, out=mb)
+                    blocks_map[block.q_labels] = np.add(mb, block)
                 else:
                     blocks_map[block.q_labels] = block
             blocks = list(blocks_map.values())
@@ -860,7 +904,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             for block in b.blocks:
                 if block.q_labels in blocks_map:
                     mb = blocks_map[block.q_labels]
-                    np.subtract(mb, block, out=mb)
+                    blocks_map[block.q_labels] = np.subtract(mb, block)
                 else:
                     blocks_map[block.q_labels] = -block
             blocks = list(blocks_map.values())
@@ -1156,7 +1200,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         for ik, g in groupby(ss_trunc, key=lambda x: x[0]):
             gl = np.array([ig[1] for ig in g], dtype=int)
             gl_inv = np.array(
-                list(set(range(0, len(s.blocks[ik]))) - set(gl)), dtype=int)
+                sorted(list(set(range(0, len(s.blocks[ik]))) - set(gl))), dtype=int)
             while ikl < l.n_blocks and l.blocks[ikl].q_labels[-1] != s.blocks[ik].q_labels[0]:
                 ikl += 1
             while ikl < l.n_blocks and l.blocks[ikl].q_labels[-1] == s.blocks[ik].q_labels[0]:
@@ -1449,6 +1493,32 @@ class FermionTensor(NDArrayOperatorsMixin):
             return self.odd.infos
         else:
             return tuple(o | e for o, e in zip(self.odd.infos, self.even.infos))
+
+    def conj(self):
+        """
+        Complex conjugate.
+        Note that np.conj() is a ufunc (no need to be defined).
+        But np.real and np.imag are array_functions
+        """
+        return self.__class__(odd=self.odd.conj(), even=self.even.conj())
+
+    @staticmethod
+    @implements(np.real)
+    def _real(x):
+        return x.__class__(odd=x.odd.real, even=x.even.real)
+
+    @property
+    def real(self):
+        return np.real(self)
+
+    @staticmethod
+    @implements(np.imag)
+    def _imag(x):
+        return x.__class__(odd=x.odd.imag, even=x.even.imag)
+
+    @property
+    def imag(self):
+        return np.imag(self)
 
     def deflate(self, cutoff=0):
         return FermionTensor(odd=self.odd.deflate(cutoff), even=self.even.deflate(cutoff))
@@ -2003,7 +2073,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         for ik, g in groupby(ss_trunc, key=lambda x: x[0]):
             gl = np.array([ig[1] for ig in g], dtype=int)
             gl_inv = np.array(
-                list(set(range(0, len(s.blocks[ik]))) - set(gl)), dtype=int)
+                sorted(list(set(range(0, len(s.blocks[ik]))) - set(gl))), dtype=int)
             for il, lb in enumerate(lbs):
                 ikl = lmps[il][s.blocks[ik].q_labels[0]]
                 while ikl < len(lb) and lb[ikl].q_labels[-1] == s.blocks[ik].q_labels[0]:

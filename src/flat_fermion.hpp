@@ -35,33 +35,33 @@ template <typename Q, typename FL>
 void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
                                    const py::array_t<uint32_t> &ashs,
                                    const py::array_t<FL> &adata,
-                                   const py::array_t<uint32_t> &aidxs,
+                                   const py::array_t<uint64_t> &aidxs,
                                    const py::array_t<int32_t> &perm,
                                    py::array_t<FL> &cdata);
 
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
-      py::array_t<uint32_t>>
+      py::array_t<uint64_t>>
 flat_fermion_tensor_tensordot(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<FL> &adata, const py::array_t<uint32_t> &aidxs,
+    const py::array_t<FL> &adata, const py::array_t<uint64_t> &aidxs,
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
-    const py::array_t<FL> &bdata, const py::array_t<uint32_t> &bidxs,
+    const py::array_t<FL> &bdata, const py::array_t<uint64_t> &bidxs,
     const py::array_t<int> &idxa, const py::array_t<int> &idxb);
 
 template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
 flat_fermion_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
                              uint32_t fdq);
 
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
-      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<FL>, py::array_t<uint32_t>>
+      py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
+      py::array_t<FL>, py::array_t<uint64_t>>
 flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
                        const py::array_t<uint32_t> &ashs,
                        const py::array_t<FL> &adata,
-                       const py::array_t<uint32_t> &aidxs, int idx,
+                       const py::array_t<uint64_t> &aidxs, int idx,
                        const string &pattern, bool is_qr);
 
 #define TMPL_EXTERN extern

@@ -33,16 +33,16 @@ using namespace std;
 
 template <typename Q>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
-      py::array_t<uint32_t>>
+      py::array_t<uint64_t>>
 flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
                         const py::array_t<uint32_t> &ashs,
                         const py::array_t<double> &adata,
-                        const py::array_t<uint32_t> &aidxs,
+                        const py::array_t<uint64_t> &aidxs,
                         const py::array_t<int> &idxa,
                         const py::array_t<int> &idxb);
 
 template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint32_t>>
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
 flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<uint32_t> &ashs,
                                       const py::array_t<uint32_t> &bqs,
@@ -50,11 +50,11 @@ flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
                                       const py::array_t<int> &idxa,
                                       const py::array_t<int> &idxb);
 
-template <typename Q>
+template <typename Q, typename FL>
 size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
-                                 const py::array_t<double> &adata,
-                                 const py::array_t<double> &bdata,
-                                 py::array_t<double> &cdata);
+                                 const py::array_t<FL> &adata,
+                                 const py::array_t<FL> &bdata,
+                                 py::array_t<FL> &cdata);
 
 template <typename Q>
 tuple<int, int, vector<map_uint_uint<Q>>, vector<map_uint_uint<Q>>>
@@ -67,14 +67,22 @@ flat_sparse_tensor_matmul_init(
 template <typename Q>
 py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<uint32_t> &aidxs, const py::array_t<uint32_t> &bqs,
-    const py::array_t<uint32_t> &bshs, const py::array_t<uint32_t> &bidxs,
+    const py::array_t<uint64_t> &aidxs, const py::array_t<uint32_t> &bqs,
+    const py::array_t<uint32_t> &bshs, const py::array_t<uint64_t> &bidxs,
     const py::array_t<int> &idxa, const py::array_t<int> &idxb,
-    const py::array_t<uint32_t> &cqs, const py::array_t<uint32_t> &cidxs,
+    const py::array_t<uint32_t> &cqs, const py::array_t<uint64_t> &cidxs,
     bool ferm_op);
 
 #define TMPL_EXTERN extern
 #define TMPL_NAME flat_functor
+
 #include "symmetry_tmpl.hpp"
+#define TMPL_FL double
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+#define TMPL_FL complex<double>
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+
 #undef TMPL_NAME
 #undef TMPL_EXTERN

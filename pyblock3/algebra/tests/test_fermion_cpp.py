@@ -9,14 +9,10 @@ from pyblock3.algebra import fermion_setting
 fermion_setting.set_options(flat=True, fermion=True)
 rand = SparseFermionTensor.random
 
-def _get_phase(q_label):
-    if fermion_setting.DEFAULT_FERMION and q_label.parity==1:
-        return -1
-    return 1
-
 class TestU11(unittest.TestCase):
     def setUp(self):
-        bond = BondInfo({U11(0):2, U11(1,1):3, U11(1,-1):4, U11(2):5})
+        bond = BondInfo({U11(0):2, U11(1,1):3, U11(1,-1):4,
+                        U11(2,0):4})
         self.bond = bond
         self.T = rand((bond,)*4, pattern="++--", dq=U11(0))
         self.Tf = self.T.to_flat()
@@ -27,7 +23,24 @@ class TestU11(unittest.TestCase):
         self.shift = U11(1,1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=U11(2))
         self.T1f = self.T1.to_flat()
-
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=U11(0)).to_flat()
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=U11(1,1)).to_flat()
+    
+    def test_trace(self):
+        out1 = self.Tt1.trace((0,1), (3,2))
+        out2 = self.Tt1.trace(0,3).trace(0,1)
+        out3 = self.Tt1.trace(1,2).trace(0,1)
+        self.assertAlmostEqual(out1, out2, 8)
+        self.assertAlmostEqual(out1, out3, 8)
+        
+        out1 = self.Tt2.trace((0,1),(3,2))
+        out2 = self.Tt2.trace(0,3).trace(0,1)
+        out3 = self.Tt2.trace(1,2).trace(0,1)
+        
+        assert out1==0
+        assert out2==0
+        assert out3==0
+    
     def test_skeleton(self):
         bond = self.bond
         dq0 = self.skeleton_test_dq
@@ -107,7 +120,7 @@ class TestU11(unittest.TestCase):
 
 class TestZ22(TestU11):
     def setUp(self):
-        bond = BondInfo({Z22(0):2, Z22(0,1):3, Z22(1,0):4, Z22(1,1):5})
+        bond = BondInfo({Z22(0):2, Z22(0,1):2, Z22(1,0):3, Z22(1,1):5})
         self.bond = bond
         self.T = rand((bond,)*4, pattern="++--", dq=Z22(0))
         self.Tf = self.T.to_flat()
@@ -118,6 +131,8 @@ class TestZ22(TestU11):
         self.shift = Z22(1,1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=Z22(0,1))
         self.T1f = self.T1.to_flat()
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=Z22(0)).to_flat()
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=Z22(1,0)).to_flat()
 
 class TestU1(TestU11):
     def setUp(self):
@@ -132,10 +147,12 @@ class TestU1(TestU11):
         self.shift = U1(1)
         self.T1 = rand((bond,)*4, pattern="++--", dq=U1(2))
         self.T1f = self.T1.to_flat()
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=U1(0)).to_flat()
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=U1(2)).to_flat()
 
 class TestZ4(TestU11):
     def setUp(self):
-        bond = BondInfo({Z4(0):2, Z4(1):1, Z4(2):4, Z4(3):5})
+        bond = BondInfo({Z4(0):2, Z4(1):5, Z4(2):4, Z4(3):5})
         self.bond = bond
         self.T = rand((bond,)*4, pattern="++--", dq=Z4(1))
         self.Tf = self.T.to_flat()
@@ -144,8 +161,10 @@ class TestZ4(TestU11):
         self.contract_test_dq = (Z4(1),Z4(3))
         self.svd_dq_iterator = [Z4(0), Z4(1), Z4(2), Z4(3)]
         self.shift = Z4(1)
-        self.T1 = rand((bond,)*4, pattern="++--", dq=Z4(2))
+        self.T1 = rand((bond,)*4, pattern="++++", dq=Z4(2))
         self.T1f = self.T1.to_flat()
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=Z4(0)).to_flat()
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=Z4(2)).to_flat()
 
 class TestZ2(TestU11):
     def setUp(self):
@@ -160,6 +179,8 @@ class TestZ2(TestU11):
         self.shift = Z2(0)
         self.T1 = rand((bond,)*4, pattern="++--", dq=Z2(0))
         self.T1f = self.T1.to_flat()
+        self.Tt1 = rand((bond,)*4, pattern="++--", dq=Z2(0)).to_flat()
+        self.Tt2 = rand((bond,)*4, pattern="++--", dq=Z2(1)).to_flat()
 
 if __name__ == "__main__":
     print("Full Tests for fermion CPP backend")

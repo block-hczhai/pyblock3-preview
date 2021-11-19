@@ -74,8 +74,8 @@ def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa
     return (np.array(qs, dtype=np.uint32),
             np.array(shapes, dtype=np.uint32),
             np.concatenate(mats) if len(mats) != 0 else np.array(
-                [], dtype=np.float64),
-            np.array(idxs, dtype=np.uint32))
+                [], dtype=adata.dtype),
+            np.array(idxs, dtype=np.uint64))
 
 
 def flat_sparse_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs):
@@ -103,7 +103,7 @@ def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
     info = linfo & rinfo
     mats = {}
     for q in info:
-        mats[q] = np.zeros((linfo[q], rinfo[q]))
+        mats[q] = np.zeros((linfo[q], rinfo[q]), dtype=adata.dtype)
     items = {}
     xqls = [tuple(SZ.from_flat(q) for q in aq)
             for ia, aq in enumerate(aqs[:, :idx])]
@@ -402,7 +402,7 @@ def flat_sparse_skeleton(bond_infos, pattern=None, dq=None):
     xxs = np.array(xxs, dtype=np.uint32)
     q_labels = np.array(q[ix, xxs], dtype=np.uint32)
     shapes = np.array(sh[ix, xxs], dtype=np.uint32)
-    idxs = np.zeros((len(xxs) + 1, ), dtype=np.uint32)
+    idxs = np.zeros((len(xxs) + 1, ), dtype=np.uint64)
     idxs[1:] = np.cumsum(shapes.prod(axis=1))
     return q_labels, shapes, idxs
 
@@ -492,7 +492,7 @@ def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol
     nc = len(sub_mp)
     cqs = np.zeros((nc, ndim), dtype=np.uint32)
     cshs = np.zeros((nc, ndim), dtype=np.uint32)
-    cidxs = np.zeros((nc + 1, ), dtype=np.uint32)
+    cidxs = np.zeros((nc + 1, ), dtype=np.uint64)
     ic = 0
     ic_map = np.zeros((na + nb, ), dtype=int)
     for iab in sub_mp.values():
@@ -509,7 +509,7 @@ def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol
             cshs[ic, 1:-1] = bshs[ib][1:-1]
             cshs[ic, 0] = lb[bqs[ib, 0]]
             cshs[ic, -1] = rb[bqs[ib, -1]]
-        cidxs[ic + 1] = cidxs[ic] + np.prod(cshs[ic], dtype=np.uint32)
+        cidxs[ic + 1] = cidxs[ic] + np.prod(cshs[ic], dtype=np.uint64)
         ic += 1
     cdata = np.zeros((cidxs[-1], ), dtype=float)
 

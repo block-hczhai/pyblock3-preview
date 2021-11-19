@@ -18,16 +18,23 @@
  *
  */
 
-#ifdef I
-#undef I
-#endif
+#pragma once
+
+#include "tensor_impl.hpp"
 #include <pybind11/numpy.h>
-#include <tuple>
+#include <string>
+#include <vector>
 
 namespace py = pybind11;
 using namespace std;
 
-vector<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<double>,
-             py::array_t<uint64_t>>>
-build_qc_mpo(py::array_t<int32_t> orb_sym, py::array_t<double> t,
-             py::array_t<double> v);
+template <typename FL>
+py::array_t<FL> tensor_einsum(const string &script,
+                              const vector<py::array_t<FL>> &arrs);
+
+extern template py::array_t<double>
+tensor_einsum(const string &script, const vector<py::array_t<double>> &arrs);
+
+extern template py::array_t<complex<double>>
+tensor_einsum(const string &script,
+              const vector<py::array_t<complex<double>>> &arrs);

@@ -4,13 +4,24 @@
 pyblock3
 ========
 
-An Efficient python MPS/DMRG Library
+An Efficient python block-sparse tensor and MPS/DMRG Library
 
-Copyright (C) 2020 The pyblock3 developers. All Rights Reserved.
+Copyright (C) 2020-2021 The pyblock3 developers. All Rights Reserved.
 
-Authors: Huanchen Zhai (MPS/MPO/DMRG); Yang Gao (general fermionic tensor)
+Authors:
+
+* Huanchen Zhai [@hczhai](https://github.com/hczhai): MPS/MPO/DMRG
+* Yang Gao [@yangcal](https://github.com/yangcal): General fermionic tensor
+* Garnet Kin-Lic Chan [@gkc1000](https://github.com/gkc1000): Library design
+
+Please cite this work as:
+
+Huanchen Zhai, Yang Gao, and Garnet K.-L. Chan. pyblock3: an efficient python block-sparse tensor and MPS/DMRG library. 2021;
+[https://github.com/block-hczhai/pyblock3-preview](https://github.com/block-hczhai/pyblock3-preview).
 
 Documentation: https://pyblock3.readthedocs.io/en/latest
+
+Tutorial: https://colab.research.google.com/drive/1grQyYP9oTivjqQRZiwU40tF9SdWyrPfV?usp=sharing
 
 Features
 --------
@@ -29,6 +40,7 @@ Features
     * MPS compression
     * Green's function (DDMRG++)
     * Imaginary time evolution (time-step targeting approach)
+    * Real time evolution (time-step targeting approach)
     * Finite-temperature DMRG (ancilla approach)
 
 Installation

@@ -123,8 +123,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         self.q_labels = q_labels
         self.data = data
         if idxs is None:
-            self.idxs = np.zeros((self.n_blocks + 1, ), dtype=shapes.dtype)
-            self.idxs[1:] = np.cumsum(shapes.prod(axis=1))
+            self.idxs = np.zeros((self.n_blocks + 1, ), dtype=np.uint64)
+            self.idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
         else:
             self.idxs = idxs
         if self.n_blocks != 0:
@@ -144,6 +144,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         return self.q_labels.nbytes + self.shapes.nbytes + self.data.nbytes + self.idxs.nbytes
 
     def item(self):
+        if len(self.data) == 0:
+            return 0
         return self.data.item()
 
     def to_sparse(self):
@@ -158,7 +160,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     def get_zero():
         zu = np.zeros((0, 0), dtype=np.uint32)
         zd = np.zeros((0, ), dtype=float)
-        iu = np.zeros((1, ), dtype=np.uint32)
+        iu = np.zeros((1, ), dtype=np.uint64)
         return FlatSparseTensor(zu, zu, zd, iu)
 
     @staticmethod
@@ -170,8 +172,8 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         for i in range(n_blocks):
             shapes[i] = spt.blocks[i].shape
             q_labels[i] = list(map(SZ.to_flat, spt.blocks[i].q_labels))
-        idxs = np.zeros((n_blocks + 1, ), dtype=np.uint32)
-        idxs[1:] = np.cumsum(shapes.prod(axis=1))
+        idxs = np.zeros((n_blocks + 1, ), dtype=np.uint64)
+        idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
         data = np.zeros((idxs[-1], ), dtype=spt.dtype)
         for i in range(n_blocks):
             data[idxs[i]:idxs[i + 1]] = spt.blocks[i].flatten()
@@ -202,8 +204,10 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
                     return mat
 
     @staticmethod
-    def zeros_like(x):
-        return x.__class__(q_labels=x.q_labels, shapes=x.shapes, data=np.zeros_like(x.data), idxs=x.idxs)
+    def zeros_like(x, dtype=None):
+        if dtype is None:
+            dtype = x.dtype
+        return x.__class__(q_labels=x.q_labels, shapes=x.shapes, data=np.zeros_like(x.data, dtype=dtype), idxs=x.idxs)
 
     @staticmethod
     def random_like(x):
@@ -239,6 +243,34 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
     @property
     def infos(self):
         return flat_sparse_get_infos(self.q_labels, self.shapes)
+
+    def conj(self):
+        """
+        Complex conjugate.
+        Note that np.conj() is a ufunc (no need to be defined).
+        """
+        return self.__class__(q_labels=self.q_labels, shapes=self.shapes,
+                              data=self.data.conj(), idxs=self.idxs)
+
+    @staticmethod
+    @implements(np.real)
+    def _real(x):
+        return x.__class__(q_labels=x.q_labels, shapes=x.shapes,
+                           data=np.ascontiguousarray(x.data.real), idxs=x.idxs)
+
+    @property
+    def real(self):
+        return np.real(self)
+
+    @staticmethod
+    @implements(np.imag)
+    def _imag(x):
+        return x.__class__(q_labels=x.q_labels, shapes=x.shapes,
+                           data=np.ascontiguousarray(x.data.imag), idxs=x.idxs)
+
+    @property
+    def imag(self):
+        return np.imag(self)
 
     def cast_assign(self, other):
         """assign other to self, removing blocks not in self."""
@@ -307,6 +339,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         if out is not None:
             out[0].shapes[...] = shs
             out[0].q_labels[...] = qs
+            assert data.dtype == out[0].data.dtype
             out[0].data[...] = data
             out[0].idxs[...] = idxs
         return self.__class__(q_labels=qs, shapes=shs, data=data, idxs=idxs)
@@ -812,6 +845,16 @@ class FlatFermionTensor(FermionTensor):
 
     def deflate(self, cutoff=0):
         return FlatFermionTensor(odd=self.odd.deflate(cutoff), even=self.even.deflate(cutoff))
+
+    @staticmethod
+    @implements(np.real)
+    def _real(x):
+        return x.__class__(odd=x.odd.real, even=x.even.real)
+
+    @staticmethod
+    @implements(np.imag)
+    def _imag(x):
+        return x.__class__(odd=x.odd.imag, even=x.even.imag)
 
     @staticmethod
     @implements(np.copy)

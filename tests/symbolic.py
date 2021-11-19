@@ -2,8 +2,8 @@
 import sys
 sys.path[:0] = ['..', "../../block2/build"]
 
-from pyblock3.aux.hamil import HamilTools
-from pyblock3.aux.io import SymbolicMPOTools
+from pyblock3.block2.hamil import HamilTools
+from pyblock3.block2.io import SymbolicMPOTools
 from pyblock3.algebra.mpe import MPE
 from pyblock3.fcidump import FCIDUMP
 from pyblock3.hamiltonian import Hamiltonian
