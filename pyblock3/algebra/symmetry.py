@@ -46,7 +46,7 @@ class SZ:
 
     @staticmethod
     def is_flat_fermion(x):
-        return (x & 8) != 0
+        return (x & 131072) != 0
 
     def __add__(self, other):
         return self.__class__(self.n + other.n, self.twos + other.twos, self.pg ^ other.pg)

@@ -45,6 +45,9 @@ class OpNames(Enum):
     X = auto()
     XL = auto()
     XR = auto()
+    SP = auto()
+    SM = auto()
+    SZ = auto()
 
     def __repr__(self):
         return self.name
