@@ -227,7 +227,9 @@ def davidson(a, b, k, max_iter=500, conv_thrd=1E-7, deflation_min_size=2, deflat
             m += 1
 
         if xiter == max_iter:
-            raise RuntimeError("Only %d converged!" % ck)
+            import warnings
+            warnings.warn("Only %d converged!" % ck)
+            ck = k
 
     if mpi:
         ld = comm.bcast(ld if rank == 0 else None, root=0)
