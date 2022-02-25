@@ -301,7 +301,7 @@ class SliceableTensor(np.ndarray):
 
     def __getitem__(self, key):
         r = super().__getitem__(key)
-        r.infos = list(r.infos)
+        r.infos = list(self.infos)
         if isinstance(key, int):
             kk = sorted(r.infos[0])[key]
             r.infos[0] = r.infos[0].__class__({kk: r.infos[0][kk]})
@@ -388,7 +388,7 @@ class SliceableTensor(np.ndarray):
     @property
     def dtype(self):
         for v in self.flatten():
-            if v != 0:
+            if not isinstance(v, int) or v != 0:
                 return v.dtype
         return float
 
