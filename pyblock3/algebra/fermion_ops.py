@@ -75,6 +75,44 @@ def ParticleNumber(symmetry=None, flat=None):
     else:
         return T
 
+pna_dict = {0:0, 1:1, 2:0, 3:0}
+def ParticleNumberAlpha(symmetry=None, flat=None):
+    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+    state_map = fermion_encoding.get_state_map(symmetry)
+    block_dict = dict()
+    for key in pna_dict.keys():
+        qlab, ind, dim = state_map[key]
+        if key not in block_dict:
+            dat = np.zeros([dim, dim])
+            block_dict[key] = (dat, [qlab, qlab])
+        dat = block_dict[key][0]
+        dat[ind, ind] +=  pna_dict[key]
+    blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
+    T = SparseFermionTensor(blocks=blocks, pattern="+-")
+    if flat:
+        return T.to_flat()
+    else:
+        return T
+
+pnb_dict = {0:0, 1:0, 2:1, 3:0}
+def ParticleNumberBeta(symmetry=None, flat=None):
+    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+    state_map = fermion_encoding.get_state_map(symmetry)
+    block_dict = dict()
+    for key in pnb_dict.keys():
+        qlab, ind, dim = state_map[key]
+        if key not in block_dict:
+            dat = np.zeros([dim, dim])
+            block_dict[key] = (dat, [qlab, qlab])
+        dat = block_dict[key][0]
+        dat[ind, ind] +=  pnb_dict[key]
+    blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
+    T = SparseFermionTensor(blocks=blocks, pattern="+-")
+    if flat:
+        return T.to_flat()
+    else:
+        return T
+
 def onsite_U(u=1, symmetry=None, flat=None):
     symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
     state_map = fermion_encoding.get_state_map(symmetry)
