@@ -28,6 +28,10 @@
 #include <pybind11/numpy.h>
 #include <tuple>
 
+template <typename FL, typename = void> struct GFP { typedef FL FP; };
+
+template <typename FL> struct GFP<complex<FL>> { typedef FL FP; };
+
 namespace py = pybind11;
 using namespace std;
 
@@ -111,7 +115,7 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL, DIRECTION L>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
       py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
 flat_sparse_svd(const py::array_t<uint32_t> &aqs,
                 const py::array_t<uint32_t> &ashs, const py::array_t<FL> &adata,
@@ -138,7 +142,7 @@ flat_sparse_right_canonicalize(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
       py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
 flat_sparse_left_svd(const py::array_t<uint32_t> &aqs,
                      const py::array_t<uint32_t> &ashs,
@@ -148,7 +152,7 @@ flat_sparse_left_svd(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
       py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
 flat_sparse_right_svd(const py::array_t<uint32_t> &aqs,
                       const py::array_t<uint32_t> &ashs,
@@ -178,7 +182,7 @@ flat_sparse_right_canonicalize_indexed(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
            py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-           py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
+           py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
            py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>,
      py::array_t<uint32_t>>
 flat_sparse_left_svd_indexed(const py::array_t<uint32_t> &aqs,
@@ -189,7 +193,7 @@ flat_sparse_left_svd_indexed(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
            py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-           py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
+           py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
            py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>,
      py::array_t<uint32_t>>
 flat_sparse_right_svd_indexed(const py::array_t<uint32_t> &aqs,
@@ -200,7 +204,7 @@ flat_sparse_right_svd_indexed(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
       py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
 flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
                        const py::array_t<uint32_t> &ashs,
@@ -212,27 +216,39 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<double>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>, double>
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
+      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>, typename GFP<FL>::FP>
 flat_sparse_truncate_svd(
     const py::array_t<uint32_t> &lqs, const py::array_t<uint32_t> &lshs,
     const py::array_t<FL> &ldata, const py::array_t<uint64_t> &lidxs,
     const py::array_t<uint32_t> &sqs, const py::array_t<uint32_t> &sshs,
-    const py::array_t<double> &sdata, const py::array_t<uint64_t> &sidxs,
+    const py::array_t<typename GFP<FL>::FP> &sdata, const py::array_t<uint64_t> &sidxs,
     const py::array_t<uint32_t> &rqs, const py::array_t<uint32_t> &rshs,
     const py::array_t<FL> &rdata, const py::array_t<uint64_t> &ridxs,
-    int max_bond_dim, double cutoff, double max_dw, double norm_cutoff,
+    int max_bond_dim, typename GFP<FL>::FP cutoff, typename GFP<FL>::FP max_dw, typename GFP<FL>::FP norm_cutoff,
     bool eigen_values);
 
 #define TMPL_EXTERN extern
 #define TMPL_NAME flat_sparse
 
 #include "symmetry_tmpl.hpp"
-#define TMPL_FL double
+
+#define TMPL_FL float
+#define TMPL_FP float
 #include "symmetry_tmpl.hpp"
+#undef TMPL_FP
 #undef TMPL_FL
-#define TMPL_FL complex<double>
+
+#define TMPL_FL double
+#define TMPL_FP double
 #include "symmetry_tmpl.hpp"
+#undef TMPL_FP
+#undef TMPL_FL
+
+#define TMPL_FL complex<double>
+#define TMPL_FP double
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FP
 #undef TMPL_FL
 
 #undef TMPL_NAME

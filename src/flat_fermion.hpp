@@ -68,9 +68,15 @@ flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
 #define TMPL_NAME flat_fermion
 
 #include "symmetry_tmpl.hpp"
+
+#define TMPL_FL float
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+
 #define TMPL_FL double
 #include "symmetry_tmpl.hpp"
 #undef TMPL_FL
+
 #define TMPL_FL complex<double>
 #include "symmetry_tmpl.hpp"
 #undef TMPL_FL

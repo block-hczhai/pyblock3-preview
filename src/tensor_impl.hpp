@@ -50,9 +50,15 @@ extern "C" {
 extern void dscal(const int *n, const double *sa, double *sx,
                   const int *incx) noexcept;
 
+extern void sscal(const int *n, const float *sa, float *sx,
+                  const int *incx) noexcept;
+
 // vector copy
 // vector [dy] = [dx]
 extern void dcopy(const int *n, const double *dx, const int *incx, double *dy,
+                  const int *incy) noexcept;
+
+extern void scopy(const int *n, const float *dx, const int *incx, float *dy,
                   const int *incy) noexcept;
 
 extern void zcopy(const int *n, const complex<double> *dx, const int *incx,
@@ -63,6 +69,9 @@ extern void zcopy(const int *n, const complex<double> *dx, const int *incx,
 extern void daxpy(const int *n, const double *sa, const double *sx,
                   const int *incx, double *sy, const int *incy) noexcept;
 
+extern void saxpy(const int *n, const float *sa, const float *sx,
+                  const int *incx, float *sy, const int *incy) noexcept;
+
 extern void zaxpy(const int *n, const complex<double> *sa,
                   const complex<double> *sx, const int *incx,
                   complex<double> *sy, const int *incy) noexcept;
@@ -71,8 +80,13 @@ extern void zaxpy(const int *n, const complex<double> *sa,
 extern double ddot(const int *n, const double *dx, const int *incx,
                    const double *dy, const int *incy) noexcept;
 
+extern float sdot(const int *n, const float *dx, const int *incx,
+                  const float *dy, const int *incy) noexcept;
+
 // Euclidean norm of a vector
 extern double dnrm2(const int *n, const double *x, const int *incx) noexcept;
+
+extern float snrm2(const int *n, const float *x, const int *incx) noexcept;
 
 // matrix multiplication
 // mat [c] = double [alpha] * mat [a] * mat [b] + double [beta] * mat [c]
@@ -80,6 +94,12 @@ extern void dgemm(const char *transa, const char *transb, const int *m,
                   const int *n, const int *k, const double *alpha,
                   const double *a, const int *lda, const double *b,
                   const int *ldb, const double *beta, double *c,
+                  const int *ldc) noexcept;
+
+extern void sgemm(const char *transa, const char *transb, const int *m,
+                  const int *n, const int *k, const float *alpha,
+                  const float *a, const int *lda, const float *b,
+                  const int *ldb, const float *beta, float *c,
                   const int *ldc) noexcept;
 
 // matrix multiplication
@@ -98,18 +118,31 @@ extern void dgemv(const char *trans, const int *m, const int *n,
                   const double *x, const int *incx, const double *beta,
                   double *y, const int *incy) noexcept;
 
+extern void sgemv(const char *trans, const int *m, const int *n,
+                  const float *alpha, const float *a, const int *lda,
+                  const float *x, const int *incx, const float *beta, float *y,
+                  const int *incy) noexcept;
+
 // linear system a * x = b
 extern void dgesv(const int *n, const int *nrhs, double *a, const int *lda,
                   int *ipiv, double *b, const int *ldb, int *info);
 
+extern void sgesv(const int *n, const int *nrhs, float *a, const int *lda,
+                  int *ipiv, float *b, const int *ldb, int *info);
+
 // QR factorization
 extern void dgeqrf(const int *m, const int *n, double *a, const int *lda,
                    double *tau, double *work, const int *lwork, int *info);
+extern void sgeqrf(const int *m, const int *n, float *a, const int *lda,
+                   float *tau, float *work, const int *lwork, int *info);
 extern void zgeqrf(const int *m, const int *n, complex<double> *a,
                    const int *lda, complex<double> *tau, complex<double> *work,
                    const int *lwork, int *info);
 extern void dorgqr(const int *m, const int *n, const int *k, double *a,
                    const int *lda, const double *tau, double *work,
+                   const int *lwork, int *info);
+extern void sorgqr(const int *m, const int *n, const int *k, float *a,
+                   const int *lda, const float *tau, float *work,
                    const int *lwork, int *info);
 extern void zungqr(const int *m, const int *n, const int *k, complex<double> *a,
                    const int *lda, const complex<double> *tau,
@@ -118,11 +151,16 @@ extern void zungqr(const int *m, const int *n, const int *k, complex<double> *a,
 // LQ factorization
 extern void dgelqf(const int *m, const int *n, double *a, const int *lda,
                    double *tau, double *work, const int *lwork, int *info);
+extern void sgelqf(const int *m, const int *n, float *a, const int *lda,
+                   float *tau, float *work, const int *lwork, int *info);
 extern void zgelqf(const int *m, const int *n, complex<double> *a,
                    const int *lda, complex<double> *tau, complex<double> *work,
                    const int *lwork, int *info);
 extern void dorglq(const int *m, const int *n, const int *k, double *a,
                    const int *lda, const double *tau, double *work,
+                   const int *lwork, int *info);
+extern void sorglq(const int *m, const int *n, const int *k, float *a,
+                   const int *lda, const float *tau, float *work,
                    const int *lwork, int *info);
 extern void zunglq(const int *m, const int *n, const int *k, complex<double> *a,
                    const int *lda, const complex<double> *tau,
@@ -131,6 +169,9 @@ extern void zunglq(const int *m, const int *n, const int *k, complex<double> *a,
 // eigenvalue problem
 extern void dsyev(const char *jobz, const char *uplo, const int *n, double *a,
                   const int *lda, double *w, double *work, const int *lwork,
+                  int *info);
+extern void ssyev(const char *jobz, const char *uplo, const int *n, float *a,
+                  const int *lda, float *w, float *work, const int *lwork,
                   int *info);
 extern void zheev(const char *jobz, const char *uplo, const int *n,
                   complex<double> *a, const int *lda, double *w,
@@ -143,6 +184,10 @@ extern void dgesvd(const char *jobu, const char *jobvt, const int *m,
                    const int *n, double *a, const int *lda, double *s,
                    double *u, const int *ldu, double *vt, const int *ldvt,
                    double *work, const int *lwork, int *info);
+extern void sgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, float *a, const int *lda, float *s, float *u,
+                   const int *ldu, float *vt, const int *ldvt, float *work,
+                   const int *lwork, int *info);
 extern void zgesvd(const char *jobu, const char *jobvt, const int *m,
                    const int *n, complex<double> *a, const int *lda, double *s,
                    complex<double> *u, const int *ldu, complex<double> *vt,
@@ -153,6 +198,8 @@ extern void zgesvd(const char *jobu, const char *jobvt, const int *m,
 // mat [b] = mat [a]
 extern void dlacpy(const char *uplo, const int *m, const int *n,
                    const double *a, const int *lda, double *b, const int *ldb);
+extern void slacpy(const char *uplo, const int *m, const int *n, const float *a,
+                   const int *lda, float *b, const int *ldb);
 extern void zlacpy(const char *uplo, const int *m, const int *n,
                    const complex<double> *a, const int *lda, complex<double> *b,
                    const int *ldb);
@@ -182,6 +229,27 @@ inline void cblas_dgemm_batch(
         const int gsize = group_size[ig];
         for (int j = 0; j < gsize; j++, i++)
             dgemm(trb, tra, &n, &m, &k, &alpha, B_Array[i], &ldb, A_Array[i],
+                  &lda, &beta, C_Array[i], &ldc);
+    }
+}
+
+inline void cblas_sgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const float *alpha_Array, const float **A_Array,
+    const int *lda_Array, const float **B_Array, const int *ldb_Array,
+    const float *beta_Array, float **C_Array, const int *ldc_Array,
+    const int group_count, const int *group_size) {
+    assert(Layout == CblasRowMajor);
+    for (int ig = 0, i = 0; ig < group_count; ig++) {
+        const char *tra = TransA_Array[ig] == CblasNoTrans ? "n" : "t";
+        const char *trb = TransB_Array[ig] == CblasNoTrans ? "n" : "t";
+        const int m = M_Array[ig], n = N_Array[ig], k = K_Array[ig];
+        const float alpha = alpha_Array[ig], beta = beta_Array[ig];
+        const int lda = lda_Array[ig], ldb = ldb_Array[ig], ldc = ldc_Array[ig];
+        const int gsize = group_size[ig];
+        for (int j = 0; j < gsize; j++, i++)
+            sgemm(trb, tra, &n, &m, &k, &alpha, B_Array[i], &ldb, A_Array[i],
                   &lda, &beta, C_Array[i], &ldc);
     }
 }
@@ -245,6 +313,15 @@ inline void xgemm<double>(const char *transa, const char *transb, const int *m,
 }
 
 template <>
+inline void xgemm<float>(const char *transa, const char *transb, const int *m,
+                         const int *n, const int *k, const float *alpha,
+                         const float *a, const int *lda, const float *b,
+                         const int *ldb, const float *beta, float *c,
+                         const int *ldc) noexcept {
+    return sgemm(transa, transb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc);
+}
+
+template <>
 inline void xgemm<complex<double>>(
     const char *transa, const char *transb, const int *m, const int *n,
     const int *k, const complex<double> *alpha, const complex<double> *a,
@@ -261,6 +338,12 @@ template <>
 inline void xcopy<double>(const int *n, const double *dx, const int *incx,
                           double *dy, const int *incy) noexcept {
     dcopy(n, dx, incx, dy, incy);
+}
+
+template <>
+inline void xcopy<float>(const int *n, const float *dx, const int *incx,
+                         float *dy, const int *incy) noexcept {
+    scopy(n, dx, incx, dy, incy);
 }
 
 template <>
@@ -282,6 +365,12 @@ inline void xaxpy<double>(const int *n, const double *sa, const double *sx,
 }
 
 template <>
+inline void xaxpy<float>(const int *n, const float *sa, const float *sx,
+                         const int *incx, float *sy, const int *incy) noexcept {
+    saxpy(n, sa, sx, incx, sy, incy);
+}
+
+template <>
 inline void xaxpy<complex<double>>(const int *n, const complex<double> *sa,
                                    const complex<double> *sx, const int *incx,
                                    complex<double> *sy,
@@ -298,6 +387,13 @@ inline void xlacpy(const char *uplo, const int *m, const int *n,
                    const double *a, const int *lda, double *b, const int *ldb) {
     dlacpy(uplo, m, n, a, lda, b, ldb);
 }
+
+template <>
+inline void xlacpy(const char *uplo, const int *m, const int *n, const float *a,
+                   const int *lda, float *b, const int *ldb) {
+    slacpy(uplo, m, n, a, lda, b, ldb);
+}
+
 template <>
 inline void xlacpy(const char *uplo, const int *m, const int *n,
                    const complex<double> *a, const int *lda, complex<double> *b,
@@ -312,6 +408,11 @@ template <>
 inline void xgeqrf(const int *m, const int *n, double *a, const int *lda,
                    double *tau, double *work, const int *lwork, int *info) {
     dgeqrf(m, n, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xgeqrf(const int *m, const int *n, float *a, const int *lda,
+                   float *tau, float *work, const int *lwork, int *info) {
+    sgeqrf(m, n, a, lda, tau, work, lwork, info);
 }
 template <>
 inline void xgeqrf(const int *m, const int *n, complex<double> *a,
@@ -331,6 +432,12 @@ inline void xungqr(const int *m, const int *n, const int *k, double *a,
     dorgqr(m, n, k, a, lda, tau, work, lwork, info);
 }
 template <>
+inline void xungqr(const int *m, const int *n, const int *k, float *a,
+                   const int *lda, const float *tau, float *work,
+                   const int *lwork, int *info) {
+    sorgqr(m, n, k, a, lda, tau, work, lwork, info);
+}
+template <>
 inline void xungqr(const int *m, const int *n, const int *k, complex<double> *a,
                    const int *lda, const complex<double> *tau,
                    complex<double> *work, const int *lwork, int *info) {
@@ -344,6 +451,11 @@ template <>
 inline void xgelqf(const int *m, const int *n, double *a, const int *lda,
                    double *tau, double *work, const int *lwork, int *info) {
     dgelqf(m, n, a, lda, tau, work, lwork, info);
+}
+template <>
+inline void xgelqf(const int *m, const int *n, float *a, const int *lda,
+                   float *tau, float *work, const int *lwork, int *info) {
+    sgelqf(m, n, a, lda, tau, work, lwork, info);
 }
 template <>
 inline void xgelqf(const int *m, const int *n, complex<double> *a,
@@ -363,6 +475,12 @@ inline void xunglq(const int *m, const int *n, const int *k, double *a,
     dorglq(m, n, k, a, lda, tau, work, lwork, info);
 }
 template <>
+inline void xunglq(const int *m, const int *n, const int *k, float *a,
+                   const int *lda, const float *tau, float *work,
+                   const int *lwork, int *info) {
+    sorglq(m, n, k, a, lda, tau, work, lwork, info);
+}
+template <>
 inline void xunglq(const int *m, const int *n, const int *k, complex<double> *a,
                    const int *lda, const complex<double> *tau,
                    complex<double> *work, const int *lwork, int *info) {
@@ -371,7 +489,7 @@ inline void xunglq(const int *m, const int *n, const int *k, complex<double> *a,
 
 template <typename FL>
 inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
-                   const int *n, FL *a, const int *lda, double *s, FL *u,
+                   const int *n, FL *a, const int *lda, decltype(std::abs(FL())) *s, FL *u,
                    const int *ldu, FL *vt, const int *ldvt, FL *work,
                    const int *lwork, int *info);
 template <>
@@ -380,6 +498,13 @@ inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
                    double *u, const int *ldu, double *vt, const int *ldvt,
                    double *work, const int *lwork, int *info) {
     dgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, work, lwork, info);
+}
+template <>
+inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
+                   const int *n, float *a, const int *lda, float *s, float *u,
+                   const int *ldu, float *vt, const int *ldvt, float *work,
+                   const int *lwork, int *info) {
+    sgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, work, lwork, info);
 }
 template <>
 inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
@@ -410,6 +535,19 @@ inline void cblas_xgemm_batch(
     const double *beta_Array, double **C_Array, const int *ldc_Array,
     const int group_count, const int *group_size) {
     cblas_dgemm_batch(Layout, TransA_Array, TransB_Array, M_Array, N_Array,
+                      K_Array, alpha_Array, A_Array, lda_Array, B_Array,
+                      ldb_Array, beta_Array, C_Array, ldc_Array, group_count,
+                      group_size);
+}
+template <>
+inline void cblas_xgemm_batch(
+    const CBLAS_LAYOUT Layout, const CBLAS_TRANSPOSE *TransA_Array,
+    const CBLAS_TRANSPOSE *TransB_Array, const int *M_Array, const int *N_Array,
+    const int *K_Array, const float *alpha_Array, const float **A_Array,
+    const int *lda_Array, const float **B_Array, const int *ldb_Array,
+    const float *beta_Array, float **C_Array, const int *ldc_Array,
+    const int group_count, const int *group_size) {
+    cblas_sgemm_batch(Layout, TransA_Array, TransB_Array, M_Array, N_Array,
                       K_Array, alpha_Array, A_Array, lda_Array, B_Array,
                       ldb_Array, beta_Array, C_Array, ldc_Array, group_count,
                       group_size);
@@ -449,6 +587,17 @@ inline void x_tensor_transpose<double>(
 }
 
 template <>
+inline void x_tensor_transpose<float>(
+    const int *perm, const int dim, const float alpha, const float *A,
+    const int *sizeA, const int *outerSizeA, const float beta, float *B,
+    const int *outerSizeB, const int numThreads, const int useRowMajor) {
+#ifdef _HAS_HPTT
+    sTensorTranspose(perm, dim, alpha, A, sizeA, outerSizeA, beta, B,
+                     outerSizeB, numThreads, useRowMajor);
+#endif
+}
+
+template <>
 inline void x_tensor_transpose<complex<double>>(
     const int *perm, const int dim, const complex<double> alpha,
     const complex<double> *A, const int *sizeA, const int *outerSizeA,
@@ -477,6 +626,10 @@ void tensordot_impl(const FL *a, const int ndima, const ssize_t *na,
 extern template void tensor_transpose_impl<double>(
     int ndim, size_t size, const int *perm, const int *shape, const double *a,
     double *c, const double alpha = 1.0, const double beta = 0.0);
+extern template void
+tensor_transpose_impl<float>(int ndim, size_t size, const int *perm,
+                             const int *shape, const float *a, float *c,
+                             const float alpha = 1.0f, const float beta = 0.0f);
 extern template void tensor_transpose_impl<complex<double>>(
     int ndim, size_t size, const int *perm, const int *shape,
     const complex<double> *a, complex<double> *c,
@@ -488,6 +641,13 @@ extern template void tensordot_impl<double>(const double *a, const int ndima,
                                             const int *idxb, double *c,
                                             const double alpha = 1.0,
                                             const double beta = 0.0);
+extern template void tensordot_impl<float>(const float *a, const int ndima,
+                                           const ssize_t *na, const float *b,
+                                           const int ndimb, const ssize_t *nb,
+                                           const int nctr, const int *idxa,
+                                           const int *idxb, float *c,
+                                           const float alpha = 1.0f,
+                                           const float beta = 0.0f);
 extern template void tensordot_impl<complex<double>>(
     const complex<double> *a, const int ndima, const ssize_t *na,
     const complex<double> *b, const int ndimb, const ssize_t *nb,

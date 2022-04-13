@@ -44,6 +44,10 @@ extern template py::array_t<double>
 tensor_transpose<double>(const py::array_t<double> &x,
                          const py::array_t<int> &perm, const double alpha,
                          const double beta);
+extern template py::array_t<float>
+tensor_transpose<float>(const py::array_t<float> &x,
+                         const py::array_t<int> &perm, const float alpha,
+                         const float beta);
 extern template py::array_t<complex<double>> tensor_transpose<complex<double>>(
     const py::array_t<complex<double>> &x, const py::array_t<int> &perm,
     const complex<double> alpha, const complex<double> beta);
@@ -51,6 +55,10 @@ extern template py::array_t<double>
 tensor_tensordot(const py::array_t<double> &a, const py::array_t<double> &b,
                  const py::array_t<int> &idxa, const py::array_t<int> &idxb,
                  double alpha, double beta);
+extern template py::array_t<float>
+tensor_tensordot(const py::array_t<float> &a, const py::array_t<float> &b,
+                 const py::array_t<int> &idxa, const py::array_t<int> &idxb,
+                 float alpha, float beta);
 extern template py::array_t<complex<double>>
 tensor_tensordot(const py::array_t<complex<double>> &a,
                  const py::array_t<complex<double>> &b,

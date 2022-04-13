@@ -217,6 +217,9 @@ py::array_t<FL> tensor_einsum(const string &script,
 template py::array_t<double>
 tensor_einsum(const string &script, const vector<py::array_t<double>> &arrs);
 
+template py::array_t<float>
+tensor_einsum(const string &script, const vector<py::array_t<float>> &arrs);
+
 template py::array_t<complex<double>>
 tensor_einsum(const string &script,
               const vector<py::array_t<complex<double>>> &arrs);
