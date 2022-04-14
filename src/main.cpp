@@ -1084,7 +1084,7 @@ PYBIND11_MODULE(block3, m) {
            double beta) {
             return tensor_transpose<double>(x, perm, alpha, beta);
         },
-        y::arg("x"), py::arg("perm"), py::arg("alpha") = 1.0,
+        py::arg("x"), py::arg("perm"), py::arg("alpha") = 1.0,
         py::arg("beta") = 0.0);
     tensor.def(
         "tensordot",
@@ -1102,7 +1102,7 @@ PYBIND11_MODULE(block3, m) {
            float beta) {
             return tensor_transpose<float>(x, perm, alpha, beta);
         },
-        y::arg("x"), py::arg("perm"), py::arg("alpha") = 1.0f,
+        py::arg("x"), py::arg("perm"), py::arg("alpha") = 1.0f,
         py::arg("beta") = 0.0f);
     tensor.def(
         "tensordot",
@@ -1120,7 +1120,7 @@ PYBIND11_MODULE(block3, m) {
            complex<double> alpha, complex<double> beta) {
             return tensor_transpose<complex<double>>(x, perm, alpha, beta);
         },
-        y::arg("x"), py::arg("perm"), py::arg("alpha") = 1.0,
+        py::arg("x"), py::arg("perm"), py::arg("alpha") = 1.0,
         py::arg("beta") = 0.0);
     tensor.def(
         "tensordot",
