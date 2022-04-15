@@ -60,6 +60,65 @@ tensor_tensordot(const py::array_t<FL> &a, const py::array_t<FL> &b,
     return c;
 }
 
+template <typename FL>
+pair<py::array_t<FL>, py::array_t<FL>> tensor_qr(const py::array_t<FL> &x,
+                                                 bool is_qr) {
+    int ndimx = (int)x.ndim();
+    assert(ndimx == 2);
+    int ml = x.shape()[0], mr = x.shape()[1], mm = min(ml, mr);
+    size_t l_size = ml * mm, r_size = mm * mr;
+    py::array_t<FL> ldata(vector<ssize_t>{(ssize_t)ml, (ssize_t)mm});
+    py::array_t<FL> rdata(vector<ssize_t>{(ssize_t)mm, (ssize_t)mr});
+    FL *pl = ldata.mutable_data(), *pr = rdata.mutable_data();
+
+    int lwork = (is_qr ? mr : ml) * 34, info = 0;
+    vector<FL> tau, work, tmpl, tmpr;
+    work.reserve(lwork);
+    tau.reserve(mm);
+    tmpl.reserve(ml * mr);
+    tmpr.reserve(ml * mr);
+    if (is_qr) {
+        memset(pr, 0, sizeof(FL) * r_size);
+        memcpy(tmpr.data(), x.data(), sizeof(FL) * ml * mr);
+        int qlwork = -1;
+        xgelqf<FL>(&mr, &ml, tmpr.data(), &mr, tau.data(), work.data(), &qlwork,
+                   &info);
+        if (lwork < (int)abs(work[0]))
+            lwork = (int)abs(work[0]), work.reserve(lwork);
+        xgelqf<FL>(&mr, &ml, tmpr.data(), &mr, tau.data(), work.data(), &lwork,
+                   &info);
+        assert(info == 0);
+        memcpy(tmpl.data(), tmpr.data(), sizeof(FL) * ml * mr);
+        xunglq<FL>(&mm, &ml, &mm, tmpl.data(), &mr, tau.data(), work.data(),
+                   &lwork, &info);
+        assert(info == 0);
+        xlacpy<FL>("N", &mm, &ml, tmpl.data(), &mr, pl, &mm);
+        for (int j = 0; j < min(mm, mr); j++)
+            memcpy(pr + j * mr + j, tmpr.data() + j + j * mr,
+                   sizeof(FL) * (mr - j));
+    } else {
+        memset(pl, 0, sizeof(FL) * l_size);
+        memcpy(tmpl.data(), x.data(), sizeof(FL) * ml * mr);
+        int qlwork = -1;
+        xgeqrf<FL>(&mr, &ml, tmpl.data(), &mr, tau.data(), work.data(), &qlwork,
+                   &info);
+        if (lwork < (int)abs(work[0]))
+            lwork = (int)abs(work[0]), work.reserve(lwork);
+        xgeqrf<FL>(&mr, &ml, tmpl.data(), &mr, tau.data(), work.data(), &lwork,
+                   &info);
+        assert(info == 0);
+        memcpy(tmpr.data(), tmpl.data(), sizeof(FL) * ml * mr);
+        xungqr<FL>(&mr, &mm, &mm, tmpr.data(), &mr, tau.data(), work.data(),
+                   &lwork, &info);
+        assert(info == 0);
+        for (int j = 0; j < ml; j++)
+            memcpy(pl + j * mm, tmpl.data() + j * mr,
+                   sizeof(FL) * min(mm, j + 1));
+        xlacpy<FL>("N", &mr, &mm, tmpr.data(), &mr, pr, &mr);
+    }
+    return std::make_pair(ldata, rdata);
+}
+
 // explicit template instantiation
 template py::array_t<double>
 tensor_transpose<double>(const py::array_t<double> &x,
@@ -87,3 +146,10 @@ tensor_tensordot(const py::array_t<complex<double>> &a,
                  const py::array_t<complex<double>> &b,
                  const py::array_t<int> &idxa, const py::array_t<int> &idxb,
                  complex<double> alpha, complex<double> beta);
+
+template pair<py::array_t<double>, py::array_t<double>>
+tensor_qr(const py::array_t<double> &x, bool is_qr);
+template pair<py::array_t<float>, py::array_t<float>>
+tensor_qr(const py::array_t<float> &x, bool is_qr);
+template pair<py::array_t<complex<double>>, py::array_t<complex<double>>>
+tensor_qr(const py::array_t<complex<double>> &x, bool is_qr);

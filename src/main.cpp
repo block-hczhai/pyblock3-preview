@@ -1095,6 +1095,7 @@ PYBIND11_MODULE(block3, m) {
         },
         py::arg("a"), py::arg("b"), py::arg("idxa"), py::arg("idxb"),
         py::arg("alpha") = 1.0, py::arg("beta") = 0.0);
+    tensor.def("qr", &tensor_qr<double>, py::arg("x"), py::arg("is_qr"));
     // float
     tensor.def(
         "transpose",
@@ -1113,6 +1114,7 @@ PYBIND11_MODULE(block3, m) {
         },
         py::arg("a"), py::arg("b"), py::arg("idxa"), py::arg("idxb"),
         py::arg("alpha") = 1.0f, py::arg("beta") = 0.0f);
+    tensor.def("qr", &tensor_qr<float>, py::arg("x"), py::arg("is_qr"));
     // complex double
     tensor.def(
         "transpose",
@@ -1133,6 +1135,7 @@ PYBIND11_MODULE(block3, m) {
         },
         py::arg("a"), py::arg("b"), py::arg("idxa"), py::arg("idxb"),
         py::arg("alpha") = 1.0, py::arg("beta") = 0.0);
+    tensor.def("qr", &tensor_qr<complex<double>>, py::arg("x"), py::arg("is_qr"));
     // mixed
     tensor.def(
         "tensordot",
