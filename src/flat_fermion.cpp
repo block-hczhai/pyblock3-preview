@@ -676,8 +676,8 @@ flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
     FL *pl = ldata.mutable_data(), *pr = rdata.mutable_data();
 
     int lwork = (is_qr ? max_rshape : max_lshape) * 34, info = 0;
-    vector<FL> tau(max_mshape), work(lwork), tmpl(max_tmp_size),
-        tmpr(max_tmp_size);
+    vector<FL> tau(max_mshape), work, tmpl(max_tmp_size), tmpr(max_tmp_size);
+    work.reserve(lwork);
     int iis = 0, iil = 0, iir = 0;
     plidxs[0] = pridxs[0] = 0;
     if (is_qr)
@@ -689,9 +689,13 @@ flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
         FL *mat = mat_data.data() + mq.second;
         int ml = linfo.at(ql).first, mr = rinfo.at(qr).first, mm = min(ml, mr);
         const int lshape = ml, rshape = mr, mshape = mm;
-        int lwork = max(ml, mr) * 34;
         if (is_qr) {
             memcpy(tmpr.data(), mat, sizeof(FL) * lshape * rshape);
+            int qlwork = -1;
+            xgelqf<FL>(&rshape, &lshape, tmpr.data(), &rshape, tau.data(),
+                       work.data(), &qlwork, &info);
+            if (lwork < (int)abs(work[0]))
+                lwork = (int)abs(work[0]), work.reserve(lwork);
             xgelqf<FL>(&rshape, &lshape, tmpr.data(), &rshape, tau.data(),
                        work.data(), &lwork, &info);
             assert(info == 0);
@@ -701,6 +705,11 @@ flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
             assert(info == 0);
         } else {
             memcpy(tmpl.data(), mat, sizeof(FL) * lshape * rshape);
+            int qlwork = -1;
+            xgeqrf<FL>(&rshape, &lshape, tmpl.data(), &rshape, tau.data(),
+                       work.data(), &qlwork, &info);
+            if (lwork < (int)abs(work[0]))
+                lwork = (int)abs(work[0]), work.reserve(lwork);
             xgeqrf<FL>(&rshape, &lshape, tmpl.data(), &rshape, tau.data(),
                        work.data(), &lwork, &info);
             assert(info == 0);
