@@ -970,8 +970,24 @@ def flat_qr_fast(
         right_idx = [idim for idim in range(T.ndim)
         if idim not in left_idx]
     new_T = _maybe_transpose_tensor(T, left_idx, right_idx)
-    if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
-        raise NotImplementedError
+    if len(left_idx) == T.ndim or len(right_idx) == T.ndim:
+        flat_q = T.dq.to_flat()
+        flat_qs = np.asarray([[flat_q]], dtype=Q_LABELS_DTYPE)
+        ishapes = np.asarray([[1,]], dtype=SHAPES_DTYPE)
+        data = np.asarray([1,])
+        Q = T.__class__(flat_qs, ishapes, data,
+                        pattern="+", symmetry=T.symmetry)
+        new_pattern, inds, return_order = _gen_null_qr_info(T, mod)
+        new_shapes = np.insert(T.shapes, inds, 1, axis=1)
+        new_q_labels = np.insert(T.q_labels, inds, flat_q, axis=1)
+        if return_order == slice(None):
+            shape = (1,)+T.shape
+        else:
+            shape = T.shape + (1,)
+        R = T.__class__(new_q_labels, new_shapes,
+                        T.data.copy(), pattern=new_pattern,
+                        idxs=T.idxs.copy(), symmetry=T.symmetry, shape=shape)
+        return (Q, R)[return_order]
     split_ax = len(left_idx)
     backend = get_backend(T.symmetry)
     qq, shq, qdata, qidxs, qr, shr, rdata, ridxs = \
@@ -984,6 +1000,9 @@ def flat_qr_fast(
     r = T.__class__(qr, shr, rdata,
                     pattern="+"+new_T.pattern[split_ax:],
                     idxs=ridxs, symmetry=T.symmetry)
+    # inherit shape
+    q.shape = new_T.shape[:split_ax] + (q.shape[-1],)
+    r.shape = (r.shape[0], ) + new_T.shape[split_ax:]
     return q, r
 
 def _adjust_block(block, flip_axes):
