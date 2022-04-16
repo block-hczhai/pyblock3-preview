@@ -31,10 +31,13 @@ from .flat import (FlatSparseTensor,
                    _flat_sparse_tensor_numpy_func_impls)
 from .symmetry import BondInfo
 from . import fermion_setting as setting
+import time
 
 SVD_SCREENING = setting.SVD_SCREENING
 Q_LABELS_DTYPE = SHAPES_DTYPE = np.uint32
 INDEX_DTYPE = np.uint64
+
+TIMINGS = [0, 0, 0, 0] # td, qr, svd, tp
 
 def get_backend(symmetry):
     """Get the C++ backend for the input symmetry
@@ -1803,6 +1806,7 @@ class FlatFermionTensor(FlatSparseTensor):
     @staticmethod
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
+        tax = time.perf_counter()
         if isinstance(axes, int):
             idxa = np.arange(-axes, 0, dtype=np.int32)
             idxb = np.arange(0, axes, dtype=np.int32)
@@ -1830,7 +1834,9 @@ class FlatFermionTensor(FlatSparseTensor):
 
         if len(idxa) == a.ndim and len(idxb) == b.ndim:
             return data[0]
-        return a.__class__(q_labels, shapes, data, out_pattern, idxs, a.symmetry, shape=tuple(out_shape))
+        rt = a.__class__(q_labels, shapes, data, out_pattern, idxs, a.symmetry, shape=tuple(out_shape))
+        TIMINGS[0] += time.perf_counter() - tax
+        return rt
 
     @staticmethod
     @implements(np.transpose)
@@ -1840,6 +1846,7 @@ class FlatFermionTensor(FlatSparseTensor):
         if a.n_blocks == 0:
             return a
         else:
+            tax = time.perf_counter()
             data = np.zeros_like(a.data)
             axes = np.array(axes, dtype=np.int32)
             backend = get_backend(a.symmetry)
@@ -1849,8 +1856,10 @@ class FlatFermionTensor(FlatSparseTensor):
                 backend.flat_sparse_tensor.transpose(a.shapes, a.data, a.idxs, axes, data)
             pattern = "".join([a.pattern[ix] for ix in axes])
             shape = [a.shape[ix] for ix in axes]
-            return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
+            rt = a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, pattern, a.idxs, a.symmetry, shape=tuple(shape))
+            TIMINGS[3] += time.perf_counter() - tax
+            return rt
 
     def tensor_svd(
         self,
@@ -1859,7 +1868,10 @@ class FlatFermionTensor(FlatSparseTensor):
         qpn_partition=None,
         **opts
     ):
-        return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, **opts)
+        tax = time.perf_counter()
+        rt = flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, **opts)
+        TIMINGS[2] += time.perf_counter() - tax
+        return rt
 
     def tensor_qr(
         self,
@@ -1867,7 +1879,10 @@ class FlatFermionTensor(FlatSparseTensor):
         right_idx=None,
         mod="qr"
     ):
-        return flat_qr_fast(self, left_idx, right_idx=right_idx, mod=mod)
+        tax = time.perf_counter()
+        rt = flat_qr_fast(self, left_idx, right_idx=right_idx, mod=mod)
+        TIMINGS[1] += time.perf_counter() - tax
+        return rt
 
     def to_exponential(self, x):
         from pyblock3.algebra.fermion_ops import get_flat_exponential
