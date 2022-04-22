@@ -2,7 +2,7 @@ import numpy as np
 from itertools import product
 from functools import reduce
 from .core import SubTensor
-from .fermion import SparseFermionTensor
+from .fermion import SparseFermionTensor, timing
 from . import fermion_encoding
 from . import fermion_setting as setting
 
@@ -321,6 +321,7 @@ def get_exponential(T, x):
     else:
         return get_sparse_exponential(T, x)
 
+@timing('gex')
 def get_flat_exponential(T, x):
     symmetry = T.dq.__class__
     if setting.DEFAULT_FERMION:

@@ -37,8 +37,6 @@ SVD_SCREENING = setting.SVD_SCREENING
 Q_LABELS_DTYPE = SHAPES_DTYPE = np.uint32
 INDEX_DTYPE = np.uint64
 
-TIMINGS = [0, 0, 0, 0] # td, qr, svd, tp
-
 def get_backend(symmetry):
     """Get the C++ backend for the input symmetry
 
@@ -65,6 +63,32 @@ def get_backend(symmetry):
     else:
         raise NotImplementedError("symmetry %s not supported"%key)
     return backend
+
+_timings = {}
+
+def format_timing():
+    from .fermion_symmetry import _timings as _stimings, clear_timing as sclear_timing
+    global _timings
+    rt = " ".join(["%s = %.3f" % (k, v) for k, v in list(_timings.items()) + list(_stimings.items())])
+    rt += " total = %.3f" % sum(_timings.values())
+    clear_timing()
+    sclear_timing()
+    return rt
+
+def clear_timing():
+    global _timings
+    _timings.clear()
+
+def timing(tm_key):
+    global _timings
+    def tf(f):
+        def ttf(*args, **kwargs):
+            tx = time.perf_counter()
+            ret = f(*args, **kwargs)
+            _timings[tm_key] = _timings.get(tm_key, 0.0) + time.perf_counter() - tx
+            return ret
+        return ttf
+    return tf
 
 def implements(np_func):
     global _numpy_func_impls
@@ -1543,6 +1567,7 @@ class FlatFermionTensor(FlatSparseTensor):
 
     @staticmethod
     @implements(np.copy)
+    @timing("copy")
     def _copy(x):
         return x.__class__(q_labels=x.q_labels.copy(order="K"), shapes=x.shapes.copy(order="K"), data=x.data.copy(), pattern=x.pattern, idxs=x.idxs.copy(), symmetry=x.symmetry, shape=x.shape)
 
@@ -1738,6 +1763,7 @@ class FlatFermionTensor(FlatSparseTensor):
             return NotImplemented
         return _flat_fermion_tensor_numpy_func_impls[func](*args, **kwargs)
 
+    @timing('uf')
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if ufunc in _flat_fermion_tensor_numpy_func_impls:
             types = tuple(
@@ -1805,8 +1831,8 @@ class FlatFermionTensor(FlatSparseTensor):
 
     @staticmethod
     @implements(np.tensordot)
+    @timing('td')
     def _tensordot(a, b, axes=2):
-        tax = time.perf_counter()
         if isinstance(axes, int):
             idxa = np.arange(-axes, 0, dtype=np.int32)
             idxb = np.arange(0, axes, dtype=np.int32)
@@ -1835,18 +1861,17 @@ class FlatFermionTensor(FlatSparseTensor):
         if len(idxa) == a.ndim and len(idxb) == b.ndim:
             return data[0]
         rt = a.__class__(q_labels, shapes, data, out_pattern, idxs, a.symmetry, shape=tuple(out_shape))
-        TIMINGS[0] += time.perf_counter() - tax
         return rt
 
     @staticmethod
     @implements(np.transpose)
+    @timing('tp')
     def _transpose(a, axes=None):
         if axes is None:
             axes = np.arange(a.ndim)[::-1]
         if a.n_blocks == 0:
             return a
         else:
-            tax = time.perf_counter()
             data = np.zeros_like(a.data)
             axes = np.array(axes, dtype=np.int32)
             backend = get_backend(a.symmetry)
@@ -1858,9 +1883,9 @@ class FlatFermionTensor(FlatSparseTensor):
             shape = [a.shape[ix] for ix in axes]
             rt = a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, pattern, a.idxs, a.symmetry, shape=tuple(shape))
-            TIMINGS[3] += time.perf_counter() - tax
             return rt
 
+    @timing('svd')
     def tensor_svd(
         self,
         left_idx,
@@ -1868,22 +1893,20 @@ class FlatFermionTensor(FlatSparseTensor):
         qpn_partition=None,
         **opts
     ):
-        tax = time.perf_counter()
         rt = flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, **opts)
-        TIMINGS[2] += time.perf_counter() - tax
         return rt
 
+    @timing('qr')
     def tensor_qr(
         self,
         left_idx,
         right_idx=None,
         mod="qr"
     ):
-        tax = time.perf_counter()
         rt = flat_qr_fast(self, left_idx, right_idx=right_idx, mod=mod)
-        TIMINGS[1] += time.perf_counter() - tax
         return rt
 
+    @timing('ex')
     def to_exponential(self, x):
         from pyblock3.algebra.fermion_ops import get_flat_exponential
         return get_flat_exponential(self, x)
