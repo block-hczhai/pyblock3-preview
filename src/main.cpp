@@ -22,6 +22,9 @@
 #include "flat_fermion.hpp"
 #include "flat_functor.hpp"
 #include "flat_sparse.hpp"
+#ifdef _USE_GPU
+#include "gpu/flat_fermion.hpp"
+#endif
 #include "hamiltonian.hpp"
 #include "hamiltonian_ptree.hpp"
 #include "qc_hamiltonian.hpp"
@@ -48,6 +51,59 @@ PYBIND11_MAKE_OPAQUE(
 PYBIND11_MAKE_OPAQUE(
     vector<std::tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
                       py::array_t<complex<double>>, py::array_t<uint64_t>>>);
+
+#ifdef _USE_GPU
+template <typename Q> void bind_gpu(py::module &m) {
+
+    py::module mg = m.def_submodule("gpu");
+
+    py::module flat_fermion_tensor = mg.def_submodule("flat_fermion_tensor");
+
+    flat_fermion_tensor.def(
+        "transpose",
+        [](const py::object &aqs, const py::object &ashs, const uintptr_t &aptr,
+           const py::object &ashape, const py::object &aidxs,
+           const py::object &perm, const uintptr_t &cptr, const string &dtype,
+           bool do_fermi) {
+            if (dtype == "float64")
+                return gpu_flat_fermion_tensor_transpose<Q, double>(
+                    aqs, ashs, aptr, ashape, aidxs, perm, cptr, do_fermi);
+            else if (dtype == "float32")
+                return gpu_flat_fermion_tensor_transpose<Q, float>(
+                           aqs, ashs, aptr, ashape, aidxs, perm, cptr,
+                           do_fermi);
+            else
+                throw runtime_error("dtype unsupported!");
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("aptr"), py::arg("ashape"),
+        py::arg("aidxs"), py::arg("perm"), py::arg("cptr"), py::arg("dtype"),
+        py::arg("do_fermi"));
+
+    flat_fermion_tensor.def(
+        "tensordot",
+        [](const py::object &aqs, const py::object &ashs, const uintptr_t &aptr,
+           const py::object &ashape, const py::object &aidxs,
+           const py::object &bqs, const py::object &bshs, const uintptr_t &bptr,
+           const py::object &bshape, const py::object &bidxs,
+           const py::object &idxa, const py::object &idxb,
+           const uintptr_t &cptr, const string &dtype, bool do_fermi) {
+            if (dtype == "float64")
+                return gpu_flat_fermion_tensor_tensordot<Q, double>(
+                    aqs, ashs, aptr, ashape, aidxs, bqs, bshs, bptr, bshape,
+                    bidxs, idxa, idxb, cptr, do_fermi);
+            else if (dtype == "float32")
+                return gpu_flat_fermion_tensor_tensordot<Q, float>(
+                    aqs, ashs, aptr, ashape, aidxs, bqs, bshs, bptr, bshape,
+                    bidxs, idxa, idxb, cptr, do_fermi);
+            else
+                throw runtime_error("dtype unsupported!");
+        },
+        py::arg("aqs"), py::arg("ashs"), py::arg("aptr"), py::arg("ashape"),
+        py::arg("aidxs"), py::arg("bqs"), py::arg("bshs"), py::arg("bptr"),
+        py::arg("bshape"), py::arg("bidxs"), py::arg("idxa"), py::arg("idxb"),
+        py::arg("cptr"), py::arg("dtype"), py::arg("do_fermi"));
+}
+#endif
 
 template <typename Q>
 void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
@@ -821,8 +877,6 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
         py::arg("plan"), py::arg("adata"), py::arg("bdata"), py::arg("cdata"));
 
     py::module flat_fermion_tensor = m.def_submodule("flat_fermion_tensor");
-    flat_fermion_tensor.def("skeleton", &flat_fermion_tensor_skeleton<Q>,
-                            py::arg("infos"), py::arg("dq"));
 
     // double
     flat_fermion_tensor.def(
@@ -958,6 +1012,10 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
         py::arg("aqs"), py::arg("ashs"), py::arg("adata"), py::arg("aidxs"),
         py::arg("bqs"), py::arg("bshs"), py::arg("bdata"), py::arg("bidxs"),
         py::arg("idxa"), py::arg("idxb"));
+
+#ifdef _USE_GPU
+    bind_gpu<Q>(m);
+#endif
 }
 
 template <typename Q = void>
@@ -1135,7 +1193,8 @@ PYBIND11_MODULE(block3, m) {
         },
         py::arg("a"), py::arg("b"), py::arg("idxa"), py::arg("idxb"),
         py::arg("alpha") = 1.0, py::arg("beta") = 0.0);
-    tensor.def("qr", &tensor_qr<complex<double>>, py::arg("x"), py::arg("is_qr"));
+    tensor.def("qr", &tensor_qr<complex<double>>, py::arg("x"),
+               py::arg("is_qr"));
     // mixed
     tensor.def(
         "tensordot",

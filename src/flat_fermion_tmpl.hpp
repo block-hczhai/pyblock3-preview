@@ -51,13 +51,6 @@ flat_fermion_tensor_qr<TMPL_Q, TMPL_FL>(const py::array_t<uint32_t> &aqs,
                                         int idx, const string &pattern,
                                         bool is_qr);
 
-#else
-
-TMPL_EXTERN template tuple<py::array_t<uint32_t>, py::array_t<uint32_t>,
-                           py::array_t<uint64_t>>
-flat_fermion_tensor_skeleton<TMPL_Q>(const vector<map_uint_uint<TMPL_Q>> &infos,
-                                     uint32_t fdq);
-
 #endif
 
 #endif

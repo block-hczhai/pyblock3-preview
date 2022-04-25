@@ -6,7 +6,7 @@ this.SVD_SCREENING = 1e-28
 this.DEFAULT_SYMMETRY = U11
 this.DEFAULT_FLAT = True
 this.DEFAULT_FERMION = True
-this.DEFAULT_BIG_TENSOR = False
+this.DEFAULT_LARGE = False
 this.DEFAULT_CUPY = False
 
 symmetry_map = {"U11": U11,

@@ -258,12 +258,13 @@ def _trim_singular_vals(
             n_chis = [np.sum(sblk>cutoff*smax) for sblk in s_data]
 
         if max_bond is not None and max_bond>0:
-            n_chi = np.sum(n_chis)
+            n_chi = np.sum([x.get() if hasattr(x, 'get') else x for x in n_chis])
             extra_bonds = n_chi - max_bond
             if extra_bonds >0:
                 if s is None:
                     s = np.concatenate(s_data)
                 s_ind = np.argsort(s)
+                s_ind = [x.get() if hasattr(x, 'get') else x for x in s_ind]
                 ind_map = []
                 for ix, sblk in enumerate(s_data):
                     ind_map += [ix,] * sblk.size
@@ -283,6 +284,7 @@ def _trim_singular_vals(
         if cutoff_mode in (4, 6):
             target *= np.sum(s)
         s_ind = np.argsort(s)
+        s_ind = [x.get() if hasattr(x, 'get') else x for x in s_ind]
         s_sorted = np.cumsum(np.sort(s))
         ind_map = []
         for ix, sblk in enumerate(s_data):
@@ -290,6 +292,7 @@ def _trim_singular_vals(
 
         n_chis = [sblk.size for sblk in s_data]
         ncut = np.sum(s_sorted<=target)
+        ncut = ncut.get() if hasattr(ncut, 'get') else ncut
         if max_bond is not None and max_bond>0:
             ncut = max(ncut, s.size-max_bond)
         for i in range(ncut):
@@ -335,7 +338,7 @@ def _trim_and_renorm_SVD(
 
         n_chis = _trim_singular_vals(s_data, cutoff,
                                 cutoff_mode, max_bond)
-    n_chi = np.sum(n_chis)
+    n_chi = np.sum([x.get() if hasattr(x, 'get') else x for x in n_chis])
     tot_size = np.sum([iblk.size for iblk in s_data])
     if n_chi < tot_size and renorm > 0:
         renorm_fac = _renorm_singular_vals(s_data,
@@ -1077,14 +1080,16 @@ def compute_phase(
         counted.append(x)
     return phase
 
-def eye(bond_info, flat=None):
+def eye(bond_info, flat=None, large=None):
     """Create tensor from BondInfo with Identity matrix."""
-    flat = setting.dispatch_settings(flat=flat)
+    flat, large = setting.dispatch_settings(flat=flat, large=large)
     blocks = []
     for sh, qs in SparseFermionTensor._skeleton((bond_info, bond_info)):
         blocks.append(SubTensor(reduced=np.eye(sh[0]), q_labels=qs))
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    if flat:
+    if large:
+        T = T.to_flat().to_large()
+    elif flat:
         T = T.to_flat()
     return T
 
@@ -1643,6 +1648,10 @@ class FlatFermionTensor(FlatSparseTensor):
             blocks[i] = SubTensor(
                 self.data[self.idxs[i]:self.idxs[i + 1]].reshape(self.shapes[i]), q_labels=qs)
         return SparseFermionTensor(blocks=blocks, pattern=self.pattern, shape=self.shape)
+    
+    def to_large(self, use_cupy=None, infos=None):
+        from .fermion_large import LargeFermionTensor
+        return LargeFermionTensor.from_flat(self, use_cupy=use_cupy, infos=infos)
 
     @staticmethod
     def from_sparse(spt):
@@ -1860,8 +1869,7 @@ class FlatFermionTensor(FlatSparseTensor):
 
         if len(idxa) == a.ndim and len(idxb) == b.ndim:
             return data[0]
-        rt = a.__class__(q_labels, shapes, data, out_pattern, idxs, a.symmetry, shape=tuple(out_shape))
-        return rt
+        return a.__class__(q_labels, shapes, data, out_pattern, idxs, a.symmetry, shape=tuple(out_shape))
 
     @staticmethod
     @implements(np.transpose)
@@ -1881,9 +1889,8 @@ class FlatFermionTensor(FlatSparseTensor):
                 backend.flat_sparse_tensor.transpose(a.shapes, a.data, a.idxs, axes, data)
             pattern = "".join([a.pattern[ix] for ix in axes])
             shape = [a.shape[ix] for ix in axes]
-            rt = a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
+            return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, pattern, a.idxs, a.symmetry, shape=tuple(shape))
-            return rt
 
     @timing('svd')
     def tensor_svd(
@@ -1893,8 +1900,7 @@ class FlatFermionTensor(FlatSparseTensor):
         qpn_partition=None,
         **opts
     ):
-        rt = flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, **opts)
-        return rt
+        return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, **opts)
 
     @timing('qr')
     def tensor_qr(
@@ -1903,8 +1909,7 @@ class FlatFermionTensor(FlatSparseTensor):
         right_idx=None,
         mod="qr"
     ):
-        rt = flat_qr_fast(self, left_idx, right_idx=right_idx, mod=mod)
-        return rt
+        return flat_qr(self, left_idx, right_idx=right_idx, mod=mod)
 
     @timing('ex')
     def to_exponential(self, x):

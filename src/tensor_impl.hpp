@@ -489,9 +489,9 @@ inline void xunglq(const int *m, const int *n, const int *k, complex<double> *a,
 
 template <typename FL>
 inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
-                   const int *n, FL *a, const int *lda, decltype(std::abs(FL())) *s, FL *u,
-                   const int *ldu, FL *vt, const int *ldvt, FL *work,
-                   const int *lwork, int *info);
+                   const int *n, FL *a, const int *lda,
+                   decltype(std::abs(FL())) *s, FL *u, const int *ldu, FL *vt,
+                   const int *ldvt, FL *work, const int *lwork, int *info);
 template <>
 inline void xgesvd(const char *jobu, const char *jobvt, const int *m,
                    const int *n, double *a, const int *lda, double *s,
@@ -623,33 +623,31 @@ void tensordot_impl(const FL *a, const int ndima, const ssize_t *na,
                     const FL alpha = 1.0, const FL beta = 0.0);
 
 // explicit template instantiation
-extern template void tensor_transpose_impl<double>(
-    int ndim, size_t size, const int *perm, const int *shape, const double *a,
-    double *c, const double alpha = 1.0, const double beta = 0.0);
+extern template void
+tensor_transpose_impl<double>(int ndim, size_t size, const int *perm,
+                              const int *shape, const double *a, double *c,
+                              const double alpha, const double beta);
 extern template void
 tensor_transpose_impl<float>(int ndim, size_t size, const int *perm,
                              const int *shape, const float *a, float *c,
-                             const float alpha = 1.0f, const float beta = 0.0f);
+                             const float alpha, const float beta);
 extern template void tensor_transpose_impl<complex<double>>(
     int ndim, size_t size, const int *perm, const int *shape,
-    const complex<double> *a, complex<double> *c,
-    const complex<double> alpha = 1.0, const complex<double> beta = 0.0);
-extern template void tensordot_impl<double>(const double *a, const int ndima,
-                                            const ssize_t *na, const double *b,
-                                            const int ndimb, const ssize_t *nb,
-                                            const int nctr, const int *idxa,
-                                            const int *idxb, double *c,
-                                            const double alpha = 1.0,
-                                            const double beta = 0.0);
+    const complex<double> *a, complex<double> *c, const complex<double> alpha,
+    const complex<double> beta);
+extern template void
+tensordot_impl<double>(const double *a, const int ndima, const ssize_t *na,
+                       const double *b, const int ndimb, const ssize_t *nb,
+                       const int nctr, const int *idxa, const int *idxb,
+                       double *c, const double alpha, const double beta);
 extern template void tensordot_impl<float>(const float *a, const int ndima,
                                            const ssize_t *na, const float *b,
                                            const int ndimb, const ssize_t *nb,
                                            const int nctr, const int *idxa,
                                            const int *idxb, float *c,
-                                           const float alpha = 1.0f,
-                                           const float beta = 0.0f);
+                                           const float alpha, const float beta);
 extern template void tensordot_impl<complex<double>>(
     const complex<double> *a, const int ndima, const ssize_t *na,
     const complex<double> *b, const int ndimb, const ssize_t *nb,
     const int nctr, const int *idxa, const int *idxb, complex<double> *c,
-    const complex<double> alpha = 1.0, const complex<double> beta = 0.0);
+    const complex<double> alpha, const complex<double> beta);
