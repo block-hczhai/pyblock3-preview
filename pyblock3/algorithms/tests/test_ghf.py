@@ -45,8 +45,8 @@ class TestDMRG(unittest.TestCase):
         assert np.abs(np.dot(mps.conj(), mps) - 1.0) < 1E-10
 
         bdims = [250] * 5 + [500] * 5
-        noises = [1E-5] * 2 + [1E-6] * 4 + [1E-7] * 3 + [0]
-        davthrds = [5E-3] * 4 + [1E-3] * 4 + [1E-4]
+        noises = [1E-4] * 2 + [1E-5] * 4 + [1E-7] * 3 + [0]
+        davthrds = [5E-4] * 4 + [5E-5] * 4 + [1E-5]
 
         with tempfile.TemporaryDirectory() as scratch:
             dmrg = CachedMPE(mps, mpo, mps, scratch=scratch).dmrg(bdims=bdims,

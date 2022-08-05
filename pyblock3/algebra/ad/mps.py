@@ -22,15 +22,17 @@
 """
 
 import numpy as np
+import jax.numpy as jnp
 from numpy.lib.mixins import NDArrayOperatorsMixin
 import numbers
 from collections import Counter
 from functools import reduce
 
-from .symmetry import BondInfo, BondFusingInfo
-from .core import SparseTensor, SubTensor, SliceableTensor, FermionTensor
-from .flat import FlatFermionTensor, FlatSparseTensor
-from ..symbolic.symbolic import SymbolicSparseTensor
+from ..symmetry import BondInfo, BondFusingInfo
+from ..core import SparseTensor, SubTensor, SliceableTensor, FermionTensor
+from .flat import FlatFermionTensor, FlatSparseTensor, jax_pytree_node
+from ..mps import MPSInfo
+from ...symbolic.symbolic import SymbolicSparseTensor
 
 
 def implements(np_func):
@@ -40,107 +42,10 @@ def implements(np_func):
                       _numpy_func_impls[np_func])[1]
 
 
-class MPSInfo:
-    """
-    BondInfo in every site in MPS
-    (a) For constrution of initial MPS.
-    (b) For tracking basis info in construction of SliceableTensor.
-
-    Attributes:
-        n_sites : int
-            Number of sites
-        vacuum : SZ
-            vacuum state
-        target : SZ
-            target state
-        basis : list(BondInfo)
-            BondInfo in each site
-        left_dims : list(BondInfo)
-            Truncated states for left block
-        right_dims : list(BondInfo)
-            Truncated states for right block
-    """
-
-    def __init__(self, n_sites, vacuum, target, basis):
-        self.n_sites = n_sites
-        self.vacuum = vacuum
-        self.target = target
-        self.basis = basis
-        self.left_dims = None
-        self.right_dims = None
-
-    def set_bond_dimension_fci(self, call_back=None):
-        """FCI bond dimensions"""
-
-        self.left_dims = [None] * (self.n_sites + 1)
-        self.left_dims[0] = self.basis[0].__class__()
-        self.left_dims[0][self.vacuum] = 1
-        for d in range(0, self.n_sites):
-            self.left_dims[d + 1] = self.left_dims[d] * self.basis[d]
-
-        self.right_dims = [None] * (self.n_sites + 1)
-        self.right_dims[-1] = self.basis[0].__class__()
-        self.right_dims[-1][self.target] = 1
-        for d in range(self.n_sites - 1, -1, -1):
-            self.right_dims[d] = (-self.basis[d]) * self.right_dims[d + 1]
-
-        if call_back is not None:
-            call_back(self)
-
-        for d in range(0, self.n_sites + 1):
-            self.left_dims[d] = self.left_dims[d].filter(self.right_dims[d])
-            self.right_dims[d] = self.right_dims[d].filter(self.left_dims[d])
-
-    def set_bond_dimension_occ(self, bond_dim, occ, bias=1):
-        """bond dimensions from occupation numbers"""
-
-        if self.left_dims is None:
-            self.set_bond_dimension_fci()
-
-        occ = np.array(occ, dtype=float)
-
-        self.left_dims, self.right_dims = self.basis[0].__class__.set_bond_dimension_occ(
-            self.basis, self.basis.__class__(
-                self.left_dims), self.basis.__class__(self.right_dims),
-            self.vacuum, self.target, bond_dim, np.array(occ, dtype=float), bias)
-
-    def set_bond_dimension(self, bond_dim, call_back=None):
-        """Truncated bond dimension based on FCI quantum numbers
-            each FCI quantum number has at least one state kept"""
-
-        if self.left_dims is None:
-            self.set_bond_dimension_fci(call_back=call_back)
-
-        for d in range(0, self.n_sites):
-            ref = self.left_dims[d] * self.basis[d]
-            self.left_dims[d + 1].truncate(bond_dim, ref)
-        for d in range(self.n_sites - 1, -1, -1):
-            ref = (-self.basis[d]) * self.right_dims[d + 1]
-            self.right_dims[d].truncate(bond_dim, ref)
-
-    def set_bond_dimension_thermal_limit(self):
-        """Set bond dimension for MPS at thermal-limit state in ancilla approach."""
-
-        if self.left_dims is None:
-            self.set_bond_dimension_fci(call_back=None)
-
-        for d in range(0, self.n_sites):
-            if d % 2 == 0:
-                self.left_dims[d + 1] = self.left_dims[d] * self.basis[d]
-            else:
-                self.left_dims[d + 1] = self.left_dims[d].keep_maximal()
-
-        for d in range(self.n_sites - 1, -1, -1):
-            if d % 2 != 0:
-                self.right_dims[d] = (-self.basis[d]) * self.right_dims[d + 1]
-            else:
-                self.right_dims[d] = self.right_dims[d + 1].keep_maximal()
-
-
 _mps_numpy_func_impls = {}
 _numpy_func_impls = _mps_numpy_func_impls
 
-
+@jax_pytree_node
 class MPS(NDArrayOperatorsMixin):
     """
     Matrix Product State / Matrix Product Operator.
@@ -165,6 +70,17 @@ class MPS(NDArrayOperatorsMixin):
         self.opts = opts if opts is not None else {}
         self.const = const
         self.dq = dq
+
+    def pytree_flatten(self):
+        traced = (*self.tensors, self.const, )
+        others = (self.opts, self.dq, )
+        return traced, others
+    
+    @classmethod
+    def pytree_unflatten(cls, others, traced):
+        opts, dq = others
+        tensors, const = list(traced[:-1]), traced[-1]
+        return cls(tensors=tensors, const=const, opts=opts, dq=dq)
 
     @property
     def n_sites(self):
@@ -419,7 +335,7 @@ class MPS(NDArrayOperatorsMixin):
         assert isinstance(a, MPS) and isinstance(b, MPS)
         assert a.n_sites == b.n_sites
 
-        left = np.array(0)
+        left = jnp.array(0.0)
         for i in range(a.n_sites):
             assert a.tensors[i].ndim == b.tensors[i].ndim
             if a.tensors[i].n_blocks == 0 or b.tensors[i].n_blocks == 0:
@@ -662,6 +578,21 @@ class MPS(NDArrayOperatorsMixin):
                 tensors[it] = FlatFermionTensor.from_fermion(ts)
             else:
                 tensors[it] = ts.to_flat()
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
+
+    @staticmethod
+    def _from_flat(a):
+        return a.to_flat()
+
+    def from_flat(self):
+        from ..flat import FlatFermionTensor as FF, FlatSparseTensor as FS
+        m = self.to_flat()
+        tensors = [None] * len(m.tensors)
+        for it, ts in enumerate(m.tensors):
+            if isinstance(ts, FS):
+                tensors[it] = FlatSparseTensor.from_flat(ts)
+            else:
+                tensors[it] = FlatFermionTensor.from_flat(ts)
         return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod
