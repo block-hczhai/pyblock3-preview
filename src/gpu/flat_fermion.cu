@@ -26,9 +26,57 @@
 #include <math.h>
 #include <numeric>
 
-#define _USE_NEW_PHASE
+#include <cuda_runtime.h>
+#include <cutensor.h>
+#include <moderngpu/kernel_load_balance.hxx>
 
-inline uint8_t compute_phase(const int *perm, int ndim, uint64_t par_pat,
+#define HANDLE_ERROR(x)                                                        \
+    {                                                                          \
+        const auto err = x;                                                    \
+        if (err != CUTENSOR_STATUS_SUCCESS) {                                  \
+            cout << "Error: " << cutensorGetErrorString(err) << endl;          \
+            abort();                                                           \
+        }                                                                      \
+    };
+
+inline std::tuple<cutensorHandle_t *, mgpu::standard_context_t *,
+                  mgpu::mem_t<uint8_t> *>
+_cuda_handle() {
+    static mgpu::standard_context_t _context(false);
+    static cutensorHandle_t _handle;
+    static mgpu::mem_t<uint8_t> _work;
+    static bool _initd = false;
+    if (!_initd) {
+        cout << "init cuda!" << endl;
+        _initd = true;
+        cutensorInit(&_handle);
+        _work = mgpu::mem_t<uint8_t>(16777728, _context);
+        cout << "init cuda end!" << endl;
+    }
+    return std::make_tuple(&_handle, &_context, &_work);
+}
+
+template <typename FL, typename = void> struct CUDAFL {
+    MGPU_DEVICE inline static FL neg(const FL &x) { return -x; }
+};
+
+template <typename FL>
+struct CUDAFL<FL,
+              typename enable_if<is_same<FL, complex<float>>::value>::type> {
+    MGPU_DEVICE inline static complex<float> neg(const complex<float> &x) {
+        return complex<float>(-real(x), -imag(x));
+    }
+};
+
+template <typename FL>
+struct CUDAFL<FL,
+              typename enable_if<is_same<FL, complex<double>>::value>::type> {
+    MGPU_DEVICE inline static complex<double> neg(const complex<double> &x) {
+        return complex<double>(-real(x), -imag(x));
+    }
+};
+
+inline uint8_t compute_phase(const int32_t *perm, int ndim, uint64_t par_pat,
                              int32_t *rev_idx, int32_t *fperm) {
     uint64_t tag = 0;
     int32_t i, k, l;
@@ -105,94 +153,162 @@ inline uint8_t compute_phase3(const int *perm, int ndim, int nctr,
 }
 
 template <typename Q, typename FL>
-void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
-                                   const py::array_t<uint32_t> &ashs,
-                                   const py::array_t<FL> &adata,
-                                   const py::array_t<uint64_t> &aidxs,
-                                   const py::array_t<int32_t> &perm,
-                                   py::array_t<FL> &cdata) {
+std::tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
+gpu_flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
+                                  const py::array_t<uint32_t> &ashs,
+                                  const uintptr_t &aptr,
+                                  const py::array_t<int64_t> &ashape,
+                                  const py::array_t<uint64_t> &aidxs,
+                                  const py::array_t<int32_t> &perm,
+                                  const uintptr_t &cptr, bool do_fermi) {
     int n_blocks_a = (int)ashs.shape()[0], ndima = (int)ashs.shape()[1];
     const ssize_t asi = ashs.strides()[0] / sizeof(uint32_t),
                   asj = ashs.strides()[1] / sizeof(uint32_t);
-    const int *perma = (const int *)perm.data();
-    const FL *pa = adata.data();
+    const int32_t *perma = (int32_t *)perm.data();
+    const FL *pa = reinterpret_cast<const FL *>(aptr);
     const uint64_t *pia = aidxs.data();
     const uint32_t *psha = ashs.data();
-    FL *pc = cdata.mutable_data();
+    const int64_t *shape_a = ashape.data();
+    FL *pc = reinterpret_cast<FL *>(cptr);
 
     const uint32_t *apqs = aqs.data();
-    vector<int8_t> phase_a(n_blocks_a);
+    vector<int8_t> phase_a(n_blocks_a, 1);
+    vector<int32_t> idxa(perm.size());
+    for (int i = 0; i < ndima; i++)
+        idxa[i] = i;
 
-#ifdef _USE_NEW_PHASE
+    if (do_fermi) {
+        assert(ndima <= 64);
+        vector<int32_t> rev_idx(ndima), fperm(ndima);
+        unordered_map<uint64_t, uint8_t> computed;
+        for (int ia = 0; ia < n_blocks_a; ia++) {
+            uint64_t par_pat = 0;
+            for (int j = 0; j < ndima; j++)
+                par_pat |= (uint64_t)Q::to_q(apqs[ia * asi + j * asj]).parity()
+                           << j;
+            if (!computed.count(par_pat))
+                computed[par_pat] = compute_phase(perma, ndima, par_pat,
+                                                  &rev_idx[0], &fperm[0]);
+            phase_a[ia] = 1 - (computed.at(par_pat) << 1);
+        }
+    }
 
-    // new impl
+    auto cudah = _cuda_handle();
+    cutensorHandle_t *phandle = get<0>(cudah);
+    mgpu::standard_context_t *pcontext = get<1>(cudah);
 
-    assert(ndima <= 64);
-    vector<int32_t> rev_idx(ndima), fperm(ndima);
-    unordered_map<uint64_t, uint8_t> computed;
-    for (int ia = 0; ia < n_blocks_a; ia++) {
-        uint64_t par_pat = 0;
+    vector<int64_t> shape_c(ndima), stride_a(ndima, 1), stride_c(ndima, 1);
+    int64_t size_c = 1;
+    for (int i = 0; i < ndima; i++)
+        shape_c[i] = shape_a[perma[i]], size_c *= shape_c[i];
+    for (int i = ndima - 1; i > 0; i--) {
+        stride_a[i - 1] = stride_a[i] * shape_a[i];
+        stride_c[i - 1] = stride_c[i] * shape_c[i];
+    }
+
+    cutensorTensorDescriptor_t desc_a, desc_c;
+    HANDLE_ERROR(cutensorInitTensorDescriptor(
+        phandle, &desc_a, ndima, shape_a, stride_a.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F,
+        CUTENSOR_OP_IDENTITY));
+
+    HANDLE_ERROR(cutensorInitTensorDescriptor(
+        phandle, &desc_c, ndima, shape_c.data(), stride_c.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F,
+        CUTENSOR_OP_IDENTITY));
+
+    FL alpha = (FL)1.0;
+    HANDLE_ERROR(cutensorPermutation(
+        phandle, &alpha, pa, &desc_a, idxa.data(), pc, &desc_c, perma,
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F, 0));
+
+    vector<uint32_t> shc_h(n_blocks_a * ndima);
+    for (int ia = 0; ia < n_blocks_a; ia++)
         for (int j = 0; j < ndima; j++)
-            par_pat |= (uint64_t)Q::to_q(apqs[ia * asi + j * asj]).parity()
-                       << j;
-        if (!computed.count(par_pat))
-            computed[par_pat] = compute_phase(perma, ndima, par_pat,
-                                              &rev_idx[0], &fperm[0]);
-        phase_a[ia] = 1 - (computed.at(par_pat) << 1);
-    }
+            shc_h[ia * ndima + j] = psha[ia * asi + perma[j] * asj];
 
-#else
-    // old impl
-
+    vector<uint64_t> idxc_h(n_blocks_a + 1, 0);
+    vector<int> segs_h(n_blocks_a + 1, 0);
     for (int ia = 0; ia < n_blocks_a; ia++) {
-        int pnuma[ndima];
-        for (int j = 0; j < ndima; j++) {
-            pnuma[j] = Q::to_q(apqs[ia * asi + j * asj]).parity();
-        }
-        int aparity_counter = 0;
-        list<int> acounted;
-        for (int xid = 0; xid < ndima; xid++) {
-            int idx_a = perma[xid];
-            for (int j = 0; j < idx_a; j++) {
-                bool a_not_counted =
-                    !(std::find(acounted.begin(), acounted.end(), j) !=
-                      acounted.end());
-                if (a_not_counted) {
-                    aparity_counter += pnuma[j] * pnuma[idx_a];
-                }
-            }
-            acounted.push_back(idx_a);
-        }
-        phase_a[ia] = pow(-1.0, (double)aparity_counter);
+        for (int j = 0; j < ndima; j++)
+            idxc_h[ia] +=
+                pia[ia] / stride_a[perma[j]] % shape_a[perma[j]] * stride_c[j];
+        if (phase_a[ia] == -1) {
+            int seglen = 1;
+            for (int j = 0; j < ndima - 1; j++)
+                seglen *= shc_h[ia * ndima + j];
+            segs_h[ia + 1] = segs_h[ia] + seglen;
+        } else
+            segs_h[ia + 1] = segs_h[ia];
+    }
+    idxc_h[n_blocks_a] = size_c;
+
+    if (do_fermi) {
+
+        mgpu::mem_t<int> segs = mgpu::to_mem(segs_h, *pcontext);
+        mgpu::mem_t<uint64_t> idxc = mgpu::to_mem(idxc_h, *pcontext);
+        mgpu::mem_t<uint32_t> shc = mgpu::to_mem(shc_h, *pcontext);
+        mgpu::mem_t<int64_t> gstride_c = mgpu::to_mem(stride_c, *pcontext);
+
+        transform_lbs(
+            [] MGPU_DEVICE(int index, int seg, int rank,
+                           mgpu::tuple<uint64_t> idxs, int ndim,
+                           FL *__restrict__ data,
+                           const uint32_t *__restrict__ shapes,
+                           const int64_t *__restrict__ strides) {
+                uint64_t x = get<0>(idxs);
+                for (int i = ndim - 2; i >= 0; i--)
+                    x += rank % shapes[seg * ndim + i] * strides[i],
+                        rank /= shapes[seg * ndim + i];
+                for (int j = shapes[seg * ndim + ndim - 1], i = 0; i < j; i++)
+                    data[x + i] = CUDAFL<FL>::neg(data[x + i]);
+            },
+            segs_h.back(), segs.data(), n_blocks_a,
+            mgpu::make_tuple(idxc.data()), *pcontext, ndima, pc, shc.data(),
+            gstride_c.data());
     }
 
-#endif
+    py::array_t<uint32_t> cqs(vector<ssize_t>{n_blocks_a, ndima});
+    py::array_t<uint32_t> cshs(vector<ssize_t>{n_blocks_a, ndima});
+    py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_a + 1});
+    memcpy(cshs.mutable_data(), shc_h.data(), sizeof(uint32_t) * shc_h.size());
+    memcpy(cidxs.mutable_data(), idxc_h.data(),
+           sizeof(uint64_t) * idxc_h.size());
+    uint32_t *cpqs = cqs.mutable_data();
+    for (int ia = 0; ia < n_blocks_a; ia++)
+        for (int j = 0; j < ndima; j++)
+            cpqs[ia * ndima + j] = apqs[ia * asi + perma[j] * asj];
 
-    for (int ia = 0; ia < n_blocks_a; ia++) {
-        const FL *a = pa + pia[ia];
-        FL *c = pc + pia[ia];
-        int shape_a[ndima];
-        for (int i = 0; i < ndima; i++)
-            shape_a[i] = psha[ia * asi + i * asj];
-        uint64_t size_a = (uint64_t)(pia[ia + 1] - pia[ia]);
-        tensor_transpose_impl<FL>(ndima, size_a, perma, shape_a, a, c,
-                                  (FL)phase_a[ia], 0.0);
-    }
+    return std::make_tuple(cqs, cshs, cidxs);
 }
 
 template <typename Q, typename FL>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
-      py::array_t<uint64_t>>
-flat_fermion_tensor_tensordot(
+std::tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
+gpu_flat_fermion_tensor_tensordot(
     const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
-    const py::array_t<FL> &adata, const py::array_t<uint64_t> &aidxs,
-    const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
-    const py::array_t<FL> &bdata, const py::array_t<uint64_t> &bidxs,
-    const py::array_t<int> &idxa, const py::array_t<int> &idxb) {
-    if (aqs.shape()[0] == 0)
-        return std::make_tuple(aqs, ashs, adata, aidxs);
-    else if (bqs.shape()[0] == 0)
-        return std::make_tuple(bqs, bshs, bdata, bidxs);
+    const uintptr_t &aptr, const py::array_t<int64_t> &ashape,
+    const py::array_t<uint64_t> &aidxs, const py::array_t<uint32_t> &bqs,
+    const py::array_t<uint32_t> &bshs, const uintptr_t &bptr,
+    const py::array_t<int64_t> &bshape, const py::array_t<uint64_t> &bidxs,
+    const py::array_t<int> &idxa, const py::array_t<int> &idxb,
+    const uintptr_t &cptr, bool do_fermi) {
+    if (aqs.shape()[0] == 0) {
+        int64_t size_a = 1;
+        for (int i = 0; i < (int)ashape.size(); i++)
+            size_a *= ashape.data()[i];
+        cudaMemcpy(reinterpret_cast<void *>(cptr),
+                   reinterpret_cast<const void *>(aptr), sizeof(FL) * size_a,
+                   cudaMemcpyDeviceToDevice);
+        return std::make_tuple(aqs, ashs, aidxs);
+    } else if (bqs.shape()[0] == 0) {
+        int64_t size_b = 1;
+        for (int i = 0; i < (int)bshape.size(); i++)
+            size_b *= bshape.data()[i];
+        cudaMemcpy(reinterpret_cast<void *>(cptr),
+                   reinterpret_cast<const void *>(bptr), sizeof(FL) * size_b,
+                   cudaMemcpyDeviceToDevice);
+        return std::make_tuple(bqs, bshs, bidxs);
+    }
 
     int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
     int n_blocks_b = (int)bqs.shape()[0], ndimb = (int)bqs.shape()[1];
@@ -204,6 +320,12 @@ flat_fermion_tensor_tensordot(
                   bsj = bqs.strides()[1] / sizeof(uint32_t);
     assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
     assert(memcmp(bqs.strides(), bshs.strides(), 2 * sizeof(ssize_t)) == 0);
+    const uint32_t *apqs = aqs.data(), *bpqs = bqs.data();
+    const FL *pa = reinterpret_cast<const FL *>(aptr);
+    const FL *pb = reinterpret_cast<const FL *>(bptr);
+    FL *pc = reinterpret_cast<FL *>(cptr);
+    const int64_t *shape_a = ashape.data();
+    const int64_t *shape_b = bshape.data();
 
     // sort contracted indices (for tensor a)
     int pidxa[nctr], pidxb[nctr], ctr_idx[nctr];
@@ -214,35 +336,6 @@ flat_fermion_tensor_tensordot(
          [ppidxa](int a, int b) { return ppidxa[a] < ppidxa[b]; });
     for (int i = 0; i < nctr; i++)
         pidxa[i] = ppidxa[ctr_idx[i]], pidxb[i] = ppidxb[ctr_idx[i]];
-
-    // checking whether permute is necessary
-    int trans_a = 0, trans_b = 0;
-    if (nctr == 0)
-        trans_a = 1;
-    else if (pidxa[nctr - 1] - pidxa[0] == nctr - 1) {
-        if (pidxa[0] == 0 ||
-            is_shape_one(ashs.data(), n_blocks_a, pidxa[0], asi, asj))
-            trans_a = 1;
-        else if (pidxa[nctr - 1] == ndima - 1 ||
-                 is_shape_one(ashs.data() + (pidxa[nctr - 1] + 1) * asj,
-                              n_blocks_a, ndima - (pidxa[nctr - 1] + 1), asi,
-                              asj))
-            trans_a = -1;
-    }
-
-    if (nctr == 0)
-        trans_b = 1;
-    else if (is_sorted(pidxb, pidxb + nctr) &&
-             pidxb[nctr - 1] - pidxb[0] == nctr - 1) {
-        if (pidxb[0] == 0 ||
-            is_shape_one(bshs.data(), n_blocks_b, pidxb[0], bsi, bsj))
-            trans_b = 1;
-        else if (pidxb[nctr - 1] == ndimb - 1 ||
-                 is_shape_one(bshs.data() + (pidxb[nctr - 1] + 1) * bsj,
-                              n_blocks_b, ndimb - (pidxb[nctr - 1] + 1), bsi,
-                              bsj))
-            trans_b = -1;
-    }
 
     // free indices
     int maska[ndima], maskb[ndimb], outa[ndima - nctr], outb[ndimb - nctr];
@@ -260,20 +353,179 @@ flat_fermion_tensor_tensordot(
     // permutation
     vector<int> perma(ndima, -1);
     vector<int> permb(ndimb, -1);
-    vector<uint64_t> viatr(n_blocks_a + 1, -1);
-    vector<uint64_t> vibtr(n_blocks_b + 1, -1);
-    uint64_t *piatr = viatr.data(), *pibtr = vibtr.data();
-    if (trans_a == 0) {
-        for (int i = 0; i < nctr; i++)
-            perma[i] = pidxa[i];
-        for (int i = nctr; i < ndima; i++)
-            perma[i] = outa[i - nctr];
+    for (int i = 0; i < nctr; i++)
+        perma[i] = pidxa[i];
+    for (int i = nctr; i < ndima; i++)
+        perma[i] = outa[i - nctr];
+    for (int i = 0; i < nctr; i++)
+        permb[i] = pidxb[i];
+    for (int i = nctr; i < ndimb; i++)
+        permb[i] = outb[i - nctr];
+
+    auto cudah = _cuda_handle();
+    cutensorHandle_t *phandle = get<0>(cudah);
+    mgpu::standard_context_t *pcontext = get<1>(cudah);
+    mgpu::mem_t<uint8_t> *work = get<2>(cudah);
+
+    vector<int64_t> shape_ap(ndima), stride_a(ndima, 1), stride_ap(ndima, 1);
+    vector<int64_t> shape_bp(ndimb), stride_b(ndimb, 1), stride_bp(ndimb, 1);
+    vector<int32_t> gidx(max(ndima, ndimb));
+
+    for (int i = 0; i < max(ndima, ndimb); i++)
+        gidx[i] = i;
+    int64_t size_ap = 1;
+    for (int i = 0; i < ndima; i++)
+        shape_ap[i] = shape_a[perma[i]], size_ap *= shape_ap[i];
+    for (int i = ndima - 1; i > 0; i--) {
+        stride_a[i - 1] = stride_a[i] * shape_a[i];
+        stride_ap[i - 1] = stride_ap[i] * shape_ap[i];
     }
-    if (trans_b == 0) {
-        for (int i = 0; i < nctr; i++)
-            permb[i] = pidxb[i];
-        for (int i = nctr; i < ndimb; i++)
-            permb[i] = outb[i - nctr];
+
+    int64_t size_bp = 1;
+    for (int i = 0; i < ndimb; i++)
+        shape_bp[i] = shape_b[permb[i]], size_bp *= shape_bp[i];
+    for (int i = ndimb - 1; i > 0; i--) {
+        stride_b[i - 1] = stride_b[i] * shape_b[i];
+        stride_bp[i - 1] = stride_bp[i] * shape_bp[i];
+    }
+
+    mgpu::mem_t<FL> tap(size_ap, *pcontext), tbp(size_bp, *pcontext);
+    FL *pap = tap.data(), *pbp = tbp.data();
+
+    cutensorTensorDescriptor_t desc_a, desc_ap;
+    HANDLE_ERROR(cutensorInitTensorDescriptor(
+        phandle, &desc_a, ndima, shape_a, stride_a.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F,
+        CUTENSOR_OP_IDENTITY));
+
+    HANDLE_ERROR(cutensorInitTensorDescriptor(
+        phandle, &desc_ap, ndima, shape_ap.data(), stride_ap.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F,
+        CUTENSOR_OP_IDENTITY));
+
+    const FL alpha = (FL)1.0, beta = (FL)0.0;
+    HANDLE_ERROR(cutensorPermutation(
+        phandle, &alpha, pa, &desc_a, gidx.data(), pap, &desc_ap, perma.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F, 0));
+
+    cutensorTensorDescriptor_t desc_b, desc_bp;
+    HANDLE_ERROR(cutensorInitTensorDescriptor(
+        phandle, &desc_b, ndimb, shape_b, stride_b.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F,
+        CUTENSOR_OP_IDENTITY));
+
+    HANDLE_ERROR(cutensorInitTensorDescriptor(
+        phandle, &desc_bp, ndimb, shape_bp.data(), stride_bp.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F,
+        CUTENSOR_OP_IDENTITY));
+
+    HANDLE_ERROR(cutensorPermutation(
+        phandle, &alpha, pb, &desc_b, gidx.data(), pbp, &desc_bp, permb.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F, 0));
+
+    vector<int8_t> phase_a(n_blocks_a, 1), phase_b(n_blocks_b, 1);
+    uint64_t *pia = (uint64_t *)aidxs.data(), *pib = (uint64_t *)bidxs.data();
+
+    if (do_fermi) {
+        assert(ndima <= 64 && ndimb <= 64);
+        vector<int32_t> rev_idx(max(ndima, ndimb) + 1), fperm(max(ndima, ndimb) + 1);
+        unordered_map<uint64_t, uint8_t> computed_a, computed_b;
+        for (int i = 0; i < n_blocks_a; i++) {
+            uint64_t par_pat = 0;
+            for (int j = 0; j < ndima; j++)
+                par_pat |= (uint64_t)Q::to_q(apqs[i * asi + j * asj]).parity()
+                           << j;
+            if (!computed_a.count(par_pat))
+                computed_a[par_pat] = compute_phase2(
+                    ppidxa, ndima, nctr, par_pat, &rev_idx[0], &fperm[0]);
+            phase_a[i] = 1 - (computed_a.at(par_pat) << 1);
+        }
+
+        for (int i = 0; i < n_blocks_b; i++) {
+            uint64_t par_pat = 0;
+            for (int j = 0; j < ndimb; j++)
+                par_pat |= (uint64_t)Q::to_q(bpqs[i * bsi + j * bsj]).parity()
+                           << j;
+            if (!computed_b.count(par_pat))
+                computed_b[par_pat] = compute_phase3(
+                    ppidxb, ndimb, nctr, par_pat, &rev_idx[0], &fperm[0]);
+            phase_b[i] = 1 - (computed_b.at(par_pat) << 1);
+        }
+
+        const uint32_t *psh = ashs.data();
+        vector<uint32_t> shap_h(n_blocks_a * ndima);
+        for (int ia = 0; ia < n_blocks_a; ia++)
+            for (int j = 0; j < ndima; j++)
+                shap_h[ia * ndima + j] = psh[ia * asi + perma[j] * asj];
+
+        vector<uint64_t> idxap_h(n_blocks_a + 1, 0);
+        vector<int> segap_h(n_blocks_a + 1, 0);
+        for (int ia = 0; ia < n_blocks_a; ia++) {
+            for (int j = 0; j < ndima; j++)
+                idxap_h[ia] += pia[ia] / stride_a[perma[j]] %
+                               shape_a[perma[j]] * stride_ap[j];
+            if (phase_a[ia] == -1) {
+                int seglen = 1;
+                for (int j = 0; j < ndima - 1; j++)
+                    seglen *= shap_h[ia * ndima + j];
+                segap_h[ia + 1] = segap_h[ia] + seglen;
+            } else
+                segap_h[ia + 1] = segap_h[ia];
+        }
+        idxap_h[n_blocks_a] = size_ap;
+
+        psh = bshs.data();
+        vector<uint32_t> shbp_h(n_blocks_b * ndimb);
+        for (int ib = 0; ib < n_blocks_b; ib++)
+            for (int j = 0; j < ndimb; j++)
+                shbp_h[ib * ndimb + j] = psh[ib * bsi + permb[j] * bsj];
+
+        vector<uint64_t> idxbp_h(n_blocks_b + 1, 0);
+        vector<int> segbp_h(n_blocks_b + 1, 0);
+        for (int ib = 0; ib < n_blocks_b; ib++) {
+            for (int j = 0; j < ndimb; j++)
+                idxbp_h[ib] += pib[ib] / stride_b[permb[j]] %
+                               shape_b[permb[j]] * stride_bp[j];
+            if (phase_b[ib] == -1) {
+                int seglen = 1;
+                for (int j = 0; j < ndimb - 1; j++)
+                    seglen *= shbp_h[ib * ndimb + j];
+                segbp_h[ib + 1] = segbp_h[ib] + seglen;
+            } else
+                segbp_h[ib + 1] = segbp_h[ib];
+        }
+        idxbp_h[n_blocks_b] = size_bp;
+
+        mgpu::mem_t<int> segs = mgpu::to_mem(segap_h, *pcontext);
+        mgpu::mem_t<uint64_t> idxp = mgpu::to_mem(idxap_h, *pcontext);
+        mgpu::mem_t<uint32_t> shp = mgpu::to_mem(shap_h, *pcontext);
+        mgpu::mem_t<int64_t> gstride_p = mgpu::to_mem(stride_ap, *pcontext);
+
+        auto k = [] MGPU_DEVICE(int index, int seg, int rank,
+                                mgpu::tuple<uint64_t> idxs, int ndim,
+                                FL *__restrict__ data,
+                                const uint32_t *__restrict__ shapes,
+                                const int64_t *__restrict__ strides) {
+            uint64_t x = get<0>(idxs);
+            for (int i = ndim - 2; i >= 0; i--)
+                x += rank % shapes[seg * ndim + i] * strides[i],
+                    rank /= shapes[seg * ndim + i];
+            for (int j = shapes[seg * ndim + ndim - 1], i = 0; i < j; i++)
+                data[x + i] = CUDAFL<FL>::neg(data[x + i]);
+        };
+
+        transform_lbs(k, segap_h.back(), segs.data(), n_blocks_a,
+                      mgpu::make_tuple(idxp.data()), *pcontext, ndima, pap,
+                      shp.data(), gstride_p.data());
+
+        segs = mgpu::to_mem(segbp_h, *pcontext);
+        idxp = mgpu::to_mem(idxbp_h, *pcontext);
+        shp = mgpu::to_mem(shbp_h, *pcontext);
+        gstride_p = mgpu::to_mem(stride_bp, *pcontext);
+
+        transform_lbs(k, segbp_h.back(), segs.data(), n_blocks_b,
+                      mgpu::make_tuple(idxp.data()), *pcontext, ndimb, pbp,
+                      shp.data(), gstride_p.data());
     }
 
     // free and contracted dims
@@ -300,95 +552,18 @@ flat_fermion_tensor_tensordot(
     // contracted q_label hashs
     vector<size_t> ctrqas(n_blocks_a), ctrqbs(n_blocks_b), outqas(n_blocks_a),
         outqbs(n_blocks_b);
-    vector<int8_t> phase_a(n_blocks_a), phase_b(n_blocks_b);
 
     psh = aqs.data();
-    const uint32_t *apqs = aqs.data();
-
     for (int i = 0; i < n_blocks_a; i++) {
         ctrqas[i] = q_labels_hash(psh + i * asi, nctr, pidxa, asj);
         outqas[i] = q_labels_hash(psh + i * asi, ndima - nctr, outa, asj);
     }
 
     psh = bqs.data();
-    const uint32_t *bpqs = bqs.data();
     for (int i = 0; i < n_blocks_b; i++) {
         ctrqbs[i] = q_labels_hash(psh + i * bsi, nctr, pidxb, bsj);
         outqbs[i] = q_labels_hash(psh + i * bsi, ndimb - nctr, outb, bsj);
     }
-
-#ifdef _USE_NEW_PHASE
-
-    assert(ndima <= 64 && ndimb <= 64);
-    vector<int32_t> rev_idx(max(ndima, ndimb) + 1), fperm(max(ndima, ndimb) + 1);
-    unordered_map<uint64_t, uint8_t> computed_a, computed_b;
-    for (int i = 0; i < n_blocks_a; i++) {
-        uint64_t par_pat = 0;
-        for (int j = 0; j < ndima; j++)
-            par_pat |= (uint64_t)Q::to_q(apqs[i * asi + j * asj]).parity() << j;
-        if (!computed_a.count(par_pat))
-            computed_a[par_pat] = compute_phase2(ppidxa, ndima, nctr, par_pat,
-                                                &rev_idx[0], &fperm[0]);
-        phase_a[i] = 1 - (computed_a.at(par_pat) << 1);
-    }
-
-    for (int i = 0; i < n_blocks_b; i++) {
-        uint64_t par_pat = 0;
-        for (int j = 0; j < ndimb; j++)
-            par_pat |= (uint64_t)Q::to_q(bpqs[i * bsi + j * bsj]).parity() << j;
-        if (!computed_b.count(par_pat))
-            computed_b[par_pat] = compute_phase3(ppidxb, ndimb, nctr, par_pat,
-                                                &rev_idx[0], &fperm[0]);
-        phase_b[i] = 1 - (computed_b.at(par_pat) << 1);
-    }
-
-#else
-
-    for (int i = 0; i < n_blocks_a; i++) {
-        int pnuma[ndima];
-        for (int j = 0; j < ndima; j++) {
-            pnuma[j] = Q::to_q(apqs[i * asi + j * asj]).parity();
-        }
-        int aparity_counter = 0;
-        list<int> acounted;
-        for (int xid = 0; xid < nctr; xid++) {
-            int idx_a = ppidxa[xid];
-            for (int j = idx_a + 1; j < ndima; j++) {
-                bool a_not_counted =
-                    !(std::find(acounted.begin(), acounted.end(), j) !=
-                      acounted.end());
-                if (a_not_counted) {
-                    aparity_counter += pnuma[j] * pnuma[idx_a];
-                }
-            }
-            acounted.push_back(idx_a);
-        }
-        phase_a[i] = pow(-1.0, (double)aparity_counter);
-    }
-
-    for (int i = 0; i < n_blocks_b; i++) {
-        int pnumb[ndimb];
-        for (int j = 0; j < ndimb; j++) {
-            pnumb[j] = Q::to_q(bpqs[i * bsi + j * bsj]).parity();
-        }
-        int bparity_counter = 0;
-        list<int> bcounted;
-        for (int xid = 0; xid < nctr; xid++) {
-            int idx_b = ppidxb[xid];
-            for (int j = 0; j < idx_b; j++) {
-                bool b_not_counted =
-                    !(std::find(bcounted.begin(), bcounted.end(), j) !=
-                      bcounted.end());
-                if (b_not_counted) {
-                    bparity_counter += pnumb[j] * pnumb[idx_b];
-                }
-            }
-            bcounted.push_back(idx_b);
-        }
-        phase_b[i] = pow(-1.0, (double)bparity_counter);
-    }
-
-#endif
 
     unordered_map<size_t, vector<int>> map_idx_b;
     for (int i = 0; i < n_blocks_b; i++)
@@ -401,7 +576,6 @@ flat_fermion_tensor_tensordot(
     int n_blocks_c = 0;
     for (int ia = 0; ia < n_blocks_a; ia++) {
         if (map_idx_b.count(ctrqas[ia])) {
-            piatr[ia] = 0;
             const auto &vb = map_idx_b.at(ctrqas[ia]);
             vector<uint32_t> q_out(ndimc);
             psh = aqs.data() + ia * asi;
@@ -418,7 +592,6 @@ flat_fermion_tensor_tensordot(
                     }
                 if (!same)
                     continue;
-                pibtr[ib] = 0;
                 size_t hout = outqas[ia];
                 hout ^= outqbs[ib] + 0x9E3779B9 + (hout << 6) + (hout >> 2);
                 psh = bqs.data() + ib * bsi;
@@ -449,20 +622,28 @@ flat_fermion_tensor_tensordot(
     vector<ssize_t> sh = {n_blocks_c, ndimc};
     py::array_t<uint32_t> cqs(sh), cshs(sh);
     py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
+    py::array_t<int64_t> shape_c(vector<ssize_t>{ndimc});
     assert(cqs.strides()[1] == sizeof(uint32_t));
     assert(cshs.strides()[1] == sizeof(uint32_t));
-    py::array_t<FL> cdata(vector<ssize_t>{csize});
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
     uint64_t *pcidxs = cidxs.mutable_data();
-    vector<uint32_t> psha(n_blocks_a * ndima), pshb(n_blocks_b * ndimb);
-    for (int i = 0; i < n_blocks_a; i++)
-        for (int j = 0; j < ndima; j++)
-            psha[i * ndima + j] = ashs.data()[i * asi + j * asj];
-    for (int i = 0; i < n_blocks_b; i++)
-        for (int j = 0; j < ndimb; j++)
-            pshb[i * ndimb + j] = bshs.data()[i * bsi + j * bsj];
+    int64_t *pshapec = shape_c.mutable_data();
+    vector<int64_t> mshapec(3, 1);
+    for (int j = 0; j < ndima - nctr; j++) {
+        pshapec[j] = shape_a[outa[j]];
+        mshapec[0] *= pshapec[j];
+    }
+    for (int j = 0; j < nctr; j++)
+        mshapec[2] *= shape_a[pidxa[j]];
+    for (int j = 0; j < ndimb - nctr; j++) {
+        pshapec[j + ndima - nctr] = shape_b[outb[j]];
+        mshapec[1] *= pshapec[j + ndima - nctr];
+    }
+    vector<int64_t> mstridec = {mshapec[1], 1};
+    vector<int64_t> stride_c(ndimc, 1);
+    for (int i = ndimc - 1; i > 0; i--)
+        stride_c[i - 1] = stride_c[i] * pshapec[i];
 
-    pcidxs[0] = 0;
     for (auto &mq : map_out_q) {
         for (auto &mmq : mq.second) {
             int xia = mmq.second[0].first, xib = mmq.second[0].second;
@@ -471,92 +652,83 @@ flat_fermion_tensor_tensordot(
                    (ndima - nctr) * sizeof(uint32_t));
             memcpy(pcshs + (ndima - nctr), b_free_dims[xib].data(),
                    (ndimb - nctr) * sizeof(uint32_t));
-            pcidxs[1] = pcidxs[0] + (uint32_t)a_free_dim[xia] * b_free_dim[xib];
+            uint64_t xpic = 0;
+            for (int j = 0; j < ndima - nctr; j++)
+                xpic += pia[xia] / stride_a[outa[j]] % shape_a[outa[j]] *
+                        stride_c[j];
+            for (int j = 0; j < ndimb - nctr; j++)
+                xpic += pib[xib] / stride_b[outb[j]] % shape_b[outb[j]] *
+                        stride_c[j + ndima - nctr];
+            pcidxs[0] = xpic;
             pcqs += ndimc;
             pcshs += ndimc;
             pcidxs++;
         }
     }
+    pcidxs[0] = csize;
 
-    // transpose
-    FL *pa = (FL *)adata.data(), *pb = (FL *)bdata.data();
-    uint64_t *pia = (uint64_t *)aidxs.data(), *pib = (uint64_t *)bidxs.data();
-    if (trans_a == 0) {
-        uint64_t iatr = 0;
-        for (int ia = 0; ia < n_blocks_a; ia++)
-            if (piatr[ia] != -1)
-                piatr[ia] = iatr, iatr += pia[ia + 1] - pia[ia];
-        FL *new_pa = new FL[iatr];
-        uint64_t *new_pia = piatr;
-        for (int ia = 0; ia < n_blocks_a; ia++)
-            if (piatr[ia] != -1) {
-                FL *a = pa + pia[ia], *new_a = new_pa + new_pia[ia];
-                const int *shape_a = (const int *)(psha.data() + ia * ndima);
-                uint64_t size_a = (uint64_t)(pia[ia + 1] - pia[ia]);
-                tensor_transpose_impl<FL>(ndima, size_a, perma.data(), shape_a,
-                                          a, new_a, 1.0, 0.0);
-            }
-        trans_a = 1;
-        pa = new_pa;
-        pia = new_pia;
-    }
+    vector<int64_t> mshapea = {mshapec[2], mshapec[0]};
+    vector<int64_t> mshapeb = {mshapec[2], mshapec[1]};
+    vector<int64_t> mstridea = {mshapec[0], 1};
+    vector<int64_t> mstrideb = {mshapec[1], 1};
 
-    if (trans_b == 0) {
-        uint64_t ibtr = 0;
-        for (int ib = 0; ib < n_blocks_b; ib++)
-            if (pibtr[ib] != -1)
-                pibtr[ib] = ibtr, ibtr += pib[ib + 1] - pib[ib];
-        FL *new_pb = new FL[ibtr];
-        uint64_t *new_pib = pibtr;
-        for (int ib = 0; ib < n_blocks_b; ib++)
-            if (pibtr[ib] != -1) {
-                FL *b = pb + pib[ib], *new_b = new_pb + new_pib[ib];
-                const int *shape_b = (const int *)(pshb.data() + ib * ndimb);
-                uint64_t size_b = (uint64_t)(pib[ib + 1] - pib[ib]);
-                tensor_transpose_impl<FL>(ndimb, size_b, permb.data(), shape_b,
-                                          b, new_b, 1.0, 0.0);
-            }
-        trans_b = 1;
-        pb = new_pb;
-        pib = new_pib;
-    }
+    cutensorTensorDescriptor_t desc_ma, desc_mb, desc_mc;
+    HANDLE_ERROR(cutensorInitTensorDescriptor(
+        phandle, &desc_ma, 2, mshapea.data(), mstridea.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F,
+        CUTENSOR_OP_IDENTITY));
+    HANDLE_ERROR(cutensorInitTensorDescriptor(
+        phandle, &desc_mb, 2, mshapeb.data(), mstrideb.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F,
+        CUTENSOR_OP_IDENTITY));
+    HANDLE_ERROR(cutensorInitTensorDescriptor(
+        phandle, &desc_mc, 2, mshapec.data(), mstridec.data(),
+        is_same<FL, float>::value ? CUDA_R_32F : CUDA_R_64F,
+        CUTENSOR_OP_IDENTITY));
 
-    auto tra = trans_a == -1 ? "n" : "t";
-    auto trb = trans_b == 1 ? "n" : "t";
-    const FL alpha = 1.0, beta = 0.0;
+    uint32_t arma, armb, armc;
+    HANDLE_ERROR(
+        cutensorGetAlignmentRequirement(phandle, pap, &desc_ma, &arma));
+    HANDLE_ERROR(
+        cutensorGetAlignmentRequirement(phandle, pbp, &desc_mb, &armb));
+    HANDLE_ERROR(cutensorGetAlignmentRequirement(phandle, pc, &desc_mc, &armc));
 
-    FL *pc = cdata.mutable_data();
-    for (auto &mq : map_out_q) {
-        for (auto &mmq : mq.second) {
-            int xia = 0, xib = 0;
-            for (size_t i = 0; i < mmq.second.size(); i++) {
-                xia = mmq.second[i].first, xib = mmq.second[i].second;
-                FL phase = (FL)phase_a[xia] * (FL)phase_b[xib];
-                int ldb = trans_b == 1 ? b_free_dim[xib] : ctr_dim[xia];
-                int lda = trans_a == -1 ? ctr_dim[xia] : a_free_dim[xia];
-                int ldc = b_free_dim[xib];
-                xgemm<FL>(trb, tra, &b_free_dim[xib], &a_free_dim[xia],
-                          &ctr_dim[xia], &phase, pb + pib[xib], &ldb,
-                          pa + pia[xia], &lda, i == 0 ? &beta : &alpha, pc,
-                          &ldc);
-            }
-            pc += (uint32_t)a_free_dim[xia] * b_free_dim[xib];
-        }
-    }
+    vector<int> mmodea = {2, 0}, mmodeb = {2, 1}, mmodec = {0, 1};
 
-    if (pa != adata.data())
-        delete[] pa;
-    if (pb != bdata.data())
-        delete[] pb;
+    cutensorContractionDescriptor_t desc_ctr;
+    HANDLE_ERROR(cutensorInitContractionDescriptor(
+        phandle, &desc_ctr, &desc_ma, mmodea.data(), arma, &desc_mb,
+        mmodeb.data(), armb, &desc_mc, mmodec.data(), armc, &desc_mc,
+        mmodec.data(), armc,
+        is_same<FL, float>::value ? CUTENSOR_COMPUTE_32F
+                                  : CUTENSOR_COMPUTE_64F));
 
-    return std::make_tuple(cqs, cshs, cdata, cidxs);
+    cutensorContractionFind_t find;
+    HANDLE_ERROR(
+        cutensorInitContractionFind(phandle, &find, CUTENSOR_ALGO_DEFAULT));
+
+    size_t worksize = 0;
+    HANDLE_ERROR(cutensorContractionGetWorkspace(
+        phandle, &desc_ctr, &find, CUTENSOR_WORKSPACE_RECOMMENDED, &worksize));
+    if (worksize > work->size())
+        *work = mgpu::mem_t<uint8_t>(worksize * 2, *pcontext);
+
+    cutensorContractionPlan_t plan;
+    HANDLE_ERROR(cutensorInitContractionPlan(phandle, &plan, &desc_ctr, &find,
+                                             worksize));
+
+    cutensorContraction(phandle, &plan, (void *)&alpha, pap, pbp, (void *)&beta,
+                        pc, pc, work->data(), worksize, 0);
+
+    pcontext->synchronize();
+
+    return std::make_tuple(cqs, cshs, cidxs);
 }
 
 template <typename Q>
-map_fusing flat_fermion_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
-                                             const py::array_t<uint32_t> &ashs,
-                                             const string &pattern, int idxa,
-                                             int idxb) {
+map_fusing gpu_flat_fermion_tensor_kron_sum_info(
+    const py::array_t<uint32_t> &aqs, const py::array_t<uint32_t> &ashs,
+    const string &pattern, int idxa, int idxb) {
     map_fusing r;
     if (aqs.shape()[0] == 0)
         return r;
@@ -626,14 +798,13 @@ map_fusing flat_fermion_tensor_kron_sum_info(const py::array_t<uint32_t> &aqs,
 }
 
 template <typename Q, typename FL>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
-      py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<FL>, py::array_t<uint64_t>>
-flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
-                       const py::array_t<uint32_t> &ashs,
-                       const py::array_t<FL> &adata,
-                       const py::array_t<uint64_t> &aidxs, int idx,
-                       const string &pattern, bool is_qr) {
+tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
+gpu_flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
+                           const py::array_t<uint32_t> &ashs,
+                           const py::array_t<FL> &adata,
+                           const py::array_t<uint64_t> &aidxs, int idx,
+                           const string &pattern, bool is_qr) {
     if (aqs.shape()[0] == 0)
         return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata,
                                aidxs);
@@ -643,9 +814,9 @@ flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
     assert(memcmp(aqs.strides(), ashs.strides(), 2 * sizeof(ssize_t)) == 0);
 
     const map_fusing linfo =
-        flat_fermion_tensor_kron_sum_info<Q>(aqs, ashs, pattern, 0, idx);
-    const map_fusing rinfo =
-        flat_fermion_tensor_kron_sum_info<Q>(aqs, ashs, pattern, idx, ndima);
+        gpu_flat_fermion_tensor_kron_sum_info<Q>(aqs, ashs, pattern, 0, idx);
+    const map_fusing rinfo = gpu_flat_fermion_tensor_kron_sum_info<Q>(
+        aqs, ashs, pattern, idx, ndima);
 
     vector<vector<uint32_t>> ufqsl(n_blocks_a), ufqsr(n_blocks_a);
     vector<pair<uint32_t, uint32_t>> fqs(n_blocks_a);
@@ -866,20 +1037,20 @@ flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
     return std::make_tuple(lqs, lshs, ldata, lidxs, rqs, rshs, rdata, ridxs);
 }
 
-#define TMPL_NAME flat_fermion
+#define TMPL_NAME gpu/flat_fermion
 
-#include "symmetry_tmpl.hpp"
+#include "../symmetry_tmpl.hpp"
 
 #define TMPL_FL float
-#include "symmetry_tmpl.hpp"
+#include "../symmetry_tmpl.hpp"
 #undef TMPL_FL
 
 #define TMPL_FL double
-#include "symmetry_tmpl.hpp"
+#include "../symmetry_tmpl.hpp"
 #undef TMPL_FL
 
 #define TMPL_FL complex<double>
-#include "symmetry_tmpl.hpp"
+#include "../symmetry_tmpl.hpp"
 #undef TMPL_FL
 
 #undef TMPL_NAME

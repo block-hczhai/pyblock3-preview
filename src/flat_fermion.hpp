@@ -49,11 +49,6 @@ flat_fermion_tensor_tensordot(
     const py::array_t<FL> &bdata, const py::array_t<uint64_t> &bidxs,
     const py::array_t<int> &idxa, const py::array_t<int> &idxb);
 
-template <typename Q>
-tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<uint64_t>>
-flat_fermion_tensor_skeleton(const vector<map_uint_uint<Q>> &infos,
-                             uint32_t fdq);
-
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
@@ -68,9 +63,15 @@ flat_fermion_tensor_qr(const py::array_t<uint32_t> &aqs,
 #define TMPL_NAME flat_fermion
 
 #include "symmetry_tmpl.hpp"
+
+#define TMPL_FL float
+#include "symmetry_tmpl.hpp"
+#undef TMPL_FL
+
 #define TMPL_FL double
 #include "symmetry_tmpl.hpp"
 #undef TMPL_FL
+
 #define TMPL_FL complex<double>
 #include "symmetry_tmpl.hpp"
 #undef TMPL_FL

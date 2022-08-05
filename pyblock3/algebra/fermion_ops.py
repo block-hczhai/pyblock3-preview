@@ -2,7 +2,7 @@ import numpy as np
 from itertools import product
 from functools import reduce
 from .core import SubTensor
-from .fermion import SparseFermionTensor
+from .fermion import SparseFermionTensor, timing
 from . import fermion_encoding
 from . import fermion_setting as setting
 
@@ -39,8 +39,8 @@ def _compute_swap_phase(*states, fermion=None):
         full_string[nops+ix] = ib
     return phase
 
-def measure_SZ(symmetry=None, flat=None):
-    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+def measure_SZ(symmetry=None, flat=None, large=None):
+    symmetry, flat, large = setting.dispatch_settings(symmetry=symmetry, flat=flat, large=large)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
     for key in sz_dict.keys():
@@ -52,13 +52,15 @@ def measure_SZ(symmetry=None, flat=None):
         dat[ind, ind] += sz_dict[key]
     blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
 
-def ParticleNumber(symmetry=None, flat=None):
-    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+def ParticleNumber(symmetry=None, flat=None, large=None):
+    symmetry, flat, large = setting.dispatch_settings(symmetry=symmetry, flat=flat, large=large)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
     for key in pn_dict.keys():
@@ -70,14 +72,16 @@ def ParticleNumber(symmetry=None, flat=None):
 
     blocks = [SubTensor(reduced=dat, q_labels=q_lab) for q_lab, dat in block_dict.items()]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
 
 pna_dict = {0:0, 1:1, 2:0, 3:0}
-def ParticleNumberAlpha(symmetry=None, flat=None):
-    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+def ParticleNumberAlpha(symmetry=None, flat=None, large=None):
+    symmetry, flat, large = setting.dispatch_settings(symmetry=symmetry, flat=flat, large=large)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
     for key in pna_dict.keys():
@@ -89,14 +93,16 @@ def ParticleNumberAlpha(symmetry=None, flat=None):
         dat[ind, ind] +=  pna_dict[key]
     blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
 
 pnb_dict = {0:0, 1:0, 2:1, 3:0}
-def ParticleNumberBeta(symmetry=None, flat=None):
-    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+def ParticleNumberBeta(symmetry=None, flat=None, large=None):
+    symmetry, flat, large = setting.dispatch_settings(symmetry=symmetry, flat=flat, large=large)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
     for key in pnb_dict.keys():
@@ -108,13 +114,15 @@ def ParticleNumberBeta(symmetry=None, flat=None):
         dat[ind, ind] +=  pnb_dict[key]
     blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
 
-def onsite_U(u=1, symmetry=None, flat=None):
-    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+def onsite_U(u=1, symmetry=None, flat=None, large=None):
+    symmetry, flat, large = setting.dispatch_settings(symmetry=symmetry, flat=flat, large=large)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
     for key, pn in pn_dict.items():
@@ -126,14 +134,16 @@ def onsite_U(u=1, symmetry=None, flat=None):
         dat[ind, ind] += (pn==2) * u
     blocks = [SubTensor(reduced=dat, q_labels=q_lab) for dat, q_lab in block_dict.values()]
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
 
-def creation(spin='a', symmetry=None, flat=None):
+def creation(spin='a', symmetry=None, flat=None, large=None):
     assert spin in ['a', 'b', 'sum']
-    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+    symmetry, flat, large = setting.dispatch_settings(symmetry=symmetry, flat=flat, large=large)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
     if spin == 'a':
@@ -162,18 +172,20 @@ def creation(spin='a', symmetry=None, flat=None):
             dat[ix2, ix1] += phase
     blocks = [SubTensor(reduced=dat, q_labels=qlab) for qlab, dat in block_dict.items()]
     T = SparseFermionTensor(blocks=blocks, pattern="+-", shape=(4,4))
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
 
-def annihilation(spin='a', symmetry=None, flat=None):
-    return creation(spin, symmetry, flat).dagger
+def annihilation(spin='a', symmetry=None, flat=None, large=None):
+    return creation(spin, symmetry, flat, large).dagger
 
-def vaccum(n=1, symmetry=None, flat=None):
+def vaccum(n=1, symmetry=None, flat=None, large=None):
     dense_shape = (4,) * n
-    symmetry, flat = setting.dispatch_settings(
-                             symmetry=symmetry, flat=flat)
+    symmetry, flat, large = setting.dispatch_settings(
+                             symmetry=symmetry, flat=flat, large=large)
     state_map = fermion_encoding.get_state_map(symmetry)
     q_label, idx, ish = state_map[0]
     arr = np.zeros((ish,)*n)
@@ -182,14 +194,16 @@ def vaccum(n=1, symmetry=None, flat=None):
     q_labels = (q_label, ) * n
     blocks = [SubTensor(reduced=arr, q_labels=q_labels)]
     T = SparseFermionTensor(blocks=blocks, pattern="+"*n, shape=dense_shape)
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
 
-def bonded_vaccum(vir_shape, pattern, normalize=True, symmetry=None, flat=None):
-    symmetry, flat = setting.dispatch_settings(
-                             symmetry=symmetry, flat=flat)
+def bonded_vaccum(vir_shape, pattern, normalize=True, symmetry=None, flat=None, large=None):
+    symmetry, flat, large = setting.dispatch_settings(
+                             symmetry=symmetry, flat=flat, large=large)
     state_map = fermion_encoding.get_state_map(symmetry)
     q_label, idx, ish = state_map[0]
     vir_shape = tuple(vir_shape)
@@ -201,13 +215,15 @@ def bonded_vaccum(vir_shape, pattern, normalize=True, symmetry=None, flat=None):
     T = SparseFermionTensor(blocks=blocks, pattern=pattern, shape=vir_shape+(4,))
     if normalize:
         T = T / T.norm()
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
 
-def H1(h=1, symmetry=None, flat=None):
-    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+def H1(h=1, symmetry=None, flat=None, large=None):
+    symmetry, flat, large = setting.dispatch_settings(symmetry=symmetry, flat=flat, large=large)
     state_map = fermion_encoding.get_state_map(symmetry)
     block_dict = dict()
 
@@ -229,13 +245,15 @@ def H1(h=1, symmetry=None, flat=None):
                 dat[ix1, ix2, ix3, ix4] += phase * h
     blocks = [SubTensor(reduced=dat, q_labels=qlab) for qlab, dat in block_dict.items()]
     T = SparseFermionTensor(blocks=blocks, pattern="++--")
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
 
-def Hubbard(t=1, u=1, mu=0., fac=None, symmetry=None, flat=None):
-    symmetry, flat = setting.dispatch_settings(symmetry=symmetry, flat=flat)
+def Hubbard(t=1, u=1, mu=0., fac=None, symmetry=None, flat=None, large=None):
+    symmetry, flat, large = setting.dispatch_settings(symmetry=symmetry, flat=flat, large=large)
     if fac is None:
         fac = (1, 1)
     faca, facb = fac
@@ -268,7 +286,9 @@ def Hubbard(t=1, u=1, mu=0., fac=None, symmetry=None, flat=None):
 
     blocks = [SubTensor(reduced=dat, q_labels=qlab) for qlab, dat in block_dict.items()]
     T = SparseFermionTensor(blocks=blocks, pattern="++--")
-    if flat:
+    if large:
+        return T.to_flat().to_large()
+    elif flat:
         return T.to_flat()
     else:
         return T
@@ -315,9 +335,13 @@ def make_phase_dict(state_map, ndim):
         phase_dict[qlabs][inds] = _compute_swap_phase(*states)
     return phase_dict
 
+@timing('gex')
 def get_exponential(T, x):
     if setting.DEFAULT_FLAT:
-        return get_flat_exponential(T, x)
+        if hasattr(T, 'use_cupy'):
+            return T.__class__.from_flat(get_flat_exponential(T.to_flat(), x), T.use_cupy)
+        else:
+            return get_flat_exponential(T, x)
     else:
         return get_sparse_exponential(T, x)
 

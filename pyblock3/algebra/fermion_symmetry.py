@@ -1,4 +1,31 @@
 import numpy as np
+import time
+
+_timings = {}
+
+def format_timing():
+    from .flat import _timings as _ftimings, clear_timing as fclear_timing
+    global _timings
+    rt = " ".join(["%s = %.3f" % (k, v) for k, v in list(_timings.items()) + list(_ftimings.items())])
+    rt += " total = %.3f" % sum(_timings.values())
+    clear_timing()
+    fclear_timing()
+    return rt
+
+def clear_timing():
+    global _timings
+    _timings.clear()
+
+def timing(tm_key):
+    global _timings
+    def tf(f):
+        def ttf(*args, **kwargs):
+            tx = time.perf_counter()
+            ret = f(*args, **kwargs)
+            _timings[tm_key] = _timings.get(tm_key, 0.0) + time.perf_counter() - tx
+            return ret
+        return ttf
+    return tf
 
 class U1:
     '''
@@ -62,6 +89,7 @@ class U1:
         return 2147483648 - flat_array
 
     @classmethod
+    @timing('cpt')
     def _compute(cls, pattern, qpns, offset=None, neg=False):
         '''
         quick drive to compute symmetry label calculus

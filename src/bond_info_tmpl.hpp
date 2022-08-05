@@ -28,7 +28,7 @@
 
 TMPL_EXTERN template void bond_info_trans<TMPL_Q>(
     const vector<map_uint_uint<TMPL_Q>> &infos, const string &pattern,
-    vector<vector<pair<TMPL_Q, uint32_t>>> &infox, bool sorted = false);
+    vector<vector<pair<TMPL_Q, uint32_t>>> &infox, bool sorted);
 
 TMPL_EXTERN template map_fusing
 bond_info_fusing_product<TMPL_Q>(const vector<map_uint_uint<TMPL_Q>> &infos,

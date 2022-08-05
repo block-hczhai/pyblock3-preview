@@ -31,6 +31,7 @@ from .flat import (FlatSparseTensor,
                    _flat_sparse_tensor_numpy_func_impls)
 from .symmetry import BondInfo
 from . import fermion_setting as setting
+import time
 
 SVD_SCREENING = setting.SVD_SCREENING
 Q_LABELS_DTYPE = SHAPES_DTYPE = np.uint32
@@ -62,6 +63,32 @@ def get_backend(symmetry):
     else:
         raise NotImplementedError("symmetry %s not supported"%key)
     return backend
+
+_timings = {}
+
+def format_timing():
+    from .fermion_symmetry import _timings as _stimings, clear_timing as sclear_timing
+    global _timings
+    rt = " ".join(["%s = %.3f" % (k, v) for k, v in list(_timings.items()) + list(_stimings.items())])
+    rt += " total = %.3f" % sum(_timings.values())
+    clear_timing()
+    sclear_timing()
+    return rt
+
+def clear_timing():
+    global _timings
+    _timings.clear()
+
+def timing(tm_key):
+    global _timings
+    def tf(f):
+        def ttf(*args, **kwargs):
+            tx = time.perf_counter()
+            ret = f(*args, **kwargs)
+            _timings[tm_key] = _timings.get(tm_key, 0.0) + time.perf_counter() - tx
+            return ret
+        return ttf
+    return tf
 
 def implements(np_func):
     global _numpy_func_impls
@@ -231,12 +258,13 @@ def _trim_singular_vals(
             n_chis = [np.sum(sblk>cutoff*smax) for sblk in s_data]
 
         if max_bond is not None and max_bond>0:
-            n_chi = np.sum(n_chis)
+            n_chi = np.sum([x.get() if hasattr(x, 'get') else x for x in n_chis])
             extra_bonds = n_chi - max_bond
             if extra_bonds >0:
                 if s is None:
                     s = np.concatenate(s_data)
                 s_ind = np.argsort(s)
+                s_ind = [x.get() if hasattr(x, 'get') else x for x in s_ind]
                 ind_map = []
                 for ix, sblk in enumerate(s_data):
                     ind_map += [ix,] * sblk.size
@@ -256,6 +284,7 @@ def _trim_singular_vals(
         if cutoff_mode in (4, 6):
             target *= np.sum(s)
         s_ind = np.argsort(s)
+        s_ind = [x.get() if hasattr(x, 'get') else x for x in s_ind]
         s_sorted = np.cumsum(np.sort(s))
         ind_map = []
         for ix, sblk in enumerate(s_data):
@@ -263,6 +292,7 @@ def _trim_singular_vals(
 
         n_chis = [sblk.size for sblk in s_data]
         ncut = np.sum(s_sorted<=target)
+        ncut = ncut.get() if hasattr(ncut, 'get') else ncut
         if max_bond is not None and max_bond>0:
             ncut = max(ncut, s.size-max_bond)
         for i in range(ncut):
@@ -308,7 +338,7 @@ def _trim_and_renorm_SVD(
 
         n_chis = _trim_singular_vals(s_data, cutoff,
                                 cutoff_mode, max_bond)
-    n_chi = np.sum(n_chis)
+    n_chi = np.sum([x.get() if hasattr(x, 'get') else x for x in n_chis])
     tot_size = np.sum([iblk.size for iblk in s_data])
     if n_chi < tot_size and renorm > 0:
         renorm_fac = _renorm_singular_vals(s_data,
@@ -970,8 +1000,24 @@ def flat_qr_fast(
         right_idx = [idim for idim in range(T.ndim)
         if idim not in left_idx]
     new_T = _maybe_transpose_tensor(T, left_idx, right_idx)
-    if len(left_idx) == T.ndim or len(right_idx)==T.ndim:
-        raise NotImplementedError
+    if len(left_idx) == T.ndim or len(right_idx) == T.ndim:
+        flat_q = T.dq.to_flat()
+        flat_qs = np.asarray([[flat_q]], dtype=Q_LABELS_DTYPE)
+        ishapes = np.asarray([[1,]], dtype=SHAPES_DTYPE)
+        data = np.asarray([1,])
+        Q = T.__class__(flat_qs, ishapes, data,
+                        pattern="+", symmetry=T.symmetry)
+        new_pattern, inds, return_order = _gen_null_qr_info(T, mod)
+        new_shapes = np.insert(T.shapes, inds, 1, axis=1)
+        new_q_labels = np.insert(T.q_labels, inds, flat_q, axis=1)
+        if return_order == slice(None):
+            shape = (1,)+T.shape
+        else:
+            shape = T.shape + (1,)
+        R = T.__class__(new_q_labels, new_shapes,
+                        T.data.copy(), pattern=new_pattern,
+                        idxs=T.idxs.copy(), symmetry=T.symmetry, shape=shape)
+        return (Q, R)[return_order]
     split_ax = len(left_idx)
     backend = get_backend(T.symmetry)
     qq, shq, qdata, qidxs, qr, shr, rdata, ridxs = \
@@ -984,6 +1030,9 @@ def flat_qr_fast(
     r = T.__class__(qr, shr, rdata,
                     pattern="+"+new_T.pattern[split_ax:],
                     idxs=ridxs, symmetry=T.symmetry)
+    # inherit shape
+    q.shape = new_T.shape[:split_ax] + (q.shape[-1],)
+    r.shape = (r.shape[0], ) + new_T.shape[split_ax:]
     return q, r
 
 def _adjust_block(block, flip_axes):
@@ -1031,14 +1080,16 @@ def compute_phase(
         counted.append(x)
     return phase
 
-def eye(bond_info, flat=None):
+def eye(bond_info, flat=None, large=None):
     """Create tensor from BondInfo with Identity matrix."""
-    flat = setting.dispatch_settings(flat=flat)
+    flat, large = setting.dispatch_settings(flat=flat, large=large)
     blocks = []
     for sh, qs in SparseFermionTensor._skeleton((bond_info, bond_info)):
         blocks.append(SubTensor(reduced=np.eye(sh[0]), q_labels=qs))
     T = SparseFermionTensor(blocks=blocks, pattern="+-")
-    if flat:
+    if large:
+        T = T.to_flat().to_large()
+    elif flat:
         T = T.to_flat()
     return T
 
@@ -1521,6 +1572,7 @@ class FlatFermionTensor(FlatSparseTensor):
 
     @staticmethod
     @implements(np.copy)
+    @timing("copy")
     def _copy(x):
         return x.__class__(q_labels=x.q_labels.copy(order="K"), shapes=x.shapes.copy(order="K"), data=x.data.copy(), pattern=x.pattern, idxs=x.idxs.copy(), symmetry=x.symmetry, shape=x.shape)
 
@@ -1596,6 +1648,10 @@ class FlatFermionTensor(FlatSparseTensor):
             blocks[i] = SubTensor(
                 self.data[self.idxs[i]:self.idxs[i + 1]].reshape(self.shapes[i]), q_labels=qs)
         return SparseFermionTensor(blocks=blocks, pattern=self.pattern, shape=self.shape)
+    
+    def to_large(self, use_cupy=None, infos=None):
+        from .fermion_large import LargeFermionTensor
+        return LargeFermionTensor.from_flat(self, use_cupy=use_cupy, infos=infos)
 
     @staticmethod
     def from_sparse(spt):
@@ -1716,6 +1772,7 @@ class FlatFermionTensor(FlatSparseTensor):
             return NotImplemented
         return _flat_fermion_tensor_numpy_func_impls[func](*args, **kwargs)
 
+    @timing('uf')
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
         if ufunc in _flat_fermion_tensor_numpy_func_impls:
             types = tuple(
@@ -1783,6 +1840,7 @@ class FlatFermionTensor(FlatSparseTensor):
 
     @staticmethod
     @implements(np.tensordot)
+    @timing('td')
     def _tensordot(a, b, axes=2):
         if isinstance(axes, int):
             idxa = np.arange(-axes, 0, dtype=np.int32)
@@ -1815,6 +1873,7 @@ class FlatFermionTensor(FlatSparseTensor):
 
     @staticmethod
     @implements(np.transpose)
+    @timing('tp')
     def _transpose(a, axes=None):
         if axes is None:
             axes = np.arange(a.ndim)[::-1]
@@ -1833,6 +1892,7 @@ class FlatFermionTensor(FlatSparseTensor):
             return a.__class__(a.q_labels[:,axes], a.shapes[:,axes], \
                                data, pattern, a.idxs, a.symmetry, shape=tuple(shape))
 
+    @timing('svd')
     def tensor_svd(
         self,
         left_idx,
@@ -1842,6 +1902,7 @@ class FlatFermionTensor(FlatSparseTensor):
     ):
         return flat_svd(self, left_idx, right_idx=right_idx, qpn_partition=qpn_partition, **opts)
 
+    @timing('qr')
     def tensor_qr(
         self,
         left_idx,
@@ -1850,6 +1911,7 @@ class FlatFermionTensor(FlatSparseTensor):
     ):
         return flat_qr(self, left_idx, right_idx=right_idx, mod=mod)
 
+    @timing('ex')
     def to_exponential(self, x):
         from pyblock3.algebra.fermion_ops import get_flat_exponential
         return get_flat_exponential(self, x)

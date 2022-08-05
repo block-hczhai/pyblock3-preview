@@ -39,11 +39,19 @@ tensor_tensordot(const py::array_t<FL> &a, const py::array_t<FL> &b,
                  const py::array_t<int> &idxa, const py::array_t<int> &idxb,
                  FL alpha, FL beta);
 
+template <typename FL>
+pair<py::array_t<FL>, py::array_t<FL>> tensor_qr(const py::array_t<FL> &x,
+                                                 bool is_qr);
+
 // explicit template instantiation
 extern template py::array_t<double>
 tensor_transpose<double>(const py::array_t<double> &x,
                          const py::array_t<int> &perm, const double alpha,
                          const double beta);
+extern template py::array_t<float>
+tensor_transpose<float>(const py::array_t<float> &x,
+                        const py::array_t<int> &perm, const float alpha,
+                        const float beta);
 extern template py::array_t<complex<double>> tensor_transpose<complex<double>>(
     const py::array_t<complex<double>> &x, const py::array_t<int> &perm,
     const complex<double> alpha, const complex<double> beta);
@@ -51,8 +59,19 @@ extern template py::array_t<double>
 tensor_tensordot(const py::array_t<double> &a, const py::array_t<double> &b,
                  const py::array_t<int> &idxa, const py::array_t<int> &idxb,
                  double alpha, double beta);
+extern template py::array_t<float>
+tensor_tensordot(const py::array_t<float> &a, const py::array_t<float> &b,
+                 const py::array_t<int> &idxa, const py::array_t<int> &idxb,
+                 float alpha, float beta);
 extern template py::array_t<complex<double>>
 tensor_tensordot(const py::array_t<complex<double>> &a,
                  const py::array_t<complex<double>> &b,
                  const py::array_t<int> &idxa, const py::array_t<int> &idxb,
                  complex<double> alpha, complex<double> beta);
+
+extern template pair<py::array_t<double>, py::array_t<double>>
+tensor_qr(const py::array_t<double> &x, bool is_qr);
+extern template pair<py::array_t<float>, py::array_t<float>>
+tensor_qr(const py::array_t<float> &x, bool is_qr);
+extern template pair<py::array_t<complex<double>>, py::array_t<complex<double>>>
+tensor_qr(const py::array_t<complex<double>> &x, bool is_qr);
