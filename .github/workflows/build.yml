@@ -36,7 +36,7 @@ jobs:
         run: |
           export PYT=$(which python)
           python -m pip install pip build twine pytest --upgrade
-          python -m pip install mkl==2019 mkl-include intel-openmp numpy<1.23.0 psutil cmake==3.17 pybind11
+          python -m pip install mkl==2019 mkl-include intel-openmp 'numpy<1.23.0' psutil cmake==3.17 pybind11
 
       - name: install requirements (linux / mpi)
         if: matrix.os == 'ubuntu-latest'
