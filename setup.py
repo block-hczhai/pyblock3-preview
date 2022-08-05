@@ -85,7 +85,7 @@ setup(name='pyblock3',
       install_requires=[
           "mkl==2019",
           "mkl-include",
-          "numpy",
+          "numpy<1.23.0",
           "psutil",
           "pybind11",
           "intel-openmp",
