@@ -6,6 +6,13 @@ from pyblock3.algebra.symmetry import BondInfo, SZ
 from pyblock3.algebra.core import SparseTensor, SubTensor
 from pyblock3.algebra import fermion_setting
 
+
+try:
+    import cupy
+except ModuleNotFoundError:
+    raise unittest.SkipTest("no cupy")
+
+
 fermion_setting.set_options(flat=True, fermion=True, large=True, cupy=True)
 rand = SparseFermionTensor.random
 
