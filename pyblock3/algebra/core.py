@@ -702,8 +702,8 @@ class SparseTensor(NDArrayOperatorsMixin):
             for sqs, (k, sh) in info.finfo[q].items():
                 nk = np.multiply.reduce(sh)
                 sl[i] = slice(k, k + nk)
-                new_ns = (ns[:i], *sh, ns[i + 1:])
-                new_qs = (qs[:i], *sqs, qs[i + 1:])
+                new_ns = (*ns[:i], *sh, *ns[i + 1:])
+                new_qs = (*qs[:i], *sqs, *qs[i + 1:])
                 mat = np.asarray(block)[tuple(sl)].reshape(new_ns)
                 blocks.append(SubTensor(mat, q_labels=new_qs))
         return self.__class__(blocks=blocks)
