@@ -156,10 +156,10 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             return 0
         return self.data.item()
 
-    def to_sparse(self):
+    def to_sparse(self, qcls=SZ):
         blocks = [None] * self.n_blocks
         for i in range(self.n_blocks):
-            qs = tuple(map(SZ.from_flat, self.q_labels[i]))
+            qs = tuple(map(qcls.from_flat, self.q_labels[i]))
             blocks[i] = SubTensor(
                 self.data[self.idxs[i]:self.idxs[i + 1]].reshape(self.shapes[i]), q_labels=qs)
         return SparseTensor(blocks=blocks)
@@ -177,9 +177,10 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         n_blocks = spt.n_blocks
         shapes = np.zeros((n_blocks, ndim), dtype=np.uint32)
         q_labels = np.zeros((n_blocks, ndim), dtype=np.uint32)
+        qcls = spt.blocks[0].q_labels[0].__class__ if n_blocks != 0 and ndim != 0 else SZ
         for i in range(n_blocks):
             shapes[i] = spt.blocks[i].shape
-            q_labels[i] = list(map(SZ.to_flat, spt.blocks[i].q_labels))
+            q_labels[i] = list(map(qcls.to_flat, spt.blocks[i].q_labels))
         idxs = np.zeros((n_blocks + 1, ), dtype=np.uint64)
         idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
         data = np.zeros((idxs[-1], ), dtype=spt.dtype)
