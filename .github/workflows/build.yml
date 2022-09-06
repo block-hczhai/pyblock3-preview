@@ -5,6 +5,7 @@ on:
     branches: [ master ]
     tags:
       - v*
+      - p*
   pull_request:
     branches: [ master ]
 
@@ -66,6 +67,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && matrix.os == 'macos-latest'
         env:
           TAG_STRING: ${{ github.event.ref }}
+          MACOSX_DEPLOYMENT_TARGET: '10.9'
         run: |
           echo ${TAG_STRING:11}
           sed -i "" "s/version=.*/version='${TAG_STRING:11}',/" setup.py
