@@ -64,7 +64,7 @@ jobs:
           py.test pyblock3/algorithms --ignore=pyblock3/algorithms/tests/test_soc.py
 
       - name: build wheels (macos)
-        if: startsWith(github.ref, 'refs/tags/v') && matrix.os == 'macos-latest'
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-latest'
         env:
           TAG_STRING: ${{ github.event.ref }}
           MACOSX_DEPLOYMENT_TARGET: '10.9'
@@ -75,7 +75,7 @@ jobs:
           python -m pip wheel . -w ./dist --no-deps
 
       - name: prepare build wheels (manylinux)
-        if: startsWith(github.ref, 'refs/tags/v') && matrix.os == 'ubuntu-latest'
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'ubuntu-latest'
         env:
           TAG_STRING: ${{ github.event.ref }}
         run: |
@@ -84,7 +84,7 @@ jobs:
           cp ./.github/actions/build-wheel/Dockerfile.manylinux${{ matrix.manylinux }} ./.github/actions/build-wheel/Dockerfile
 
       - name: build wheels (manylinux)
-        if: startsWith(github.ref, 'refs/tags/v') && matrix.os == 'ubuntu-latest'
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'ubuntu-latest'
         uses: ./.github/actions/build-wheel
         with:
           python-version: ${{ matrix.python }}
