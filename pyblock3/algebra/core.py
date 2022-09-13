@@ -717,7 +717,7 @@ class SparseTensor(NDArrayOperatorsMixin):
 
         Args:
             idxs : tuple(int)
-                Leg indices to be fused. The new fused index will be idxs[0].
+                Leg indices to be fused. The new fused index will be min(idxs).
             info : BondFusingInfo (optional)
                 Indicating how quantum numbers are collected.
                 If not specified, the direct sum of quantum numbers will be used.
@@ -729,6 +729,10 @@ class SparseTensor(NDArrayOperatorsMixin):
         """
         blocks_map = {}
         idxs = [i if i >= 0 else self.ndim + i for i in idxs]
+        if len(idxs) == 0:
+            return self
+        midx = min(idxs)
+        fidxs = [x for x in idxs if x != midx]
         if info is None:
             info = self.kron_sum_info(*idxs, pattern=pattern)
         if pattern is None:
@@ -749,17 +753,25 @@ class SparseTensor(NDArrayOperatorsMixin):
             k = info.finfo[q][sqs][0]
             # shape in fused dim for this block
             nk = np.multiply.reduce([ns[ix] for ix in idxs])
-            new_qs = tuple(iq if iiq != idxs[0] else q for iiq, iq in enumerate(
-                qs) if iiq not in idxs[1:])
-            new_ns = [ix if iiq != idxs[0] else x for iiq,
-                      ix in enumerate(ns) if iiq not in idxs[1:]]
+            new_qs = tuple(iq if iiq != midx else q for iiq, iq in enumerate(
+                qs) if iiq not in fidxs)
+            new_ns = [ix if iiq != midx else x for iiq,
+                      ix in enumerate(ns) if iiq not in fidxs]
+            new_perm = []
+            for iiq in range(len(ns)):
+                if iiq not in fidxs:
+                    if iiq != midx:
+                        new_perm.append(iiq)
+                    else:
+                        new_perm.extend(idxs)
             if new_qs not in blocks_map:
                 blocks_map[new_qs] = SubTensor.zeros(
                     tuple(new_ns), q_labels=new_qs, dtype=block.dtype)
-            new_ns[idxs[0]] = nk
-            sl = tuple(slice(None) if ix != idxs[0] else slice(
-                k, k + nk) for ix in range(len(ns)) if ix not in idxs[1:])
-            blocks_map[new_qs][sl] = np.asarray(block).reshape(tuple(new_ns))
+            new_ns[midx] = nk
+            sl = tuple(slice(None) if ix != midx else slice(
+                k, k + nk) for ix in range(len(ns)) if ix not in fidxs)
+            blk = np.asarray(block).transpose(new_perm)
+            blocks_map[new_qs][sl] = blk.reshape(tuple(new_ns))
         return self.__class__(blocks=list(blocks_map.values()))
 
     @staticmethod
