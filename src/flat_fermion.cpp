@@ -136,8 +136,8 @@ void flat_fermion_tensor_transpose(const py::array_t<uint32_t> &aqs,
             par_pat |= (uint64_t)Q::to_q(apqs[ia * asi + j * asj]).parity()
                        << j;
         if (!computed.count(par_pat))
-            computed[par_pat] = compute_phase(perma, ndima, par_pat,
-                                              &rev_idx[0], &fperm[0]);
+            computed[par_pat] =
+                compute_phase(perma, ndima, par_pat, &rev_idx[0], &fperm[0]);
         phase_a[ia] = 1 - (computed.at(par_pat) << 1);
     }
 
@@ -320,7 +320,8 @@ flat_fermion_tensor_tensordot(
 #ifdef _USE_NEW_PHASE
 
     assert(ndima <= 64 && ndimb <= 64);
-    vector<int32_t> rev_idx(max(ndima, ndimb) + 1), fperm(max(ndima, ndimb) + 1);
+    vector<int32_t> rev_idx(max(ndima, ndimb) + 1),
+        fperm(max(ndima, ndimb) + 1);
     unordered_map<uint64_t, uint8_t> computed_a, computed_b;
     for (int i = 0; i < n_blocks_a; i++) {
         uint64_t par_pat = 0;
@@ -328,7 +329,7 @@ flat_fermion_tensor_tensordot(
             par_pat |= (uint64_t)Q::to_q(apqs[i * asi + j * asj]).parity() << j;
         if (!computed_a.count(par_pat))
             computed_a[par_pat] = compute_phase2(ppidxa, ndima, nctr, par_pat,
-                                                &rev_idx[0], &fperm[0]);
+                                                 &rev_idx[0], &fperm[0]);
         phase_a[i] = 1 - (computed_a.at(par_pat) << 1);
     }
 
@@ -338,7 +339,7 @@ flat_fermion_tensor_tensordot(
             par_pat |= (uint64_t)Q::to_q(bpqs[i * bsi + j * bsj]).parity() << j;
         if (!computed_b.count(par_pat))
             computed_b[par_pat] = compute_phase3(ppidxb, ndimb, nctr, par_pat,
-                                                &rev_idx[0], &fperm[0]);
+                                                 &rev_idx[0], &fperm[0]);
         phase_b[i] = 1 - (computed_b.at(par_pat) << 1);
     }
 
@@ -449,8 +450,10 @@ flat_fermion_tensor_tensordot(
     vector<ssize_t> sh = {n_blocks_c, ndimc};
     py::array_t<uint32_t> cqs(sh), cshs(sh);
     py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
-    assert(cqs.strides()[1] == sizeof(uint32_t));
-    assert(cshs.strides()[1] == sizeof(uint32_t));
+    if (n_blocks_c != 0 && ndimc != 0) {
+        assert(cqs.strides()[1] == sizeof(uint32_t));
+        assert(cshs.strides()[1] == sizeof(uint32_t));
+    }
     py::array_t<FL> cdata(vector<ssize_t>{csize});
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
     uint64_t *pcidxs = cidxs.mutable_data();

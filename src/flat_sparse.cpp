@@ -430,8 +430,10 @@ flat_sparse_tensor_add(
     vector<ssize_t> sh = {n_blocks_c, ndima};
     py::array_t<uint32_t> cqs(sh), cshs(sh);
     py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
-    assert(cqs.strides()[1] == sizeof(uint32_t));
-    assert(cshs.strides()[1] == sizeof(uint32_t));
+    if (n_blocks_c != 0 && ndima != 0) {
+        assert(cqs.strides()[1] == sizeof(uint32_t));
+        assert(cshs.strides()[1] == sizeof(uint32_t));
+    }
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
     uint64_t *pcidxs = cidxs.mutable_data();
     int ic = 0;
@@ -520,8 +522,10 @@ flat_sparse_tensor_kron_add(
     vector<ssize_t> sh = {n_blocks_c, ndima};
     py::array_t<uint32_t> cqs(sh), cshs(sh);
     py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
-    assert(cqs.strides()[1] == sizeof(uint32_t));
-    assert(cshs.strides()[1] == sizeof(uint32_t));
+    if (n_blocks_c != 0 && ndima != 0) {
+        assert(cqs.strides()[1] == sizeof(uint32_t));
+        assert(cshs.strides()[1] == sizeof(uint32_t));
+    }
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
     uint64_t *pcidxs = cidxs.mutable_data();
     int ic = 0;
@@ -659,8 +663,10 @@ flat_sparse_tensor_fuse(const py::array_t<uint32_t> &aqs,
     vector<ssize_t> sh = {n_blocks_c, ndimc};
     py::array_t<uint32_t> cqs(sh), cshs(sh);
     py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
-    assert(cqs.strides()[1] == sizeof(uint32_t));
-    assert(cshs.strides()[1] == sizeof(uint32_t));
+    if (n_blocks_c != 0 && ndimc != 0) {
+        assert(cqs.strides()[1] == sizeof(uint32_t));
+        assert(cshs.strides()[1] == sizeof(uint32_t));
+    }
     py::array_t<FL> cdata(vector<ssize_t>{csize});
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
     uint64_t *pcidxs = cidxs.mutable_data();
@@ -1032,8 +1038,9 @@ flat_sparse_canonicalize(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL, DIRECTION L>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
+      py::array_t<uint64_t>>
 flat_sparse_svd(const py::array_t<uint32_t> &aqs,
                 const py::array_t<uint32_t> &ashs, const py::array_t<FL> &adata,
                 const py::array_t<uint64_t> &aidxs, uint32_t *pxidx) {
@@ -1079,7 +1086,8 @@ flat_sparse_svd(const py::array_t<uint32_t> &aqs,
 
     py::array_t<FL> qdata(vector<ssize_t>{(ssize_t)pqidxs[n_blocks_a]});
     py::array_t<FL> lrdata(vector<ssize_t>{(ssize_t)plridxs[n_blocks_lr]});
-    py::array_t<typename GFP<FL>::FP> sdata(vector<ssize_t>{(ssize_t)psidxs[n_blocks_lr]});
+    py::array_t<typename GFP<FL>::FP> sdata(
+        vector<ssize_t>{(ssize_t)psidxs[n_blocks_lr]});
     FL *pq = qdata.mutable_data(), *plr = lrdata.mutable_data();
     typename GFP<FL>::FP *ps = sdata.mutable_data();
     memset(plr, 0, sizeof(FL) * plridxs[n_blocks_lr]);
@@ -1167,8 +1175,9 @@ flat_sparse_right_canonicalize(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
+      py::array_t<uint64_t>>
 flat_sparse_left_svd(const py::array_t<uint32_t> &aqs,
                      const py::array_t<uint32_t> &ashs,
                      const py::array_t<FL> &adata,
@@ -1179,8 +1188,9 @@ flat_sparse_left_svd(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
+      py::array_t<uint64_t>>
 flat_sparse_right_svd(const py::array_t<uint32_t> &aqs,
                       const py::array_t<uint32_t> &ashs,
                       const py::array_t<FL> &adata,
@@ -1221,8 +1231,9 @@ flat_sparse_right_canonicalize_indexed(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
            py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-           py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-           py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>,
+           py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>,
+           py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
+           py::array_t<uint64_t>>,
      py::array_t<uint32_t>>
 flat_sparse_left_svd_indexed(const py::array_t<uint32_t> &aqs,
                              const py::array_t<uint32_t> &ashs,
@@ -1237,8 +1248,9 @@ flat_sparse_left_svd_indexed(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 pair<tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
            py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-           py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-           py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>,
+           py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>,
+           py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
+           py::array_t<uint64_t>>,
      py::array_t<uint32_t>>
 flat_sparse_right_svd_indexed(const py::array_t<uint32_t> &aqs,
                               const py::array_t<uint32_t> &ashs,
@@ -1253,8 +1265,9 @@ flat_sparse_right_svd_indexed(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>>
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
+      py::array_t<uint64_t>>
 flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
                        const py::array_t<uint32_t> &ashs,
                        const py::array_t<FL> &adata,
@@ -1443,17 +1456,19 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
 template <typename Q, typename FL>
 tuple<py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
       py::array_t<uint64_t>, py::array_t<uint32_t>, py::array_t<uint32_t>,
-      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>, py::array_t<uint32_t>,
-      py::array_t<uint32_t>, py::array_t<FL>, py::array_t<uint64_t>, typename GFP<FL>::FP>
+      py::array_t<typename GFP<FL>::FP>, py::array_t<uint64_t>,
+      py::array_t<uint32_t>, py::array_t<uint32_t>, py::array_t<FL>,
+      py::array_t<uint64_t>, typename GFP<FL>::FP>
 flat_sparse_truncate_svd(
     const py::array_t<uint32_t> &lqs, const py::array_t<uint32_t> &lshs,
     const py::array_t<FL> &ldata, const py::array_t<uint64_t> &lidxs,
     const py::array_t<uint32_t> &sqs, const py::array_t<uint32_t> &sshs,
-    const py::array_t<typename GFP<FL>::FP> &sdata, const py::array_t<uint64_t> &sidxs,
-    const py::array_t<uint32_t> &rqs, const py::array_t<uint32_t> &rshs,
-    const py::array_t<FL> &rdata, const py::array_t<uint64_t> &ridxs,
-    int max_bond_dim, typename GFP<FL>::FP cutoff, typename GFP<FL>::FP max_dw, typename GFP<FL>::FP norm_cutoff,
-    bool eigen_values) {
+    const py::array_t<typename GFP<FL>::FP> &sdata,
+    const py::array_t<uint64_t> &sidxs, const py::array_t<uint32_t> &rqs,
+    const py::array_t<uint32_t> &rshs, const py::array_t<FL> &rdata,
+    const py::array_t<uint64_t> &ridxs, int max_bond_dim,
+    typename GFP<FL>::FP cutoff, typename GFP<FL>::FP max_dw,
+    typename GFP<FL>::FP norm_cutoff, bool eigen_values) {
     if (sqs.shape()[0] == 0)
         return std::make_tuple(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
                                sqs, sshs, sdata, sidxs, 0.0);
@@ -1483,18 +1498,18 @@ flat_sparse_truncate_svd(
     for (int i = 0; i < n_blocks_s; i++)
         for (int j = pis[i]; j < pis[i + 1]; j++)
             ss.push_back(std::make_tuple(i, j, ps[j]));
-    sort(
-        ss.begin(), ss.end(),
-        [](const tuple<int, int, typename GFP<FL>::FP> &a, const tuple<int, int, typename GFP<FL>::FP> &b) {
-            return get<2>(a) > get<2>(b);
-        });
+    sort(ss.begin(), ss.end(),
+         [](const tuple<int, int, typename GFP<FL>::FP> &a,
+            const tuple<int, int, typename GFP<FL>::FP> &b) {
+             return get<2>(a) > get<2>(b);
+         });
     vector<tuple<int, int, typename GFP<FL>::FP>> ss_trunc = ss;
     if (max_dw != 0) {
         int p = 0;
         for (int i = (int)ss_trunc.size(); i > 0; i--) {
-            typename GFP<FL>::FP dw = eigen_values
-                            ? get<2>(ss_trunc[i])
-                            : get<2>(ss_trunc[i]) * get<2>(ss_trunc[i]);
+            typename GFP<FL>::FP dw =
+                eigen_values ? get<2>(ss_trunc[i])
+                             : get<2>(ss_trunc[i]) * get<2>(ss_trunc[i]);
             if (dw <= max_dw)
                 p++;
             else
@@ -1513,11 +1528,11 @@ flat_sparse_truncate_svd(
     }
     if (max_bond_dim != -1 && (int)ss_trunc.size() > max_bond_dim)
         ss_trunc.resize(max_bond_dim);
-    sort(
-        ss_trunc.begin(), ss_trunc.end(),
-        [](const tuple<int, int, typename GFP<FL>::FP> &a, const tuple<int, int, typename GFP<FL>::FP> &b) {
-            return get<1>(a) < get<1>(b);
-        });
+    sort(ss_trunc.begin(), ss_trunc.end(),
+         [](const tuple<int, int, typename GFP<FL>::FP> &a,
+            const tuple<int, int, typename GFP<FL>::FP> &b) {
+             return get<1>(a) < get<1>(b);
+         });
 
     vector<pair<int, vector<int>>> selected;
     selected.reserve(n_blocks_s);

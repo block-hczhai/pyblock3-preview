@@ -102,8 +102,10 @@ flat_sparse_tensor_diag(const py::array_t<uint32_t> &aqs,
     vector<ssize_t> sh = {n_blocks_c, ndimc};
     py::array_t<uint32_t> cqs(sh), cshs(sh);
     py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
-    assert(cqs.strides()[1] == sizeof(uint32_t));
-    assert(cshs.strides()[1] == sizeof(uint32_t));
+    if (n_blocks_c != 0 && ndimc != 0) {
+        assert(cqs.strides()[1] == sizeof(uint32_t));
+        assert(cshs.strides()[1] == sizeof(uint32_t));
+    }
     py::array_t<FL> cdata(vector<ssize_t>{csize});
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
     uint64_t *pcidxs = cidxs.mutable_data();
@@ -381,8 +383,10 @@ flat_sparse_tensor_tensordot_skeleton(const py::array_t<uint32_t> &aqs,
     vector<ssize_t> sh = {n_blocks_c, ndimc};
     py::array_t<uint32_t> cqs(sh), cshs(sh);
     py::array_t<uint64_t> cidxs(vector<ssize_t>{n_blocks_c + 1});
-    assert(cqs.strides()[1] == sizeof(uint32_t));
-    assert(cshs.strides()[1] == sizeof(uint32_t));
+    if (n_blocks_c != 0 && ndimc != 0) {
+        assert(cqs.strides()[1] == sizeof(uint32_t));
+        assert(cshs.strides()[1] == sizeof(uint32_t));
+    }
     uint32_t *pcqs = cqs.mutable_data(), *pcshs = cshs.mutable_data();
     uint64_t *pcidxs = cidxs.mutable_data();
     vector<uint32_t> psha(n_blocks_a * ndima), pshb(n_blocks_b * ndimb);
@@ -608,7 +612,8 @@ py::array_t<int32_t> flat_sparse_tensor_matmul_plan(
     ssize_t rz = (ssize_t)r[0].size();
     vector<ssize_t> sh = {(ssize_t)r.size(), rz};
     py::array_t<int32_t> ar(sh);
-    assert(ar.strides()[1] == sizeof(int32_t));
+    if (r.size() != 0 && rz != 0)
+        assert(ar.strides()[1] == sizeof(int32_t));
     for (size_t i = 0; i < r.size(); i++)
         memcpy(ar.mutable_data() + i * rz, r[i].data(), sizeof(int32_t) * rz);
 
