@@ -86,7 +86,7 @@ class QCSymbolicMPO(MPS):
         else:
             hamil = kwargs["hamil"] if len(args) == 0 else args[0]
             symmetrized_p = kwargs.get("symmetrized_p", True)
-            opts = kwargs.get("opts", True)
+            opts = kwargs.get("opts", None)
         n_sites = hamil.n_sites
         vac = SZ(0, 0, 0)
         sz = [1, -1]

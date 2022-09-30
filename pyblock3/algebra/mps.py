@@ -468,7 +468,7 @@ class MPS(NDArrayOperatorsMixin):
         if b.n_sites == 1:
             r = a.tensors[0].__class__.pdot(a.tensors, b.tensors[0])
             ir = r.infos
-            rl = r.ones(bond_infos=(ir[1], ir[0], ir[1]), pattern="-++")
+            rl = r.ones(bond_infos=(ir[1], ir[0], ir[1]), pattern="--+")
             rr = r.ones(bond_infos=(ir[-2], ir[-1], ir[-1]), pattern="++-")
             r = np.tensordot(rl, r, axes=2)
             r = np.tensordot(r, rr, axes=2)
@@ -597,6 +597,22 @@ class MPS(NDArrayOperatorsMixin):
                 tensors[it] = ts
             else:
                 tensors[it] = ts.to_sparse(dq=None if it == 0 else self.dq)
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
+    
+    @staticmethod
+    def _to_ad_sparse(a):
+        return a.to_sparse()
+
+    def to_ad_sparse(self):
+        tensors = [None] * len(self.tensors)
+        from .ad.core import FermionTensor as ADFT, SparseTensor as ADST
+        for it, ts in enumerate(self.tensors):
+            if isinstance(ts, SparseTensor):
+                tensors[it] = ADST.from_non_ad(ts, pattern='++-')
+            elif isinstance(ts, FermionTensor):
+                tensors[it] = ADFT.from_non_ad(ts, pattern='++--')
+            else:
+                assert False
         return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod

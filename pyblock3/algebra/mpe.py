@@ -109,7 +109,7 @@ class MPE:
         l_mpo_id = self.mpo[0].ones(
             bond_infos=(qml, qbl, qkl, qml), pattern="++--")
         r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr,
-                                                 qbr, qkr, qmr), pattern="++--", dq=self.mpo.dq)
+                                                 qbr, qkr, qmr), pattern="+-+-", dq=self.mpo.dq)
         l_bra_id = self.bra[0].ones(bond_infos=(qbl, ))
         r_bra_id = self.bra[-1].ones(bond_infos=(qbl, ))
         l_ket_id = self.ket[0].ones(bond_infos=(qkl, ))
@@ -262,7 +262,7 @@ class MPE:
 
     def _embedded_ket(self):
         """Change ket format for embedding into larger system."""
-        return self._embedded_mps(self.ket, self.idents[4], self.idents[5])
+        return self._embedded_mps(self.ket, self.idents[4].conj(), self.idents[5].conj())
 
     def _effective(self, l=0, r=2):
         """Get sub-system with sites [l, r)"""

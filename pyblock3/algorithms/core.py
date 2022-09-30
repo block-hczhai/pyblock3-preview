@@ -117,7 +117,7 @@ class SweepAlgorithm:
                 else:
                     dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
                 if not self.mpi or self.mrank == 0:
-                    lsr = dm.tensor_svd(idx=3, pattern='+++---')
+                    lsr = dm.tensor_svd(idx=3, pattern='-++---')
                     l, _, _, error = pbalg.truncate_svd(
                         *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
                     if isinstance(wfns, list):
@@ -139,7 +139,7 @@ class SweepAlgorithm:
                 else:
                     dm = self.add_dm_noise(dm, mpo, wfn, noise, forward)
                 if not self.mpi or self.mrank == 0:
-                    lsr = dm.tensor_svd(idx=3, pattern='-+-+-+')
+                    lsr = dm.tensor_svd(idx=3, pattern='-+-+--')
                     _, _, r, error = pbalg.truncate_svd(
                         *lsr, cutoff=self.cutoff, max_bond_dim=bond_dim, eigen_values=True)
                     if isinstance(wfns, list):

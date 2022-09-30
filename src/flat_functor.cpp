@@ -145,7 +145,8 @@ size_t flat_sparse_tensor_matmul(const py::array_t<int32_t> &plan,
                                  const py::array_t<FL> &bdata,
                                  py::array_t<FL> &cdata) {
     int nb = (int)plan.shape()[0], ndimp = (int)plan.shape()[1];
-    assert(plan.strides()[1] == sizeof(int32_t));
+    if (nb != 0)
+        assert(plan.strides()[1] == sizeof(int32_t));
     assert(ndimp == 12);
     const FL *pa = adata.data(), *pb = bdata.data();
     FL *pc = cdata.mutable_data();
