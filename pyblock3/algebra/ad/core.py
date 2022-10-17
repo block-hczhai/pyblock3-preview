@@ -563,8 +563,8 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     def kron_product_info(self, *idxs, pattern=None):
         """Kron product of quantum numbers along selected indices, for fusing purpose."""
-        idxs = np.array([i if i >= 0 else self.ndim
-                         + i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
         return BondFusingInfo.tensor_product(*np.array(list(self.infos) + [[]],
                                                        dtype=object)[idxs], pattern=pattern)
 
@@ -679,10 +679,20 @@ class SparseTensor(NDArrayOperatorsMixin):
                 nns = list(v[0])
                 nns[midx] = v[0][midx] - ik
                 vx.append(np.zeros(tuple(nns)))
-            blocks_map[k] = SubTensor(data=np.concatenate(vx, axis=midx), q_labels=v[1])
+            blocks_map[k] = SubTensor(
+                data=np.concatenate(vx, axis=midx), q_labels=v[1])
         out_pattern = ''.join([self.pattern[x] if x not in idxs else (
             '' if x != midx else '+') for x in range(self.ndim)])
         return self.__class__(blocks=list(blocks_map.values()), pattern=out_pattern)
+
+    @staticmethod
+    @implements(np.einsum)
+    def _einsum(script, *arrs, **kwargs):
+        assert len(arrs) == 2
+        assert len(kwargs) == 0
+        from ..einsum import einsum
+        return einsum(script, *arrs, tensordot=SparseTensor._tensordot,
+                      transpose=SparseTensor._transpose)
 
     @staticmethod
     @implements(np.tensordot)
@@ -704,9 +714,12 @@ class SparseTensor(NDArrayOperatorsMixin):
                 The contracted SparseTensor.
         """
         if ENABLE_FUSED_IMPLS:
-            return a.__class__._tensordot_fused(a, b, axes=axes)
+            r = a.__class__._tensordot_fused(a, b, axes=axes)
         else:
-            return a.__class__._tensordot_basic(a, b, axes=axes)
+            r = a.__class__._tensordot_basic(a, b, axes=axes)
+        if r.ndim == 0:
+            r = r.item()
+        return r
 
     @staticmethod
     def _tensordot_basic(a, b, axes=2):
@@ -797,8 +810,10 @@ class SparseTensor(NDArrayOperatorsMixin):
         #       b_bond_inds, a_bond_pattern, b_bond_pattern)
 
         if not (len(idxa) == len(a.pattern) and len(idxb) == len(b.pattern) and idxa == idxb and a.pattern == b.pattern):
-            assert all(xx != yy for xx, yy in zip(
-                a_bond_pattern, b_bond_pattern))
+            if len(b_bond_pattern) != 0 and all(xx == yy for xx, yy in zip(a_bond_pattern, b_bond_pattern)):
+                b_bond_pattern = ''.join(['+' if x == '-' else '-' for x in b_bond_pattern])
+                b_out_pattern = ''.join(['+' if x == '-' else '-' for x in b_out_pattern])
+            assert all(xx != yy for xx, yy in zip(a_bond_pattern, b_bond_pattern))
 
         items = get_items(a, a_bond_inds) + get_items(b, b_bond_inds)
         bond_fuse_info = BondFusingInfo.kron_sum(items, pattern=a_bond_pattern)
@@ -1156,8 +1171,8 @@ class SparseTensor(NDArrayOperatorsMixin):
                 linfo.finfo[q][qls][1])
             rk, rkn = rinfo.finfo[q][qrs][0], np.multiply.reduce(
                 rinfo.finfo[q][qrs][1])
-            mats[q][lk:lk + lkn, rk:rk
-                    + rkn] = block.data.reshape((lkn, rkn))
+            mats[q][lk:lk + lkn, rk:rk +
+                    rkn] = block.data.reshape((lkn, rkn))
         l_blocks, s_blocks, r_blocks = [], [], []
         for q, mat in mats.items():
             u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
@@ -1577,8 +1592,8 @@ class FermionTensor(NDArrayOperatorsMixin):
         return BondFusingInfo.kron_sum(items, pattern=pattern)
 
     def kron_product_info(self, *idxs, pattern=None):
-        idxs = np.array([i if i >= 0 else self.ndim
-                         + i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim +
+                         i for i in idxs], dtype=np.int32)
         return BondFusingInfo.tensor_product(*np.array(list(self.infos) + [[]],
                                                        dtype=object)[idxs], pattern=pattern)
 
@@ -1839,16 +1854,16 @@ class FermionTensor(NDArrayOperatorsMixin):
                 d = a.ndim // 2 - 1
                 aidx = list(range(d + 1, d + d + 1))
                 bidx = list(range(1, d + 1))
-                tr = tuple([0, d + 2] + list(range(1, d + 1))
-                           + list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
+                tr = tuple([0, d + 2] + list(range(1, d + 1)) +
+                           list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
             # MPO x MPS
             elif a.ndim > b.ndim:
                 assert isinstance(a, FermionTensor)
                 dau, db = a.ndim - b.ndim, b.ndim - 2
                 aidx = list(range(dau + 1, dau + db + 1))
                 bidx = list(range(1, db + 1))
-                tr = tuple([0, dau + 2] + list(range(1, dau + 1))
-                           + [dau + 1, dau + 3])
+                tr = tuple([0, dau + 2] + list(range(1, dau + 1)) +
+                           [dau + 1, dau + 3])
             # MPS x MPO
             elif a.ndim < b.ndim:
                 assert isinstance(b, FermionTensor)

@@ -92,6 +92,10 @@ class BondInfo(Counter):
     def item(self):
         assert len(self) == 1 and self[list(self)[0]] == 1
         return list(self)[0]
+    
+    @property
+    def symm_class(self):
+        return list(self)[0].__class__
 
     @staticmethod
     def tensor_product(a, b, ref=None):
@@ -137,6 +141,17 @@ class BondInfo(Counter):
                 self[k] = int(np.ceil(v * bond_dim / n_total + 0.1))
                 if ref is not None:
                     self[k] = min(self[k], ref[k])
+
+    def truncate_no_keep(self, bond_dim, ref=None):
+        n_total = self.n_bonds
+        if n_total > bond_dim:
+            for k, v in self.items():
+                self[k] = int(np.round(v * bond_dim / n_total + 0.1))
+                if ref is not None:
+                    self[k] = min(self[k], ref[k])
+            for k in list(self.keys()):
+                if self[k] == 0:
+                    del self[k]
 
     def keep_maximal(self):
         maxk = max(self)
