@@ -472,10 +472,13 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         idxa[idxa < 0] += a.ndim
         idxb[idxb < 0] += b.ndim
 
-        return a.__class__(*flat_sparse_tensordot(
+        r = a.__class__(*flat_sparse_tensordot(
             a.q_labels, a.shapes, a.data, a.idxs,
             b.q_labels, b.shapes, b.data, b.idxs,
             idxa, idxb))
+        if r.ndim == 0:
+            r = r.item()
+        return r
 
     def tensordot(self, b, axes=2):
         return np.tensordot(self, b, axes)
@@ -784,12 +787,12 @@ class FlatFermionTensor(FermionTensor):
     def __init__(self, odd=None, even=None):
         self.odd = odd if odd is not None else FlatFermionTensor.ZERO
         self.even = even if even is not None else FlatFermionTensor.ZERO
-    
+
     def pytree_flatten(self):
         traced = (self.odd, self.even)
         others = ()
         return traced, others
-    
+
     @classmethod
     def pytree_unflatten(cls, others, traced):
         odd, even = traced

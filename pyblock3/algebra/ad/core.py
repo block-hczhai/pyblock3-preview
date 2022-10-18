@@ -31,6 +31,16 @@ from ..symmetry import BondInfo, BondFusingInfo
 
 ENABLE_FUSED_IMPLS = True
 
+# one can import pyblock3.algebra.ad
+# change pyblock3.algebra.ad.ENABLE_JAX = True
+# then import this file
+
+from . import ENABLE_JAX
+
+if ENABLE_JAX:
+    import jax.numpy as jnp
+else:
+    jnp = np
 
 def method_alias(name):
     """Make method callable from algebra.funcs."""
@@ -55,10 +65,19 @@ def implements(np_func):
                       _numpy_func_impls[np_func])[1]
 
 
+def jax_pytree_node(cls):
+    if ENABLE_JAX:
+        from jax import tree_util
+        tree_util.register_pytree_node(
+            cls, cls.pytree_flatten, cls.pytree_unflatten)
+    return cls
+
+
 _sub_tensor_numpy_func_impls = {}
 _numpy_func_impls = _sub_tensor_numpy_func_impls
 
 
+@jax_pytree_node
 class SubTensor(NDArrayOperatorsMixin):
     """
     A block in block-sparse tensor.
@@ -75,6 +94,16 @@ class SubTensor(NDArrayOperatorsMixin):
         if q_labels is not None and not isinstance(q_labels, tuple):
             q_labels = tuple(q_labels)
         self.q_labels = q_labels
+
+    def pytree_flatten(self):
+        traced = (self.data, )
+        others = (self.q_labels, )
+        return traced, others
+
+    @classmethod
+    def pytree_unflatten(cls, others, traced):
+        q_labels, = others
+        return cls(data=traced[0], q_labels=q_labels)
 
     @property
     def ndim(self):
@@ -114,26 +143,26 @@ class SubTensor(NDArrayOperatorsMixin):
             elif ufunc.__name__ in ["add", "subtract"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
-                    r = b.__class__(data=getattr(ufunc, method)
+                    r = b.__class__(data=getattr(jnp, ufunc.__name__)
                                     (a, b.data), q_labels=b.q_labels)
                 elif isinstance(b, numbers.Number):
-                    r = a.__class__(data=getattr(ufunc, method)
+                    r = a.__class__(data=getattr(jnp, ufunc.__name__)
                                     (a.data, b), q_labels=a.q_labels)
                 else:
                     assert a.q_labels == b.q_labels or b.q_labels is None
-                    return a.__class__(data=getattr(ufunc, method)(a.data, b.data), q_labels=a.q_labels)
+                    return a.__class__(data=getattr(jnp, ufunc.__name__)(a.data, b.data), q_labels=a.q_labels)
             elif ufunc.__name__ in ["multiply", "divide", "true_divide"]:
                 a, b = inputs
                 if isinstance(a, numbers.Number):
-                    r = b.__class__(data=getattr(ufunc, method)
+                    r = b.__class__(data=getattr(jnp, ufunc.__name__)
                                     (a, b.data), q_labels=b.q_labels)
                 elif isinstance(b, numbers.Number):
-                    r = a.__class__(data=getattr(ufunc, method)
+                    r = a.__class__(data=getattr(jnp, ufunc.__name__)
                                     (a.data, b), q_labels=a.q_labels)
                 else:
                     return NotImplemented
             elif len(inputs) == 1:
-                r = inputs[0].__class__(data=getattr(ufunc, method)(inputs[0].data),
+                r = inputs[0].__class__(data=getattr(jnp, ufunc.__name__)(inputs[0].data),
                                         q_labels=inputs[0].q_labels)
             else:
                 return NotImplemented
@@ -209,10 +238,10 @@ class SubTensor(NDArrayOperatorsMixin):
     @staticmethod
     @implements(np.linalg.norm)
     def _norm(x):
-        return np.linalg.norm(x.data)
+        return jnp.linalg.norm(x.data)
 
     def norm(self):
-        return np.linalg.norm(self.data)
+        return jnp.linalg.norm(self.data)
 
     @staticmethod
     @implements(np.tensordot)
@@ -266,9 +295,9 @@ class SubTensor(NDArrayOperatorsMixin):
         """
         if v.ndim == 2:
             assert v.q_labels[0] == v.q_labels[1]
-            return v.__class__(data=np.diag(v.data), q_labels=v.q_labels[:1])
+            return v.__class__(data=jnp.diag(v.data), q_labels=v.q_labels[:1])
         elif v.ndim == 1:
-            return v.__class__(data=np.diag(v.data), q_labels=v.q_labels * 2)
+            return v.__class__(data=jnp.diag(v.data), q_labels=v.q_labels * 2)
         else:
             raise RuntimeError("ndim for np.diag must be 1 or 2.")
 
@@ -312,6 +341,7 @@ _sparse_tensor_numpy_func_impls = {}
 _numpy_func_impls = _sparse_tensor_numpy_func_impls
 
 
+@jax_pytree_node
 class SparseTensor(NDArrayOperatorsMixin):
     """
     block-sparse tensor.
@@ -321,6 +351,17 @@ class SparseTensor(NDArrayOperatorsMixin):
     def __init__(self, blocks=None, pattern=None):
         self.blocks = blocks if blocks is not None else []
         self.pattern = pattern
+
+    def pytree_flatten(self):
+        traced = tuple(self.blocks)
+        others = (self.pattern, )
+        return traced, others
+
+    @classmethod
+    def pytree_unflatten(cls, others, traced):
+        blocks = list(traced)
+        pattern, = others
+        return cls(blocks=blocks, pattern=pattern)
 
     @property
     def ndim(self):
@@ -352,7 +393,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         if self.n_blocks == 0:
             return 0
         assert self.n_blocks == 1 and self.blocks[0].q_labels == ()
-        return self.blocks[0].data.item()
+        return jnp.sum(self.blocks[0].data)
 
     def __str__(self):
         return "\n".join("%3d %r" % (ib, b) for ib, b in enumerate(self.blocks))
@@ -563,8 +604,8 @@ class SparseTensor(NDArrayOperatorsMixin):
 
     def kron_product_info(self, *idxs, pattern=None):
         """Kron product of quantum numbers along selected indices, for fusing purpose."""
-        idxs = np.array([i if i >= 0 else self.ndim +
-                         i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim
+                         + i for i in idxs], dtype=np.int32)
         return BondFusingInfo.tensor_product(*np.array(list(self.infos) + [[]],
                                                        dtype=object)[idxs], pattern=pattern)
 
@@ -680,7 +721,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 nns[midx] = v[0][midx] - ik
                 vx.append(np.zeros(tuple(nns)))
             blocks_map[k] = SubTensor(
-                data=np.concatenate(vx, axis=midx), q_labels=v[1])
+                data=jnp.concatenate(vx, axis=midx), q_labels=v[1])
         out_pattern = ''.join([self.pattern[x] if x not in idxs else (
             '' if x != midx else '+') for x in range(self.ndim)])
         return self.__class__(blocks=list(blocks_map.values()), pattern=out_pattern)
@@ -757,7 +798,7 @@ class SparseTensor(NDArrayOperatorsMixin):
                 outqa = tuple(block_a.q_labels[id] for id in out_idx_a)
                 for block_b, outqb in map_idx_b[ctrq]:
                     outq = outqa + outqb
-                    matd = np.tensordot(
+                    matd = jnp.tensordot(
                         block_a.data, block_b.data, axes=(idxa, idxb))
                     mat = block_a.__class__(matd, q_labels=None)
                     if outq not in blocks_map:
@@ -811,9 +852,12 @@ class SparseTensor(NDArrayOperatorsMixin):
 
         if not (len(idxa) == len(a.pattern) and len(idxb) == len(b.pattern) and idxa == idxb and a.pattern == b.pattern):
             if len(b_bond_pattern) != 0 and all(xx == yy for xx, yy in zip(a_bond_pattern, b_bond_pattern)):
-                b_bond_pattern = ''.join(['+' if x == '-' else '-' for x in b_bond_pattern])
-                b_out_pattern = ''.join(['+' if x == '-' else '-' for x in b_out_pattern])
-            assert all(xx != yy for xx, yy in zip(a_bond_pattern, b_bond_pattern))
+                b_bond_pattern = ''.join(
+                    ['+' if x == '-' else '-' for x in b_bond_pattern])
+                b_out_pattern = ''.join(
+                    ['+' if x == '-' else '-' for x in b_out_pattern])
+            assert all(xx != yy for xx, yy in zip(
+                a_bond_pattern, b_bond_pattern))
 
         items = get_items(a, a_bond_inds) + get_items(b, b_bond_inds)
         bond_fuse_info = BondFusingInfo.kron_sum(items, pattern=a_bond_pattern)
@@ -1008,7 +1052,7 @@ class SparseTensor(NDArrayOperatorsMixin):
         Middle legs are summed."""
         return self._kron_add(self, b, infos=infos)
 
-    def left_canonicalize(self, mode='reduced'):
+    def left_canonicalize(self, mode='reduced', fix_sign=True):
         """
         Left canonicalization (using QR factorization).
         Left canonicalization needs to collect all left indices for each specific right index.
@@ -1026,19 +1070,23 @@ class SparseTensor(NDArrayOperatorsMixin):
         q_blocks, r_blocks = [], []
         for q_label_r, blocks in collected_rows.items():
             l_shapes = [np.prod(b.shape[:-1]) for b in blocks]
-            mat = np.concatenate([b.data.reshape((sh, -1))
+            mat = jnp.concatenate([b.data.reshape((sh, -1))
                                   for sh, b in zip(l_shapes, blocks)], axis=0)
-            q, r = np.linalg.qr(mat, mode=mode)
+            q, r = jnp.linalg.qr(mat, mode=mode)
+            if fix_sign:
+                sg = jnp.sign(jnp.diag(r)).reshape((1, -1))
+                q *= sg
+                r *= sg.T
             r_blocks.append(
                 SubTensor(data=r, q_labels=(q_label_r, q_label_r)))
-            qs = np.split(q, list(accumulate(l_shapes[:-1])), axis=0)
+            qs = jnp.split(q, list(accumulate(l_shapes[:-1])), axis=0)
             assert len(qs) == len(blocks)
             for q, b in zip(qs, blocks):
                 mat = q.reshape(b.shape[:-1] + (r.shape[0], ))
                 q_blocks.append(SubTensor(data=mat, q_labels=b.q_labels))
         return self.__class__(blocks=q_blocks, pattern=self.pattern), self.__class__(blocks=r_blocks, pattern='+-')
 
-    def right_canonicalize(self, mode='reduced'):
+    def right_canonicalize(self, mode='reduced', fix_sign=True):
         """
         Right canonicalization (using QR factorization).
 
@@ -1054,12 +1102,16 @@ class SparseTensor(NDArrayOperatorsMixin):
         l_blocks, q_blocks = [], []
         for q_label_l, blocks in collected_cols.items():
             r_shapes = [np.prod(b.shape[1:]) for b in blocks]
-            mat = np.concatenate([b.data.reshape((-1, sh)).T
+            mat = jnp.concatenate([b.data.reshape((-1, sh)).T
                                   for sh, b in zip(r_shapes, blocks)], axis=0)
-            q, r = np.linalg.qr(mat, mode=mode)
+            q, r = jnp.linalg.qr(mat, mode=mode)
+            if fix_sign:
+                sg = jnp.sign(jnp.diag(r)).reshape((1, -1))
+                q *= sg
+                r *= sg.T
             l_blocks.append(
                 SubTensor(data=r.T, q_labels=(q_label_l, q_label_l)))
-            qs = np.split(q, list(accumulate(r_shapes[:-1])), axis=0)
+            qs = jnp.split(q, list(accumulate(r_shapes[:-1])), axis=0)
             assert len(qs) == len(blocks)
             for q, b in zip(qs, blocks):
                 mat = q.T.reshape((r.shape[0], ) + b.shape[1:])
@@ -1082,10 +1134,10 @@ class SparseTensor(NDArrayOperatorsMixin):
         l_blocks, s_blocks, r_blocks = [], [], []
         for q_label_r, blocks in collected_rows.items():
             l_shapes = [np.prod(b.shape[:-1]) for b in blocks]
-            mat = np.concatenate([b.data.reshape((sh, -1))
+            mat = jnp.concatenate([b.data.reshape((sh, -1))
                                   for sh, b in zip(l_shapes, blocks)], axis=0)
-            u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
-            qs = np.split(u, list(accumulate(l_shapes[:-1])), axis=0)
+            u, s, vh = jnp.linalg.svd(mat, full_matrices=full_matrices)
+            qs = jnp.split(u, list(accumulate(l_shapes[:-1])), axis=0)
             assert len(qs) == len(blocks)
             for q, b in zip(qs, blocks):
                 mat = q.reshape(b.shape[:-1] + (s.shape[0], ))
@@ -1111,10 +1163,10 @@ class SparseTensor(NDArrayOperatorsMixin):
         l_blocks, s_blocks, r_blocks = [], [], []
         for q_label_l, blocks in collected_cols.items():
             r_shapes = [np.prod(b.shape[1:]) for b in blocks]
-            mat = np.concatenate([b.data.reshape((-1, sh))
+            mat = jnp.concatenate([b.data.reshape((-1, sh))
                                   for sh, b in zip(r_shapes, blocks)], axis=1)
-            u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
-            qs = np.split(vh, list(accumulate(r_shapes[:-1])), axis=1)
+            u, s, vh = jnp.linalg.svd(mat, full_matrices=full_matrices)
+            qs = jnp.split(vh, list(accumulate(r_shapes[:-1])), axis=1)
             assert len(qs) == len(blocks)
             for q, b in zip(qs, blocks):
                 mat = q.reshape((vh.shape[0], ) + b.shape[1:])
@@ -1171,8 +1223,8 @@ class SparseTensor(NDArrayOperatorsMixin):
                 linfo.finfo[q][qls][1])
             rk, rkn = rinfo.finfo[q][qrs][0], np.multiply.reduce(
                 rinfo.finfo[q][qrs][1])
-            mats[q][lk:lk + lkn, rk:rk +
-                    rkn] = block.data.reshape((lkn, rkn))
+            mats[q][lk:lk + lkn, rk:rk
+                    + rkn] = block.data.reshape((lkn, rkn))
         l_blocks, s_blocks, r_blocks = [], [], []
         for q, mat in mats.items():
             u, s, vh = np.linalg.svd(mat, full_matrices=full_matrices)
@@ -1592,8 +1644,8 @@ class FermionTensor(NDArrayOperatorsMixin):
         return BondFusingInfo.kron_sum(items, pattern=pattern)
 
     def kron_product_info(self, *idxs, pattern=None):
-        idxs = np.array([i if i >= 0 else self.ndim +
-                         i for i in idxs], dtype=np.int32)
+        idxs = np.array([i if i >= 0 else self.ndim
+                         + i for i in idxs], dtype=np.int32)
         return BondFusingInfo.tensor_product(*np.array(list(self.infos) + [[]],
                                                        dtype=object)[idxs], pattern=pattern)
 
@@ -1729,11 +1781,11 @@ class FermionTensor(NDArrayOperatorsMixin):
         if isinstance(idx, int):
             for block in blocks:
                 if block.q_labels[idx].is_fermion:
-                    np.negative(block, out=block)
+                    block.data = -block.data
         else:
             for block in blocks:
                 if np.logical_xor.reduce([block.q_labels[ix].is_fermion for ix in idx]):
-                    np.negative(block, out=block)
+                    block.data = -block.data
 
         return r
 
@@ -1854,16 +1906,16 @@ class FermionTensor(NDArrayOperatorsMixin):
                 d = a.ndim // 2 - 1
                 aidx = list(range(d + 1, d + d + 1))
                 bidx = list(range(1, d + 1))
-                tr = tuple([0, d + 2] + list(range(1, d + 1)) +
-                           list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
+                tr = tuple([0, d + 2] + list(range(1, d + 1))
+                           + list(range(d + 3, d + d + 3)) + [d + 1, d + d + 3])
             # MPO x MPS
             elif a.ndim > b.ndim:
                 assert isinstance(a, FermionTensor)
                 dau, db = a.ndim - b.ndim, b.ndim - 2
                 aidx = list(range(dau + 1, dau + db + 1))
                 bidx = list(range(1, db + 1))
-                tr = tuple([0, dau + 2] + list(range(1, dau + 1)) +
-                           [dau + 1, dau + 3])
+                tr = tuple([0, dau + 2] + list(range(1, dau + 1))
+                           + [dau + 1, dau + 3])
             # MPS x MPO
             elif a.ndim < b.ndim:
                 assert isinstance(b, FermionTensor)
@@ -1912,7 +1964,7 @@ class FermionTensor(NDArrayOperatorsMixin):
         Middle legs are summed."""
         return self._kron_add(self, b, infos=infos)
 
-    def left_canonicalize(self, mode='reduced'):
+    def left_canonicalize(self, mode='reduced', fix_sign=True):
         """
         Left canonicalization (using QR factorization).
         Left canonicalization needs to collect all left indices for each specific right index.
@@ -1931,12 +1983,16 @@ class FermionTensor(NDArrayOperatorsMixin):
         q_odd, q_even, r_blocks = [], [], []
         for q_label_r, blocks in collected_rows.items():
             l_shapes = [np.prod(b.shape[:-1]) for _, b in blocks]
-            mat = np.concatenate([b.data.reshape((sh, -1))
+            mat = jnp.concatenate([b.data.reshape((sh, -1))
                                   for sh, (_, b) in zip(l_shapes, blocks)], axis=0)
-            q, r = np.linalg.qr(mat, mode=mode)
+            q, r = jnp.linalg.qr(mat, mode=mode)
+            if fix_sign:
+                sg = jnp.sign(jnp.diag(r)).reshape((1, -1))
+                q *= sg
+                r *= sg.T
             r_blocks.append(
                 SubTensor(data=r, q_labels=(q_label_r, q_label_r)))
-            qs = np.split(q, list(accumulate(l_shapes[:-1])), axis=0)
+            qs = jnp.split(q, list(accumulate(l_shapes[:-1])), axis=0)
             assert(len(qs) == len(blocks))
             for q, (ip, b) in zip(qs, blocks):
                 mat = q.reshape(b.shape[:-1] + (r.shape[0], ))
@@ -1946,7 +2002,7 @@ class FermionTensor(NDArrayOperatorsMixin):
                     q_even.append(SubTensor(data=mat, q_labels=b.q_labels))
         return FermionTensor(odd=q_odd, even=q_even, pattern=self.pattern), SparseTensor(blocks=r_blocks, pattern='+-')
 
-    def right_canonicalize(self, mode='reduced'):
+    def right_canonicalize(self, mode='reduced', fix_sign=True):
         """
         Right canonicalization (using QR factorization).
 
@@ -1966,6 +2022,10 @@ class FermionTensor(NDArrayOperatorsMixin):
             mat = np.concatenate([b.data.reshape((-1, sh)).T
                                   for sh, (_, b) in zip(r_shapes, blocks)], axis=0)
             q, r = np.linalg.qr(mat, mode=mode)
+            if fix_sign:
+                sg = jnp.sign(jnp.diag(r)).reshape((1, -1))
+                q *= sg
+                r *= sg.T
             l_blocks.append(
                 SubTensor(data=r.T, q_labels=(q_label_l, q_label_l)))
             qs = np.split(q, list(accumulate(r_shapes[:-1])), axis=0)

@@ -436,11 +436,13 @@ class MPS(NDArrayOperatorsMixin):
             else:
                 lbra = np.tensordot(left, a.tensors[i], axes=([0], [0]))
                 left = np.tensordot(lbra, b.tensors[i], axes=(cidx, cidx))
+        
+        r = left if isinstance(left, float) else left.item()
 
         if out is not None:
-            out[()] = left.item()
+            out[()] = r
 
-        return left.item() + a.const * b.const
+        return r + a.const * b.const
 
     def dot(self, b, out=None):
         return np.dot(self, b, out=out)

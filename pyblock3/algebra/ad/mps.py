@@ -22,7 +22,6 @@
 """
 
 import numpy as np
-import jax.numpy as jnp
 from numpy.lib.mixins import NDArrayOperatorsMixin
 import numbers
 from collections import Counter
@@ -30,16 +29,31 @@ from functools import reduce
 
 from ..symmetry import BondInfo, BondFusingInfo
 from ..core import SparseTensor, SubTensor, SliceableTensor, FermionTensor
-from .flat import FlatFermionTensor, FlatSparseTensor, jax_pytree_node
+from .flat import FlatFermionTensor, FlatSparseTensor
 from ..mps import MPSInfo
 from ...symbolic.symbolic import SymbolicSparseTensor
 
+from . import ENABLE_JAX
+
+if ENABLE_JAX:
+    import jax.numpy as jnp
+else:
+    jnp = np
 
 def implements(np_func):
     global _numpy_func_impls
     return lambda f: (_numpy_func_impls.update({np_func: f})
                       if np_func not in _numpy_func_impls else None,
                       _numpy_func_impls[np_func])[1]
+
+
+def jax_pytree_node(cls):
+    if ENABLE_JAX:
+        from jax import tree_util
+        tree_util.register_pytree_node(
+            cls, cls.pytree_flatten, cls.pytree_unflatten)
+    return cls
+
 
 
 _mps_numpy_func_impls = {}
@@ -353,10 +367,15 @@ class MPS(NDArrayOperatorsMixin):
                 lbra = np.tensordot(left, a.tensors[i], axes=([0], [0]))
                 left = np.tensordot(lbra, b.tensors[i], axes=(cidx, cidx))
 
-        if out is not None:
-            out[()] = left.item()
+        if ENABLE_JAX:
+            r = left
+        else:
+            r = left if isinstance(left, float) else left.item()
 
-        return left.item() + a.const * b.const
+        if out is not None:
+            out[()] = r
+
+        return r + a.const * b.const
 
     def dot(self, b, out=None):
         return np.dot(self, b, out=out)
@@ -413,8 +432,12 @@ class MPS(NDArrayOperatorsMixin):
             prod_bonds.append(infos[-1][-2] ^ infos[-1][-1])
 
             for i in range(n_sites):
+                old_pattern = getattr(tensors[i], "pattern", None)
                 tensors[i] = tensors[i].fuse(-2, -1, info=prod_bonds[i + 1]
                                              ).fuse(0, 1, info=prod_bonds[i])
+                if old_pattern is not None:
+                    tensors[i].pattern = tensors[i].pattern[:-1] + old_pattern[-1]
+                
 
         r = MPS(tensors=tensors)
 
@@ -582,7 +605,7 @@ class MPS(NDArrayOperatorsMixin):
 
     @staticmethod
     def _from_flat(a):
-        return a.to_flat()
+        return a.from_flat()
 
     def from_flat(self):
         from ..flat import FlatFermionTensor as FF, FlatSparseTensor as FS
@@ -594,6 +617,13 @@ class MPS(NDArrayOperatorsMixin):
             else:
                 tensors[it] = FlatFermionTensor.from_flat(ts)
         return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
+    
+    @staticmethod
+    def _from_core(a):
+        return a.from_core()
+
+    def from_core(self):
+        return MPS(tensors=self.tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @staticmethod
     def _simplify(a):
