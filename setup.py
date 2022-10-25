@@ -7,6 +7,8 @@ import platform
 from setuptools import setup, find_packages, Extension
 from setuptools.command.build_ext import build_ext
 
+NO_COMPILE = os.environ.get("PYBLOCK3_NO_COMPILE", None) == "1"
+
 
 class CMakeExt(Extension):
     def __init__(self, name, cmdir='.'):
@@ -70,25 +72,33 @@ class CMakeBuild(build_ext):
                                   cwd=self.build_temp)
 
 
-setup(name='pyblock3',
-      version='0.1.5',
-      packages=find_packages(),
-      ext_modules=[CMakeExt('block3')],
-      cmdclass={'build_ext': CMakeBuild},
-      license='LICENSE',
-      description='An efficient python block-sparse tensor and MPS/DMRG library.',
-      long_description=open('README.md').read(),
-      long_description_content_type='text/markdown',
-      author='Huanchen Zhai, Yang Gao, and Garnet K.-L. Chan',
-      author_email='hczhai@ucla.edu',
-      url='https://github.com/block-hczhai/pyblock3-preview',
-      install_requires=[
-          "mkl==2019",
-          "mkl-include",
-          "numpy<1.23.0",
-          "psutil",
-          "pybind11",
-          "intel-openmp",
-          "cmake==3.17"
-      ]
-      )
+setup_options = dict(
+    name='pyblock3',
+    version='0.1.5',
+    packages=find_packages(),
+    license='LICENSE',
+    description='An efficient python block-sparse tensor and MPS/DMRG library.',
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
+    author='Huanchen Zhai, Yang Gao, and Garnet K.-L. Chan',
+    author_email='hczhai@ucla.edu',
+    url='https://github.com/block-hczhai/pyblock3-preview',
+    install_requires=["numpy"],
+)
+
+if not NO_COMPILE:
+    setup_options.update(dict(
+        ext_modules=[CMakeExt('block3')],
+        cmdclass={'build_ext': CMakeBuild},
+        install_requires=[
+            "mkl==2021.4",
+            "mkl-include",
+            "numpy<1.23.0",
+            "psutil",
+            "pybind11",
+            "intel-openmp",
+            "cmake"
+        ]
+    ))
+
+setup(**setup_options)
