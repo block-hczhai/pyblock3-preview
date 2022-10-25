@@ -1415,7 +1415,24 @@ class SparseTensor(NDArrayOperatorsMixin):
         return a.to_dense(infos=infos)
 
     def to_dense(self, infos=None):
-        return self.to_sliceable(infos=infos).to_dense()
+        if infos is None:
+            infos = self.infos
+        idx_infos = []
+        for info in infos:
+            idx_info = Counter()
+            kk = 0
+            for k in sorted(info):
+                idx_info[k] = kk
+                kk += info[k]
+            idx_infos.append(idx_info)
+        sh = tuple(sum(info.values()) for info in infos)
+        arr = np.zeros(sh, dtype=self.dtype)
+        for block in self.blocks:
+            idx = tuple(slice(ixf[q], ixf[q] + info[q])
+                         for q, ixf, info in zip(block.q_labels, idx_infos, infos))
+            arr[idx] = block.data
+        arr = jnp.array(arr)
+        return arr
 
     def to_sparse(self):
         return self
@@ -1430,6 +1447,7 @@ _fermion_tensor_numpy_func_impls = {}
 _numpy_func_impls = _fermion_tensor_numpy_func_impls
 
 
+@jax_pytree_node
 class FermionTensor(NDArrayOperatorsMixin):
     """
     block-sparse tensor with fermion factors.
@@ -1452,6 +1470,16 @@ class FermionTensor(NDArrayOperatorsMixin):
             self.odd.pattern = self.even.pattern
         if self.even.pattern is None:
             self.even.pattern = self.odd.pattern
+
+    def pytree_flatten(self):
+        traced = (self.odd, self.even)
+        others = ()
+        return traced, others
+
+    @classmethod
+    def pytree_unflatten(cls, others, traced):
+        odd, even = traced
+        return cls(odd=odd, even=even)
 
     @property
     def ndim(self):
@@ -1693,6 +1721,15 @@ class FermionTensor(NDArrayOperatorsMixin):
         return FermionTensor(odd=odd, even=even)
 
     @staticmethod
+    @implements(np.einsum)
+    def _einsum(script, *arrs, **kwargs):
+        assert len(arrs) == 2
+        assert len(kwargs) == 0
+        from ..einsum import einsum
+        return einsum(script, *arrs, tensordot=FermionTensor._tensordot,
+                      transpose=FermionTensor._transpose)
+
+    @staticmethod
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
         """
@@ -1771,7 +1808,7 @@ class FermionTensor(NDArrayOperatorsMixin):
             else:
                 # n-site state x 1-site op
                 idx = range(idx, idx + min(idxa))
-                blocks = odd.blocks
+                blocks = odd.blocks if isinstance(odd, b.odd.__class__) else []
                 r = odd + even
         else:
             raise TypeError('Unsupported tensordot for %r and %r' %
