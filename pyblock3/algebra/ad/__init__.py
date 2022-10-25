@@ -1,2 +1,3 @@
 
 ENABLE_JAX = False
+ENABLE_EINSUM = True

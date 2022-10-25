@@ -35,7 +35,7 @@ ENABLE_FUSED_IMPLS = True
 # change pyblock3.algebra.ad.ENABLE_JAX = True
 # then import this file
 
-from . import ENABLE_JAX
+from . import ENABLE_JAX, ENABLE_EINSUM
 
 if ENABLE_JAX:
     import jax.numpy as jnp
@@ -726,14 +726,15 @@ class SparseTensor(NDArrayOperatorsMixin):
             '' if x != midx else '+') for x in range(self.ndim)])
         return self.__class__(blocks=list(blocks_map.values()), pattern=out_pattern)
 
-    @staticmethod
-    @implements(np.einsum)
-    def _einsum(script, *arrs, **kwargs):
-        assert len(arrs) == 2
-        assert len(kwargs) == 0
-        from ..einsum import einsum
-        return einsum(script, *arrs, tensordot=SparseTensor._tensordot,
-                      transpose=SparseTensor._transpose)
+    if ENABLE_EINSUM:
+        @staticmethod
+        @implements(np.einsum)
+        def _einsum(script, *arrs, **kwargs):
+            assert len(arrs) == 2
+            assert len(kwargs) == 0
+            from ..einsum import einsum
+            return einsum(script, *arrs, tensordot=SparseTensor._tensordot,
+                        transpose=SparseTensor._transpose)
 
     @staticmethod
     @implements(np.tensordot)
@@ -1720,14 +1721,15 @@ class FermionTensor(NDArrayOperatorsMixin):
         even = self.even.fuse(*idxs, info=info, pattern=pattern)
         return FermionTensor(odd=odd, even=even)
 
-    @staticmethod
-    @implements(np.einsum)
-    def _einsum(script, *arrs, **kwargs):
-        assert len(arrs) == 2
-        assert len(kwargs) == 0
-        from ..einsum import einsum
-        return einsum(script, *arrs, tensordot=FermionTensor._tensordot,
-                      transpose=FermionTensor._transpose)
+    if ENABLE_EINSUM:
+        @staticmethod
+        @implements(np.einsum)
+        def _einsum(script, *arrs, **kwargs):
+            assert len(arrs) == 2
+            assert len(kwargs) == 0
+            from ..einsum import einsum
+            return einsum(script, *arrs, tensordot=FermionTensor._tensordot,
+                        transpose=FermionTensor._transpose)
 
     @staticmethod
     @implements(np.tensordot)
