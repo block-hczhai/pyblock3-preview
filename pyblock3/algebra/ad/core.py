@@ -35,9 +35,11 @@ ENABLE_FUSED_IMPLS = True
 # change pyblock3.algebra.ad.ENABLE_JAX = True
 # then import this file
 
-from . import ENABLE_JAX, ENABLE_EINSUM
+from . import ENABLE_AUTORAY, ENABLE_JAX, ENABLE_EINSUM
 
-if ENABLE_JAX:
+if ENABLE_AUTORAY:
+    from autoray import numpy as jnp
+elif ENABLE_JAX:
     import jax.numpy as jnp
 else:
     jnp = np
@@ -701,7 +703,7 @@ class SparseTensor(NDArrayOperatorsMixin):
             if new_qs not in blocks_map:
                 blocks_map[new_qs] = [tuple(new_ns), new_qs, []]
             new_ns[midx] = nk
-            blk = block.data.transpose(new_perm)
+            blk = jnp.transpose(block.data, new_perm)
             blocks_map[new_qs][-1].append((k, nk, blk.reshape(tuple(new_ns))))
         for k, v in blocks_map.items():
             vx = []
