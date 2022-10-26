@@ -708,20 +708,30 @@ class SparseTensor(NDArrayOperatorsMixin):
         for k, v in blocks_map.items():
             vx = []
             ik = 0
+            ref_idx = None
             for g in sorted(v[-1]):
                 if g[0] == ik:
                     ik += g[1]
                     vx.append(g[2])
+                    ref_idx = len(vx) - 1
                 else:
                     nns = list(v[0])
                     nns[midx] = g[0] - ik
-                    vx.append(np.zeros(tuple(nns)))
+                    vx.append(jnp.zeros(tuple(nns)))
                     vx.append(g[2])
+                    ref_idx = len(vx) - 1
                     ik += g[1] + g[0] - ik
             if ik != v[0][midx]:
                 nns = list(v[0])
                 nns[midx] = v[0][midx] - ik
-                vx.append(np.zeros(tuple(nns)))
+                vx.append(jnp.zeros(tuple(nns)))
+            if ref_idx is not None and not all([x.__class__ == vx[ref_idx].__class__ for x in vx]):
+                for iv in range(len(vx)):
+                    if vx[iv].__class__ != vx[ref_idx].__class__:
+                        try:
+                            vx[iv] = jnp.zeros_like(vx[ref_idx], shape=vx[iv].shape)
+                        except:
+                            vx[iv] = jnp.zeros(vx[iv].shape, like=vx[ref_idx])
             blocks_map[k] = SubTensor(
                 data=jnp.concatenate(vx, axis=midx), q_labels=v[1])
         out_pattern = ''.join([self.pattern[x] if x not in idxs else (
