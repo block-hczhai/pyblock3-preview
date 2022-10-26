@@ -1078,8 +1078,8 @@ class SparseTensor(NDArrayOperatorsMixin):
             q, r = jnp.linalg.qr(mat, mode=mode)
             if fix_sign:
                 sg = jnp.sign(jnp.diag(r)).reshape((1, -1))
-                q *= sg
-                r *= sg.T
+                q = q * sg
+                r = r * sg.T
             r_blocks.append(
                 SubTensor(data=r, q_labels=(q_label_r, q_label_r)))
             qs = jnp.split(q, list(accumulate(l_shapes[:-1])), axis=0)
@@ -1110,8 +1110,8 @@ class SparseTensor(NDArrayOperatorsMixin):
             q, r = jnp.linalg.qr(mat, mode=mode)
             if fix_sign:
                 sg = jnp.sign(jnp.diag(r)).reshape((1, -1))
-                q *= sg
-                r *= sg.T
+                q = q * sg
+                r = r * sg.T
             l_blocks.append(
                 SubTensor(data=r.T, q_labels=(q_label_l, q_label_l)))
             qs = jnp.split(q, list(accumulate(r_shapes[:-1])), axis=0)
@@ -2029,8 +2029,8 @@ class FermionTensor(NDArrayOperatorsMixin):
             q, r = jnp.linalg.qr(mat, mode=mode)
             if fix_sign:
                 sg = jnp.sign(jnp.diag(r)).reshape((1, -1))
-                q *= sg
-                r *= sg.T
+                q = q * sg
+                r = r * sg.T
             r_blocks.append(
                 SubTensor(data=r, q_labels=(q_label_r, q_label_r)))
             qs = jnp.split(q, list(accumulate(l_shapes[:-1])), axis=0)
@@ -2065,8 +2065,8 @@ class FermionTensor(NDArrayOperatorsMixin):
             q, r = np.linalg.qr(mat, mode=mode)
             if fix_sign:
                 sg = jnp.sign(jnp.diag(r)).reshape((1, -1))
-                q *= sg
-                r *= sg.T
+                q = q * sg
+                r = r * sg.T
             l_blocks.append(
                 SubTensor(data=r.T, q_labels=(q_label_l, q_label_l)))
             qs = np.split(q, list(accumulate(r_shapes[:-1])), axis=0)
