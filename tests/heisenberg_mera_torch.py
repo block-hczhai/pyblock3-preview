@@ -1,13 +1,20 @@
 
+
+import sys
+
+import numpy as np
 import quimb.tensor as qtn
 import warnings
 import torch
 import time
-import numpy as np
 from pyblock3.heisenberg import Heisenberg
+
+torch.autograd.set_detect_anomaly(False)
+torch.set_num_threads(28)
 
 import pyblock3.algebra.ad
 pyblock3.algebra.ad.ENABLE_JAX = True
+pyblock3.algebra.ad.ENABLE_AUTORAY = True
 
 from pyblock3.algebra.ad import core
 core.ENABLE_FUSED_IMPLS = False
@@ -18,9 +25,28 @@ warnings.filterwarnings(action='ignore', category=torch.jit.TracerWarning)
 
 import autoray as ar
 
-SparseTensor.shape = property(lambda x: tuple(ix.n_bonds for ix in x.infos))
-ar.register_function('pyblock3', 'array', lambda x: x)
-ar.register_function('pyblock3', 'to_numpy', lambda x: x)
+def p_array(x):
+    return x
+
+@property
+def p_shape(x):
+    return tuple(ix.n_bonds for ix in x.infos)
+
+SparseTensor.shape = p_shape # necessary for printing and contraction
+
+ar.register_function('pyblock3', 'array', p_array)
+ar.register_function('pyblock3', 'to_numpy', p_array)
+ar.register_function('torch', 'conjugate', torch.conj)
+
+def torch_split_wrapper(old_fn):
+    def new_fn(ary, indices_or_sections, *args, **kwargs):
+        if len(indices_or_sections) == 0:
+            return [ary]
+        else:
+            return old_fn(ary, indices_or_sections, *args, **kwargs)
+    return new_fn
+
+ar.register_function('torch', 'split', torch_split_wrapper, wrap=True)
 
 L = 8
 D = 20
@@ -127,6 +153,20 @@ class MERAState:
 
         return terms
 
+def get_params(self):
+    from jax.tree_util import tree_flatten
+    params, tree = tree_flatten(self)
+    self._tree = tree
+    return params
+
+def set_params(self, params):
+    from jax.tree_util import tree_unflatten
+    x = tree_unflatten(self._tree, params)
+    self.blocks = x.blocks
+    self.pattern = x.pattern
+
+SparseTensor.get_params = get_params
+SparseTensor.set_params = set_params
 
 class PyTreeVectorizer(qtn.optimize.Vectorizer):
 
@@ -188,54 +228,6 @@ class PyTreeVectorizer(qtn.optimize.Vectorizer):
         return tree_unflatten(self.tree, flats)
 
 
-class PyBlock3Handler:
-
-    def __init__(self, jit_fn=True, device=None):
-        self.jit_fn = jit_fn
-        self.device = device
-
-    def to_variable(self, x):
-        return x
-
-    def to_constant(self, x):
-        return x
-
-    def setup_fn(self, fn):
-        jax = qtn.optimize.get_jax()
-        if self.jit_fn:
-            self._backend_fn = jax.jit(fn, backend=self.device)
-            self._value_and_grad = jax.jit(
-                jax.value_and_grad(fn), backend=self.device)
-        else:
-            self._backend_fn = fn
-            self._value_and_grad = jax.value_and_grad(fn)
-
-        self._setup_hessp(fn)
-
-    def _setup_hessp(self, fn):
-        jax = qtn.optimize.get_jax()
-
-        def hvp(primals, tangents):
-            return jax.jvp(jax.grad(fn), (primals,), (tangents,))[1]
-
-        if self.jit_fn:
-            hvp = jax.jit(hvp, device=self.device)
-
-        self._hvp = hvp
-
-    def value(self, arrays):
-        jax_arrays = tuple(map(self.to_constant, arrays))
-        return self._backend_fn(jax_arrays)
-
-    def value_and_grad(self, arrays):
-        loss, grads = self._value_and_grad(arrays)
-        return loss, [x.conj() for x in grads]
-
-    def hessp(self, primals, tangents):
-        jax_arrays = self._hvp(primals, tangents)
-        return jax_arrays
-
-
 def _maybe_update_pbar(self):
     if self.progbar:
         self.loss_best = min(self.loss_best, self.loss)
@@ -251,9 +243,6 @@ def _maybe_init_pbar(self, n):
         self.it = 0
         self.tt = time.perf_counter()
 
-
-qtn.optimize._BACKEND_HANDLERS['numpy'] = PyBlock3Handler
-qtn.optimize.Vectorizer = PyTreeVectorizer
 qtn.optimize.TNOptimizer._maybe_init_pbar = _maybe_init_pbar
 qtn.optimize.TNOptimizer._maybe_update_pbar = _maybe_update_pbar
 
@@ -274,7 +263,11 @@ def norm_fn(mera):
     return mera
 
 def local_expectation(mera, terms, where, optimize='auto-hq'):
-    # print(where)
+    # fix tensordot/einsum backend inside einsum
+    import collections
+    qtn.contraction._TEMP_CONTRACT_BACKENDS = collections.defaultdict(list)
+    qtn.contraction._CONTRACT_BACKEND = "numpy"
+
     tags = [mera.site_tag(coo) for coo in where]
     mera_ij = mera.select(tags, 'any')
     mera_ij_G = mera_ij.gate(terms[where], where)
@@ -297,20 +290,20 @@ tnopt = qtn.TNOptimizer(
     norm_fn=norm_fn,
     loss_constants={'x_terms': x_terms},
     loss_kwargs={'optimize': 'auto-hq'},
-    autodiff_backend='numpy',
+    autodiff_backend='torch',
     # device='cuda',
     jit_fn=False,
 )
 
 tt = time.perf_counter()
 tnopt.optimizer = 'l-bfgs-b'
-tnopt.optimize(50)
+tnopt.optimize(500)
 # tnopt.optimizer = 'adam'
 # mera_opt = tnopt.optimize(1000)
 
 print(min(tnopt.losses))
 print('time = ', time.perf_counter() - tt)
 
-# 38 -3.374934911728 [best: -3.374934911728] T =     10.484
-# -3.3749349117279053
-# time =  412.568538736552
+# 22 -3.374932596931 [best: -3.374932596931] T =      0.703
+# -3.3749325969312736
+# time =  15.713499780744314
