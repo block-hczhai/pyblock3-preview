@@ -5,6 +5,7 @@ this = sys.modules[__name__]
 this.SVD_SCREENING = 1e-28
 this.DEFAULT_SYMMETRY = U11
 this.DEFAULT_FLAT = True
+this.DEFAULT_AD = False
 this.DEFAULT_FERMION = True
 this.DEFAULT_LARGE = False
 this.DEFAULT_CUPY = False
@@ -33,6 +34,9 @@ def set_fermion(fermion):
 def set_large(large):
     this.DEFAULT_LARGE = large
 
+def set_ad(ad):
+    this.DEFAULT_AD = ad
+
 def set_cupy(cupy):
     this.DEFAULT_CUPY = cupy
 
@@ -40,14 +44,18 @@ def set_options(**kwargs):
     symmetry = kwargs.pop("symmetry", None)
     fermion = kwargs.pop("fermion", None)
     flat = kwargs.pop("flat", None)
+    ad = kwargs.pop("ad", None)
     large = kwargs.pop("large", None)
     cupy = kwargs.pop("cupy", None)
+    assert len(kwargs) == 0
     if symmetry is not None:
         set_symmetry(symmetry)
     if fermion is not None:
         set_fermion(fermion)
     if flat is not None:
         set_flat(flat)
+    if ad is not None:
+        set_ad(ad)
     if large is not None:
         set_large(large)
     if cupy is not None:
