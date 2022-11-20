@@ -774,6 +774,29 @@ class SparseTensor(NDArrayOperatorsMixin):
             blocks_map[new_qs][sl] = blk.reshape(tuple(new_ns))
         return self.__class__(blocks=list(blocks_map.values()))
 
+    def symmetry_fuse(self, finfos, symm_map):
+        """
+        Change from higher symmetry to lower symmetry.
+        
+        Args:
+            finfos : list(BondFusingInfo)
+                generated using BondFusingInfo.get_symmetry_fusing_info
+            symm_map : lambda h: l
+                Map from higher symemtry irrep to lower symmetry irrep
+        """
+        blocks_map = {}
+        for block in self.blocks:
+            new_qs = tuple(symm_map(q) for q in block.q_labels)
+            new_ns = tuple(finfos[iq][q] for iq, q in enumerate(new_qs))
+            if new_qs not in blocks_map:
+                blocks_map[new_qs] = SubTensor.zeros(
+                    tuple(new_ns), q_labels=new_qs, dtype=block.dtype)
+            fidxs = tuple(finfos[iq].finfo[q][qx] for iq, (q, qx)
+                        in enumerate(zip(new_qs, block.q_labels)))
+            sl = tuple(slice(k, k + nk) for k, nk in fidxs)
+            blocks_map[new_qs][sl] += block
+        return self.__class__(blocks=list(blocks_map.values()))
+
     @staticmethod
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
@@ -1878,6 +1901,11 @@ class FermionTensor(NDArrayOperatorsMixin):
         """Direct sum of first and last legs.
         Middle legs are summed."""
         return self._kron_add(self, b, infos=infos)
+    
+    def symmetry_fuse(self, finfos, symm_map):
+        odd = self.odd.symmetry_fuse(finfos, symm_map)
+        even = self.even.symmetry_fuse(finfos, symm_map)
+        return self.__class__(odd=odd, even=even)
 
     def left_canonicalize(self, mode='reduced'):
         """

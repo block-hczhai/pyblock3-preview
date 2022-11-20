@@ -552,6 +552,30 @@ class MPS(NDArrayOperatorsMixin):
         r = '|'.join([str(x.n_bonds) for x in bonds])
         return r if self.const == 0 else r + " (%+12.5f)" % self.const
 
+    def symmetry_fuse(self, symm_map, info=None):
+        infos = [t.infos for t in self.tensors]
+        bonds = []
+        bonds.append(infos[0][0])
+        for i in range(self.n_sites - 1):
+            bonds.append(infos[i + 1][0] | infos[i][-1])
+        bonds.append(infos[-1][-1])
+
+        tensors = [None] * self.n_sites
+        k = 0
+        for i in range(self.n_sites):
+            if info is None:
+                minfos = infos[i][1:self[i].ndim - 1]
+            elif len(info.basis) == self.n_sites:
+                minfos = (info.basis[i], ) * (self[i].ndim - 2)
+            else:
+                minfos = info.basis[k:k + self[i].ndim - 2]
+                k += self[i].ndim - 2
+            sinfos = (bonds[i], *minfos, bonds[i + 1])
+            finfos = [BondFusingInfo.get_symmetry_fusing_info(i, symm_map) for i in sinfos]
+            tensors[i] = self[i].symmetry_fuse(finfos, symm_map)
+        
+        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
+
     @staticmethod
     def _to_sliceable(a, info=None):
         return a.to_sliceable(info=info)

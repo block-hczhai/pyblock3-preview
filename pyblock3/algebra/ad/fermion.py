@@ -27,9 +27,19 @@ import numpy as np
 import string
 from .core import (SparseTensor, SubTensor,
                    _sparse_tensor_numpy_func_impls)
+from .core import jax_pytree_node
 from ..symmetry import BondInfo
 from .. import fermion_setting as setting
 import time
+
+from . import ENABLE_AUTORAY, ENABLE_JAX, ENABLE_EINSUM
+
+if ENABLE_AUTORAY:
+    from autoray import numpy as jnp
+elif ENABLE_JAX:
+    import jax.numpy as jnp
+else:
+    jnp = np
 
 SVD_SCREENING = setting.SVD_SCREENING
 Q_LABELS_DTYPE = SHAPES_DTYPE = np.uint32
@@ -67,7 +77,7 @@ def implements(np_func):
                       if np_func not in _numpy_func_impls else None,
                       _numpy_func_impls[np_func])[1]
 
-NEW_METHODS = [np.transpose, np.tensordot, np.add, np.subtract, np.copy]
+NEW_METHODS = [np.transpose, np.add, np.subtract, np.copy]
 
 _sparse_fermion_tensor_numpy_func_impls = _sparse_tensor_numpy_func_impls.copy()
 [_sparse_fermion_tensor_numpy_func_impls.pop(key) for key in NEW_METHODS]
@@ -698,6 +708,7 @@ def eye(bond_info, flat=None, large=None):
         T = T.to_flat()
     return T
 
+@jax_pytree_node
 class SparseFermionTensor(SparseTensor):
 
     def __init__(self, blocks=None, pattern=None, shape=None):
@@ -706,6 +717,17 @@ class SparseFermionTensor(SparseTensor):
             pattern = _gen_default_pattern(self.ndim)
         self._pattern = pattern
         self._shape = shape
+
+    def pytree_flatten(self):
+        traced = tuple(self.blocks)
+        others = (self.pattern, self.shape)
+        return traced, others
+
+    @classmethod
+    def pytree_unflatten(cls, others, traced):
+        blocks = list(traced)
+        pattern, shape = others
+        return cls(blocks=blocks, pattern=pattern, shape=shape)
 
     @property
     def dq(self):
@@ -761,7 +783,10 @@ class SparseFermionTensor(SparseTensor):
     def new_like(self, blocks, **kwargs):
         pattern = kwargs.pop("pattern", self.pattern)
         shape = kwargs.pop("shape", self.shape)
-        return self.__class__(blocks=blocks, pattern=pattern, shape=shape)
+        r = self.__class__(blocks=blocks, pattern=pattern, shape=shape)
+        if hasattr(self, '_tree'):
+            r._tree = self._tree
+        return r
 
     @staticmethod
     @implements(np.copy)
@@ -798,15 +823,15 @@ class SparseFermionTensor(SparseTensor):
             axes = [axes]
         else:
             axes = list(axes)
-        for blk in self.blocks:
+        for ib, blk in enumerate(self.blocks):
             block_parity = np.add.reduce([blk.q_labels[j] for j in axes]).parity
             if block_parity == 1:
-                blk *= -1
+                self.blocks[ib] = -blk
 
     def _global_flip(self):
         if not setting.DEFAULT_FERMION: return
-        for blk in self.blocks:
-            blk *= -1
+        for ib, blk in enumerate(self.blocks):
+            self.blocks[ib] = -blk
 
     def to_flat(self):
         return FlatFermionTensor.from_sparse(self)
@@ -1020,7 +1045,7 @@ class SparseFermionTensor(SparseTensor):
                 blocks = [getattr(ufunc, method)(block)
                           for block in inputs[0].blocks]
                 out_pattern = inputs[0].pattern
-                out_shape = input[0].shape
+                out_shape = inputs[0].shape
             else:
                 return NotImplemented
         else:
@@ -1031,9 +1056,10 @@ class SparseFermionTensor(SparseTensor):
             out[0].shape=out_shape
         return self.__class__(blocks=blocks, pattern=out_pattern, shape=out_shape)
 
+
     @staticmethod
-    @implements(np.tensordot)
-    def _tensordot(a, b, axes=2):
+    def _tensordot_basic(a, b, axes=2):
+
         if isinstance(axes, int):
             idxa, idxb = list(range(-axes, 0)), list(range(0, axes))
         else:
@@ -1067,7 +1093,7 @@ class SparseFermionTensor(SparseTensor):
                     phase_b = compute_phase(block_b.q_labels, idxb, 'left')
                     phase = phase_a * phase_b
                     outq = outqa + outqb
-                    matd = np.tensordot(
+                    matd = jnp.tensordot(
                         block_a.data, block_b.data, axes=(idxa, idxb))
                     mat = block_a.__class__(matd, q_labels=None)
                     if outq not in blocks_map:
@@ -1075,12 +1101,39 @@ class SparseFermionTensor(SparseTensor):
                         blocks_map[outq] = mat * phase
                     else:
                         blocks_map[outq] += mat * phase
-        if len(out_idx_a) == 0 and len(out_idx_b) == 0:
-            if len(blocks_map.values()) == 0:
-                return 0
-            assert len(blocks_map.values()) == 1 and list(blocks_map.values())[0].q_labels == ()
-            return np.sum(list(blocks_map.values())[0].data)
+
         return a.__class__(blocks=list(blocks_map.values()), pattern=out_pattern, shape=tuple(out_shape))
+
+
+    @staticmethod
+    def _tensordot_fused(a, b, axes=2):
+
+        if isinstance(axes, int):
+            idxa, idxb = list(range(-axes, 0)), list(range(0, axes))
+        else:
+            idxa, idxb = axes
+        idxa = [i if i >= 0 else a.ndim + i for i in idxa]
+        idxb = [i if i >= 0 else b.ndim + i for i in idxb]
+        a_bond_inds = tuple(idxa)
+        b_bond_inds = tuple(idxb)
+        a_out_inds = tuple(i for i in range(a.ndim) if i not in idxa)
+        b_out_inds = tuple(i for i in range(b.ndim) if i not in idxb)
+        a_out_shape = tuple(a.shape[ix] for ix in a_out_inds)
+        b_out_shape = tuple(b.shape[ix] for ix in b_out_inds)
+
+        a_reorder_inds = a_out_inds + a_bond_inds
+        b_reorder_inds = b_bond_inds[::-1] + b_out_inds
+
+        if a_reorder_inds != tuple(range(0, a.ndim)):
+            a = np.transpose(a, axes=a_reorder_inds)
+        if b_reorder_inds != tuple(range(0, b.ndim)):
+            b = np.transpose(b, axes=b_reorder_inds)
+
+        axes = list(range(-len(a_bond_inds), 0)), list(range(0, len(b_bond_inds)))[::-1]
+
+        z = super()._tensordot_fused(a, b, axes=axes)
+        z._shape = a_out_shape + b_out_shape
+        return z
 
     @staticmethod
     @implements(np.transpose)

@@ -211,7 +211,7 @@ class SubTensor(NDArrayOperatorsMixin):
     @staticmethod
     @implements(np.copy)
     def _copy(x):
-        return SubTensor(data=x.data.copy(), q_labels=x.q_labels)
+        return SubTensor(data=x.data.copy() if hasattr(x.data, 'copy') else x.data, q_labels=x.q_labels)
 
     def copy(self):
         return np.copy(self)
@@ -327,7 +327,7 @@ class SubTensor(NDArrayOperatorsMixin):
         """
         if axes is None:
             axes = range(a.ndim)[::-1]
-        rdata = np.transpose(a.data, axes=axes)
+        rdata = jnp.transpose(a.data, axes=axes)
         rqs = tuple(a.q_labels[i] for i in axes)
         return a.__class__(data=rdata, q_labels=rqs)
 
@@ -738,6 +738,29 @@ class SparseTensor(NDArrayOperatorsMixin):
             '' if x != midx else '+') for x in range(self.ndim)])
         return self.__class__(blocks=list(blocks_map.values()), pattern=out_pattern)
 
+    def symmetry_fuse(self, finfos, symm_map):
+        """
+        Change from higher symmetry to lower symmetry.
+        
+        Args:
+            finfos : list(BondFusingInfo)
+                generated using BondFusingInfo.get_symmetry_fusing_info
+            symm_map : lambda h: l
+                Map from higher symemtry irrep to lower symmetry irrep
+        """
+        blocks_map = {}
+        for block in self.blocks:
+            new_qs = tuple(symm_map(q) for q in block.q_labels)
+            new_ns = tuple(finfos[iq][q] for iq, q in enumerate(new_qs))
+            if new_qs not in blocks_map:
+                blocks_map[new_qs] = SubTensor.zeros(
+                    tuple(new_ns), q_labels=new_qs, dtype=block.data.dtype)
+            fidxs = tuple(finfos[iq].finfo[q][qx] for iq, (q, qx)
+                        in enumerate(zip(new_qs, block.q_labels)))
+            sl = tuple(slice(k, k + nk) for k, nk in fidxs)
+            blocks_map[new_qs].data[sl] += block.data
+        return self.__class__(blocks=list(blocks_map.values()), pattern=self.pattern)
+
     if ENABLE_EINSUM:
         @staticmethod
         @implements(np.einsum)
@@ -902,6 +925,9 @@ class SparseTensor(NDArrayOperatorsMixin):
             b_ax = [0]
         else:
             b_ax = []
+
+        if len(b_ax) != 0:
+            bf.pattern = bf.pattern[:b_ax[0]] + '-' + bf.pattern[b_ax[0] + 1:]
 
         zf = a.__class__._tensordot_basic(af, bf, axes=(a_ax, b_ax))
 
@@ -2014,6 +2040,11 @@ class FermionTensor(NDArrayOperatorsMixin):
         """Direct sum of first and last legs.
         Middle legs are summed."""
         return self._kron_add(self, b, infos=infos)
+
+    def symmetry_fuse(self, finfos, symm_map):
+        odd = self.odd.symmetry_fuse(finfos, symm_map)
+        even = self.even.symmetry_fuse(finfos, symm_map)
+        return self.__class__(odd=odd, even=even)
 
     def left_canonicalize(self, mode='reduced', fix_sign=True):
         """

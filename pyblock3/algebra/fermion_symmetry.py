@@ -59,6 +59,10 @@ class U1:
     def parity(self):
         return self.n % 2
 
+    @property
+    def is_fermion(self):
+        return self.parity == 1
+
     @classmethod
     def qpn_to_flat(cls, n):
         return (n + 8192) * 131072
@@ -204,6 +208,10 @@ class U11:
     @property
     def parity(self):
         return self.n % 2
+
+    @property
+    def is_fermion(self):
+        return self.parity == 1
 
     @classmethod
     def flat_to_parity(cls, x):

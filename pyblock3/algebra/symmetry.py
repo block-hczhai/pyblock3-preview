@@ -252,3 +252,25 @@ class BondFusingInfo(BondInfo):
                 else:
                     assert finfo[q][qs][1] == shs
         return BondFusingInfo(quanta, finfo=finfo, pattern=pattern)
+    
+    @staticmethod
+    def get_symmetry_fusing_info(info, symm_map):
+        """
+        Fusing info for tranfrom to lower symmetry.
+
+        Args:
+            info : BondInfo
+                BondInfo at higher symmetry
+            symm_map : lambda h: l
+                Map from higher symemtry irrep to lower symmetry irrep
+        """
+        quanta = BondInfo()
+        finfo = {}
+        for k, v in sorted(info.items(), key=lambda x: x[0]):
+            q = symm_map(k)
+            if q not in finfo:
+                finfo[q] = {}
+            finfo[q][k] = quanta[q], v
+            quanta[q] += v
+        return BondFusingInfo(quanta, finfo=finfo, pattern='+')
+
