@@ -1,0 +1,7 @@
+D = 4
+Number of electrons in fpeps: < U1(16) >
+SU Sweep     0 /     4 NSTEP =   100 ENERGY =            -2.622601 Time =    218.875 gex = 0.043 cpt = 0.863 total = 0.043
+SU Sweep     1 /     4 NSTEP =   200 ENERGY =            -6.361896 Time =    402.667 gex = 0.042 cpt = 1.672 total = 0.042
+SU Sweep     2 /     4 NSTEP =   200 ENERGY =            -6.488091 Time =    405.792 gex = 0.042 cpt = 1.685 total = 0.042
+SU Sweep     3 /     4 NSTEP =   400 ENERGY =            -6.505311 Time =    774.013 gex = 0.041 cpt = 3.307 total = 0.041
+Final energy =  -6.5053111390730365
