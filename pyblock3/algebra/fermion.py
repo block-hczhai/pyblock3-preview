@@ -29,13 +29,15 @@ from .core import (SparseTensor, SubTensor,
                    _sparse_tensor_numpy_func_impls)
 from .flat import (FlatSparseTensor,
                    _flat_sparse_tensor_numpy_func_impls)
-from .symmetry import BondInfo
+from .symmetry import BondInfo, BondFusingInfo
 from . import fermion_setting as setting
 import time
 
 SVD_SCREENING = setting.SVD_SCREENING
 Q_LABELS_DTYPE = SHAPES_DTYPE = np.uint32
 INDEX_DTYPE = np.uint64
+
+ENABLE_FUSED_IMPLS = False
 
 def get_backend(symmetry):
     """Get the C++ backend for the input symmetry
@@ -1429,6 +1431,17 @@ class SparseFermionTensor(SparseTensor):
     @staticmethod
     @implements(np.tensordot)
     def _tensordot(a, b, axes=2):
+        if ENABLE_FUSED_IMPLS:
+            r = a.__class__._tensordot_fused(a, b, axes=axes)
+        else:
+            r = a.__class__._tensordot_basic(a, b, axes=axes)
+        if r.ndim == 0:
+            r = r.item()
+        return r
+
+    @staticmethod
+    def _tensordot_basic(a, b, axes=2):
+
         if isinstance(axes, int):
             idxa, idxb = list(range(-axes, 0)), list(range(0, axes))
         else:
@@ -1469,9 +1482,121 @@ class SparseFermionTensor(SparseTensor):
                         blocks_map[outq] = mat * phase
                     else:
                         blocks_map[outq] += mat * phase
-        if len(out_idx_a) == 0 and len(out_idx_b) == 0:
-            return np.asarray(list(blocks_map.values())[0]).item()
+
         return a.__class__(blocks=list(blocks_map.values()), pattern=out_pattern, shape=tuple(out_shape))
+
+    @staticmethod
+    def _tensordot_fused(a, b, axes=2):
+
+        if isinstance(axes, int):
+            idxa, idxb = list(range(-axes, 0)), list(range(0, axes))
+        else:
+            idxa, idxb = axes
+        idxa = [i if i >= 0 else a.ndim + i for i in idxa]
+        idxb = [i if i >= 0 else b.ndim + i for i in idxb]
+        a_bond_inds = tuple(idxa)
+        b_bond_inds = tuple(idxb)
+        a_out_inds = tuple(i for i in range(a.ndim) if i not in idxa)
+        b_out_inds = tuple(i for i in range(b.ndim) if i not in idxb)
+        a_out_shape = tuple(a.shape[ix] for ix in a_out_inds)
+        b_out_shape = tuple(b.shape[ix] for ix in b_out_inds)
+
+
+        a_reorder_inds = a_out_inds + a_bond_inds
+        b_reorder_inds = b_bond_inds[::-1] + b_out_inds
+
+        if a_reorder_inds != tuple(range(0, a.ndim)):
+            a = np.transpose(a, axes=a_reorder_inds)
+        if b_reorder_inds != tuple(range(0, b.ndim)):
+            b = np.transpose(b, axes=b_reorder_inds)
+
+        idxa, idxb = list(range(-len(a_bond_inds), 0)), list(range(0, len(b_bond_inds)))[::-1]
+
+        idxa = [i if i >= 0 else a.ndim + i for i in idxa]
+        idxb = [i if i >= 0 else b.ndim + i for i in idxb]
+        a_bond_inds = tuple(idxa)
+        b_bond_inds = tuple(idxb)
+        a_out_inds = tuple(i for i in range(a.ndim) if i not in idxa)
+        b_out_inds = tuple(i for i in range(b.ndim) if i not in idxb)
+
+        a_min_bond = min(a_bond_inds) if len(a_bond_inds) != 0 else -1
+        b_min_bond = min(b_bond_inds) if len(b_bond_inds) != 0 else -1
+        a_out_inds_alt = tuple(i - len([1 for j in a_bond_inds if j != a_min_bond and j < i])
+                               for i in a_out_inds)
+        b_out_inds_alt = tuple(i - len([1 for j in b_bond_inds if j != b_min_bond and j < i])
+                               for i in b_out_inds)
+
+        def get_items(t, idxs):
+            items = []
+            for block in t.blocks:
+                qs = tuple(block.q_labels[i] for i in idxs)
+                shs = tuple(block.shape[i] for i in idxs)
+                items.append((qs, shs))
+            return items
+
+        a_bond_pattern = ''.join([a.pattern[i] for i in a_bond_inds])
+        b_bond_pattern = ''.join([b.pattern[i] for i in b_bond_inds])
+        a_out_pattern = ''.join([a.pattern[i] for i in a_out_inds])
+        b_out_pattern = ''.join([b.pattern[i] for i in b_out_inds])
+
+        if not (len(idxa) == len(a.pattern) and len(idxb) == len(b.pattern) and idxa == idxb and a.pattern == b.pattern):
+            if len(b_bond_pattern) != 0 and all(xx == yy for xx, yy in zip(a_bond_pattern, b_bond_pattern)):
+                b_bond_pattern = ''.join(
+                    ['+' if x == '-' else '-' for x in b_bond_pattern])
+                b_out_pattern = ''.join(
+                    ['+' if x == '-' else '-' for x in b_out_pattern])
+            assert all(xx != yy for xx, yy in zip(
+                a_bond_pattern, b_bond_pattern))
+
+        items = get_items(a, a_bond_inds) + get_items(b, b_bond_inds)
+        bond_fuse_info = BondFusingInfo.kron_sum(items, pattern=a_bond_pattern)
+
+        a_out_fuse_info = a.kron_sum_info(*a_out_inds, pattern=a_out_pattern)
+        b_out_fuse_info = b.kron_sum_info(*b_out_inds, pattern=b_out_pattern)
+
+        af = (
+            a
+            .fuse(*a_bond_inds, info=bond_fuse_info)
+            .fuse(*a_out_inds_alt, info=a_out_fuse_info)
+        )
+        bf = (
+            b
+            .fuse(*b_bond_inds, info=bond_fuse_info)
+            .fuse(*b_out_inds_alt, info=b_out_fuse_info)
+        )
+
+        if len(a_bond_inds) != 0 and len(a_out_inds) != 0:
+            a_ax = [1 if min(a_out_inds) < min(a_bond_inds) else 0]
+        elif len(a_bond_inds) != 0:
+            a_ax = [0]
+        else:
+            a_ax = []
+
+        if len(b_bond_inds) != 0 and len(b_out_inds) != 0:
+            b_ax = [1 if min(b_out_inds) < min(b_bond_inds) else 0]
+        elif len(b_bond_inds) != 0:
+            b_ax = [0]
+        else:
+            b_ax = []
+
+        if len(b_ax) != 0:
+            bf.pattern = bf.pattern[:b_ax[0]] + '-' + bf.pattern[b_ax[0] + 1:]
+
+        zf = a.__class__._tensordot_basic(af, bf, axes=(a_ax, b_ax))
+
+        if len(a_out_inds) != 0 and len(b_out_inds) != 0:
+            zf = zf.unfuse(1, info=b_out_fuse_info)
+            z = zf.unfuse(0, info=a_out_fuse_info)
+        elif len(a_out_inds) != 0:
+            z = zf.unfuse(0, info=a_out_fuse_info)
+        elif len(b_out_inds) != 0:
+            z = zf.unfuse(0, info=b_out_fuse_info)
+        else:
+            z = zf
+        z.pattern = a_out_pattern + b_out_pattern
+        z._shape = a_out_shape + b_out_shape
+
+        return z
 
     @staticmethod
     @implements(np.transpose)

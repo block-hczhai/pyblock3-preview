@@ -765,14 +765,45 @@ class SparseTensor(NDArrayOperatorsMixin):
                     else:
                         new_perm.extend(idxs)
             if new_qs not in blocks_map:
-                blocks_map[new_qs] = SubTensor.zeros(
-                    tuple(new_ns), q_labels=new_qs, dtype=block.dtype)
+                blocks_map[new_qs] = [tuple(new_ns), new_qs, []]
             new_ns[midx] = nk
-            sl = tuple(slice(None) if ix != midx else slice(
-                k, k + nk) for ix in range(len(ns)) if ix not in fidxs)
-            blk = np.asarray(block).transpose(new_perm)
-            blocks_map[new_qs][sl] = blk.reshape(tuple(new_ns))
-        return self.__class__(blocks=list(blocks_map.values()))
+            blk = np.transpose(block.data, new_perm)
+            blocks_map[new_qs][-1].append((k, nk, blk.reshape(tuple(new_ns))))
+        for k, v in blocks_map.items():
+            vx = []
+            ik = 0
+            ref_idx = None
+            for g in sorted(v[-1]):
+                if g[0] == ik:
+                    ik += g[1]
+                    vx.append(g[2])
+                    ref_idx = len(vx) - 1
+                else:
+                    nns = list(v[0])
+                    nns[midx] = g[0] - ik
+                    vx.append(np.zeros(tuple(nns)))
+                    vx.append(g[2])
+                    ref_idx = len(vx) - 1
+                    ik += g[1] + g[0] - ik
+            if ik != v[0][midx]:
+                nns = list(v[0])
+                nns[midx] = v[0][midx] - ik
+                vx.append(np.zeros(tuple(nns)))
+            if ref_idx is not None and not all([x.__class__ == vx[ref_idx].__class__ for x in vx]):
+                for iv in range(len(vx)):
+                    if vx[iv].__class__ != vx[ref_idx].__class__:
+                        try:
+                            vx[iv] = np.zeros_like(vx[ref_idx], shape=vx[iv].shape)
+                        except:
+                            vx[iv] = np.zeros(vx[iv].shape, like=vx[ref_idx])
+            blocks_map[k] = SubTensor(
+                reduced=np.concatenate(vx, axis=midx), q_labels=v[1])
+        if hasattr(self, 'pattern'):
+            out_pattern = ''.join([self.pattern[x] if x not in idxs else (
+                '' if x != midx else '+') for x in range(self.ndim)])
+            return self.__class__(blocks=list(blocks_map.values()), pattern=out_pattern)
+        else:
+            return self.__class__(blocks=list(blocks_map.values()))
 
     def symmetry_fuse(self, finfos, symm_map):
         """
