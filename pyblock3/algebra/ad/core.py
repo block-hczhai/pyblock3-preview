@@ -2103,7 +2103,7 @@ class FermionTensor(NDArrayOperatorsMixin):
             r_shapes = [np.prod(b.shape[1:]) for _, b in blocks]
             mat = np.concatenate([b.data.reshape((-1, sh)).T
                                   for sh, (_, b) in zip(r_shapes, blocks)], axis=0)
-            q, r = np.linalg.qr(mat, mode=mode)
+            q, r = jnp.linalg.qr(mat, mode=mode)
             if fix_sign:
                 sg = jnp.sign(jnp.diag(r)).reshape((1, -1))
                 q = q * sg
