@@ -28,6 +28,11 @@ jobs:
         manylinux: [ 2010 ]
         plat: [ x86_64 ]
         parallel: [ serial ]
+        exclude:
+          - os: macos-latest
+            python: '3.7'
+          - os: macos-latest
+            python: '3.8'
       fail-fast: false
 
     steps:
