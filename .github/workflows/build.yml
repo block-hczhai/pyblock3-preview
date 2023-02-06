@@ -11,6 +11,11 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   build:
     name: ${{ matrix.python }} ${{ matrix.os }} ${{ matrix.plat }} ${{ matrix.parallel }}
@@ -19,7 +24,7 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, macos-latest ]
-        python: [ 3.7, 3.8, 3.9 ]
+        python: [ 3.7, 3.8, 3.9, 3.10 ]
         manylinux: [ 2010 ]
         plat: [ x86_64 ]
         parallel: [ serial ]
@@ -37,7 +42,7 @@ jobs:
         run: |
           export PYT=$(which python)
           python -m pip install pip build twine pytest --upgrade
-          python -m pip install mkl==2019 mkl-include intel-openmp 'numpy<1.23.0' psutil cmake==3.17 pybind11
+          python -m pip install mkl==2019 mkl-include intel-openmp 'numpy<1.23.0' psutil cmake==3.17 pybind11==2.10.1
 
       - name: install requirements (linux / mpi)
         if: matrix.os == 'ubuntu-latest'
@@ -103,6 +108,53 @@ jobs:
           name: dist-${{ matrix.parallel }}
           path: dist
           retention-days: 2
+
+  pypi:
+    name: pypi
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: 3.9
+
+      - name: build source dist (serial)
+        env:
+          TAG_STRING: ${{ github.event.ref }}
+        run: |
+          echo ${TAG_STRING:11}
+          sed -i "s/version=.*/version='${TAG_STRING:11}',/" setup.py
+          python -m pip install pip build twine --upgrade
+          python -m build --sdist
+
+      - name: release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*
+
+      - name: build index
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          python .github/workflows/build_pypi.py ${REPO} ./idx-dist/pypi
+
+      - name: setup pages
+        uses: actions/configure-pages@v2
+
+      - name: upload artifacts
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: './idx-dist'
+
+      - name: deploy to gitHub pages
+        id: deployment
+        uses: actions/deploy-pages@v1
 
   publish:
     name: publish

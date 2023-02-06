@@ -95,7 +95,7 @@ if not NO_COMPILE:
             "mkl-include",
             "numpy<1.23.0",
             "psutil",
-            "pybind11",
+            "pybind11<=2.10.1",
             "intel-openmp",
             "cmake"
         ]
