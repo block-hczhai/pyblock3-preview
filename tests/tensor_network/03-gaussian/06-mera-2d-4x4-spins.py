@@ -140,3 +140,4 @@ for _ in range(10):
     print('final ener = ', ener, 'niter = ', opt.niter)
 
 # converged energy E = -13.88854 for all ten different initial guesses
+# HF energy E = -13.7433833
