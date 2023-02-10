@@ -6,7 +6,7 @@ import torch
 L = 16
 NE = L
 U = 2
-LB, LC = 4, 2
+LB, LC = 6, 3
 
 mol = M()
 mol.nelectron = NE
@@ -19,7 +19,7 @@ g2e = np.zeros((L, L, L, L))
 for i in range(L):
     g2e[i, i, i, i] = U
 
-mf = mol.HF()
+mf = mol.RHF()
 mf.get_hcore = lambda *_: h1e
 mf.get_ovlp = lambda *_: np.eye(L)
 mf._eri = g2e
@@ -30,9 +30,9 @@ print('RDM1 trace = ', np.trace(mf.make_rdm1()))
 rdm1 = torch.tensor(mf.make_rdm1())
 rdm2 = torch.tensor(mf.make_rdm2())
 
-from pyblock3.gaussian.core import GaussianMPS, GaussianOptimizer
+from pyblock3.gaussian import GaussianMPS, GaussianOptimizer
 
-gmps = GaussianMPS(L, LB, LC).fit_rdm1(rdm1)
+gmps = GaussianMPS(L, LB, LC).rhf().fit_rdm1(rdm1)
 print(gmps)
 
 print('tn n elec = ', sum(gmps.get_occupations()))
@@ -47,3 +47,9 @@ print('init  ener = ', float(gmps.energy_tot(h1e, g2e)))
 opt = GaussianOptimizer(gmps, h1e, g2e, iprint=0)
 ener, x = opt.optimize()
 print('final ener = ', ener, 'niter = ', opt.niter)
+
+# converged SCF energy = -11.6759028949188
+# rdm1 diff =  0.06861284827245893
+# rdm2 diff =  0.5821920708110683
+# init  ener =  -11.673136413376161
+# final ener =  -11.673616810997284 niter =  86

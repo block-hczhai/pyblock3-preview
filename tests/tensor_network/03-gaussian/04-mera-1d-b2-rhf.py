@@ -6,7 +6,7 @@ import torch
 L = 16
 NE = L
 U = 2
-LB, LC = 4, 2
+LB, LC = 2, 1
 
 mol = M()
 mol.nelectron = NE
@@ -19,7 +19,7 @@ g2e = np.zeros((L, L, L, L))
 for i in range(L):
     g2e[i, i, i, i] = U
 
-mf = mol.HF()
+mf = mol.RHF()
 mf.get_hcore = lambda *_: h1e
 mf.get_ovlp = lambda *_: np.eye(L)
 mf._eri = g2e
@@ -30,9 +30,9 @@ print('RDM1 trace = ', np.trace(mf.make_rdm1()))
 rdm1 = torch.tensor(mf.make_rdm1())
 rdm2 = torch.tensor(mf.make_rdm2())
 
-from pyblock3.gaussian.core import GaussianMERA1D, GaussianOptimizer
+from pyblock3.gaussian import GaussianMERA1D, GaussianOptimizer
 
-gmera = GaussianMERA1D(L, LB, LC, dis_ent=True, periodic=False).fit_rdm1(rdm1)
+gmera = GaussianMERA1D(L, LB, LC, dis_ent=True, periodic=False).rhf().fit_rdm1(rdm1).set_occ_half_filling()
 print(gmera)
 
 print('tn n elec = ', sum(gmera.get_occupations()))
@@ -49,3 +49,10 @@ ener, x = opt.optimize(maxiter=1000)
 print('final ener = ', ener, 'niter = ', opt.niter)
 ener, x = opt.optimize(x0='random', maxiter=1000)
 print('final ener = ', ener, 'niter = ', opt.niter)
+
+# converged SCF energy = -11.6759028949188
+# rdm1 diff =  5.092111250389984
+# rdm2 diff =  39.19034104097459
+# init  ener =  4.6883815112974725
+# final ener =  -11.502675305172124 niter =  64
+# final ener =  -11.502675303002205 niter =  44

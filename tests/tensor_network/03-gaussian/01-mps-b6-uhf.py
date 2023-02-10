@@ -19,23 +19,28 @@ g2e = np.zeros((L, L, L, L))
 for i in range(L):
     g2e[i, i, i, i] = U
 
-mf = mol.HF()
+mf = mol.UHF()
 mf.get_hcore = lambda *_: h1e
 mf.get_ovlp = lambda *_: np.eye(L)
 mf._eri = g2e
 
-mf = mf.run(conv_tol=1E-14)
-print('RDM1 trace = ', np.trace(mf.make_rdm1()))
+dm0a = [1, 0] * (L // 2)
+dm0b = [0, 1] * (L // 2)
 
-rdm1 = torch.tensor(mf.make_rdm1())
-rdm2 = torch.tensor(mf.make_rdm2())
+mf.conv_tol = 1E-14
+mf.kernel(dm0=(np.diag(dm0a), np.diag(dm0b)))
 
-from pyblock3.gaussian.core import GaussianMPS, GaussianOptimizer
+print('RDM1 trace = ', np.trace(sum(mf.make_rdm1())))
 
-gmps = GaussianMPS(L, LB, LC).fit_rdm1(rdm1)
+rdm1 = torch.tensor(np.array(mf.make_rdm1()))
+rdm2 = torch.tensor(np.array(mf.make_rdm2()))
+
+from pyblock3.gaussian import GaussianMPS, GaussianOptimizer
+
+gmps = GaussianMPS(L, LB, LC).uhf().fit_rdm1(rdm1)
 print(gmps)
 
-print('tn n elec = ', sum(gmps.get_occupations()))
+print('tn n elec = ', np.sum(gmps.get_occupations()))
 print('rdm1 diff = ', np.linalg.norm(gmps.make_rdm1() - rdm1))
 print('rdm2 diff = ', np.linalg.norm(gmps.make_rdm2() - rdm2))
 
@@ -47,3 +52,9 @@ print('init  ener = ', float(gmps.energy_tot(h1e, g2e)))
 opt = GaussianOptimizer(gmps, h1e, g2e, iprint=0)
 ener, x = opt.optimize()
 print('final ener = ', ener, 'niter = ', opt.niter)
+
+# converged SCF energy = -11.8657704004292  <S^2> = 1.5694297  2S+1 = 2.6977248
+# rdm1 diff =  0.010959807953455651
+# rdm2 diff =  0.0657588002181587
+# init  ener =  -11.865626262571315
+# final ener =  -11.865634387454797 niter =  24

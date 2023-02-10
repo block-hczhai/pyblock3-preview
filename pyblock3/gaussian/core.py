@@ -112,10 +112,20 @@ class GaussianTensorNetwork:
     def set_params(self, params):
         for p, ts in zip(params, self.tensors):
             ts.data = p
+        return self
 
     def unitize_(self):
         for ts in self.tensors:
-            ts.data = 0.5 * (ts.data - ts.data.T)
+            if ts.data.ndim == 2:
+                ts.data = 0.5 * (ts.data - ts.data.T)
+            else:
+                ts.data = 0.5 * (ts.data - ts.data.permute(0, 2, 1))
+        return self
+
+    def no_grad_(self):
+        for ts in self.tensors:
+            ts.data = ts.data.detach()
+        return self
 
     def get_initial_indices(self):
         """
@@ -232,11 +242,77 @@ class GaussianTensorNetwork:
                         for its in l:
                             if c in self.tensors[its].u_idx:
                                 iuc = self.tensors[its].u_idx.index(c)
-                                occ = self.tensors[its].core_occ[iuc]
-                                pl[ic] = str(int(np.round(occ)))
+                                if not isinstance(self.tensors[its].core_occ, tuple):
+                                    occ = self.tensors[its].core_occ[iuc]
+                                    pl[ic] = str(int(np.round(occ)))
+                                else:
+                                    occa = self.tensors[its].core_occ[0][iuc]
+                                    occb = self.tensors[its].core_occ[1][iuc]
+                                    pl[ic] = "0ba2"[
+                                        int(np.round(occa)) * 2 + int(np.round(occb))]
+
                 pp.append(pl)
 
         return '\n'.join([''.join(x) for x in pp[::-1]])
+
+    def get_occupations(self):
+
+        term_occ = []
+
+        layers = self.get_layers()
+
+        for l in layers:
+            for its in l:
+                for occ in self.tensors[its].core_occ:
+                    term_occ.append(occ)
+
+        return np.array(term_occ)
+
+    def set_occ_smearing(self, sigma=0.0):
+
+        layers = self.get_layers()
+
+        for l in layers:
+            for its in l:
+                occs = self.tensors[its].core_occ
+                if len(occs) > 0:
+                    occs = torch.round(occs)
+                    occs[occs > 0.5] -= sigma
+                    occs[occs < 0.5] += sigma
+                    self.tensors[its].core_occ = occs
+
+    def set_occ_half_filling(self):
+
+        layers = self.get_layers()
+
+        ix = 0
+        for l in layers:
+            for its in l:
+                occs = self.tensors[its].core_occ
+                for i in range(len(occs)):
+                    occs[i] = 1.0 if ix % 2 else 0.0
+                    ix += 1
+
+        return self
+
+    def view_as(self, cls):
+        return cls(self.tensors)
+
+    def rhf(self):
+        return self.view_as(RHFTensorNetwork)
+
+    def uhf(self):
+        return self.view_as(UHFTensorNetwork)
+
+    def ghf(self):
+        return self.view_as(GHFTensorNetwork)
+
+
+class RHFTensorNetwork(GaussianTensorNetwork):
+    _high_occ = 2.0
+
+    def __init__(self, tensors):
+        super().__init__(tensors)
 
     def fit_rdm1(self, dm, dm_idxs=None):
 
@@ -244,7 +320,7 @@ class GaussianTensorNetwork:
             dm_idxs = self.get_initial_indices()
 
         dm_idxs_map = {x: ix for ix, x in enumerate(dm_idxs)}
-        dm = torch.clone(dm) / 2
+        dm = torch.clone(dm)
 
         layers = self.get_layers()
 
@@ -268,8 +344,8 @@ class GaussianTensorNetwork:
                                         for x in self.tensors[its].d_idx])
                 eff_dm = dm[eff_dm_idxs, :][:, eff_dm_idxs]
                 xb, ub = torch.linalg.eigh(eff_dm)
-                # sort eigvals to put 0 and 1 near the beginning
-                xg = torch.tensor([list(xb), list(1 - xb)])
+                # sort eigvals to put 0 and 2 near the beginning
+                xg = torch.tensor([list(xb), list(self._high_occ - xb)])
                 xg[xg <= 1E-50] = 1E-50
                 p = torch.argsort(-(xg[0] * torch.log(xg[0]) +
                                     xg[1] * torch.log(xg[1])))
@@ -316,7 +392,7 @@ class GaussianTensorNetwork:
 
         init_idxs = self.get_initial_indices()
         reidx = np.array([dm_idxs_map[ix] for ix in init_idxs])
-        return dm[reidx, :][:, reidx] * 2
+        return dm[reidx, :][:, reidx]
 
     def make_rdm2(self, dm1=None):
         if dm1 is None:
@@ -334,32 +410,6 @@ class GaussianTensorNetwork:
         e_tot += torch.einsum('ijkl,ijkl->', dm2, g2e) * 0.5
         return e_tot
 
-    def get_occupations(self):
-
-        term_occ = []
-
-        layers = self.get_layers()
-
-        for l in layers:
-            for its in l:
-                for occ in self.tensors[its].core_occ:
-                    term_occ.append(occ)
-
-        return np.array(term_occ) * 2
-
-    def set_occ_smearing(self, sigma=0.0):
-
-        layers = self.get_layers()
-
-        for l in layers:
-            for its in l:
-                occs = self.tensors[its].core_occ
-                if len(occs) > 0:
-                    occs = torch.round(occs)
-                    occs[occs > 0.5] -= sigma
-                    occs[occs < 0.5] += sigma
-                    self.tensors[its].core_occ = occs
-
     def set_occ_half_filling(self):
 
         layers = self.get_layers()
@@ -369,10 +419,203 @@ class GaussianTensorNetwork:
             for its in l:
                 occs = self.tensors[its].core_occ
                 for i in range(len(occs)):
-                    occs[i] = 1.0 if ix % 2 else 0.0
+                    occs[i] = self._high_occ if ix % 2 else 0.0
                     ix += 1
-        
+
         return self
+
+
+class UHFTensorNetwork(GaussianTensorNetwork):
+
+    def __init__(self, tensors):
+        super().__init__(tensors)
+
+    def fit_rdm1(self, dm, dm_idxs=None):
+
+        if dm_idxs is None:
+            dm_idxs = self.get_initial_indices()
+
+        dm_idxs_map = {x: ix for ix, x in enumerate(dm_idxs)}
+
+        if not hasattr(dm, "shape"):
+            dm = torch.tensor(dm)
+        if len(dm.shape) == 2:
+            dm = torch.tensor(
+                np.array([dm.detach().numpy(), dm.detach().numpy()])) / 2
+        dm = torch.clone(dm)
+
+        layers = self.get_layers()
+
+        def my_logm(mrot):
+            rs = mrot + mrot.T
+            _, rv = torch.linalg.eigh(rs)
+            rd = rv.T @ mrot @ rv
+            ld = torch.zeros_like(rd)
+            for i in range(0, len(rd) // 2 * 2, 2):
+                xcos = (rd[i, i] + rd[i + 1, i + 1]) / 2
+                xsin = (rd[i, i + 1] - rd[i + 1, i]) / 2
+                theta = torch.arctan2(xsin, xcos)
+                ld[i, i + 1] = theta
+                ld[i + 1, i] = -theta
+            return rv @ ld @ rv.T
+
+        for l in layers:
+            for its in l:
+                # find the small 1pdm for indices at this tensor
+                eff_dm_idxs = np.array([dm_idxs_map[x]
+                                        for x in self.tensors[its].d_idx])
+                eff_dm = dm[:, eff_dm_idxs, :][:, :, eff_dm_idxs]
+                xa, ua = torch.linalg.eigh(eff_dm[0])
+                xb, ub = torch.linalg.eigh(eff_dm[1])
+                # sort eigvals to put 0 and 1 near the beginning
+                xg = torch.tensor(
+                    [list(xa), list(1 - xa), list(xb), list(1 - xb)])
+                xg[xg <= 1E-50] = 1E-50
+                pa = torch.argsort(-(xg[0] * torch.log(xg[0]) +
+                                     xg[1] * torch.log(xg[1])))
+                pb = torch.argsort(-(xg[2] * torch.log(xg[2]) +
+                                     xg[3] * torch.log(xg[3])))
+                xa, xb = xa[pa], xb[pb]
+                ua, ub = ua[:, pa], ub[:, pb]
+                if torch.linalg.det(ua) < 0:
+                    ua[:, 0] *= -1
+                if torch.linalg.det(ub) < 0:
+                    ub[:, 0] *= -1
+                self.tensors[its].data = torch.tensor(
+                    np.array([my_logm(ua).detach().numpy(), my_logm(ub).detach().numpy()]))
+                self.tensors[its].core_occ = (
+                    np.round(xa[:self.tensors[its].n_core]),
+                    np.round(xb[:self.tensors[its].n_core]),
+                )
+                dm[0, eff_dm_idxs, :] = ua.T @ dm[0, eff_dm_idxs, :]
+                dm[0, :, eff_dm_idxs] = dm[0, :, eff_dm_idxs] @ ua
+                dm[1, eff_dm_idxs, :] = ub.T @ dm[1, eff_dm_idxs, :]
+                dm[1, :, eff_dm_idxs] = dm[1, :, eff_dm_idxs] @ ub
+                # update index tags after apply this gate
+                du_map = self.tensors[its].get_du_map()
+                dm_idxs_map = {du_map.get(
+                    x, x): ix for x, ix in dm_idxs_map.items()}
+
+        return self
+
+    def make_rdm1(self):
+
+        dm_idxs = self.get_terminal_indices()
+        dm_idxs_map = {x: ix for ix, x in enumerate(dm_idxs)}
+
+        layers = self.get_layers()
+
+        dm = torch.zeros((2, len(dm_idxs), len(dm_idxs)), dtype=torch.float64)
+
+        for l in layers[::-1]:
+            for its in l[::-1]:
+                # find the small 1pdm for indices at this tensor
+                eff_dm_idxs = np.array([dm_idxs_map[x]
+                                        for x in self.tensors[its].u_idx])
+                dmc_idxs = np.array([dm_idxs_map[u] for u
+                                     in self.tensors[its].u_idx[:self.tensors[its].n_core]])
+                dm[0, dmc_idxs, dmc_idxs] = self.tensors[its].core_occ[0]
+                dm[1, dmc_idxs, dmc_idxs] = self.tensors[its].core_occ[1]
+                ua = torch.matrix_exp(self.tensors[its].data[0])
+                ub = torch.matrix_exp(self.tensors[its].data[1])
+                dm[0, eff_dm_idxs, :] = ua @ dm[0, eff_dm_idxs, :]
+                dm[0, :, eff_dm_idxs] = dm[0, :, eff_dm_idxs] @ ua.T
+                dm[1, eff_dm_idxs, :] = ub @ dm[1, eff_dm_idxs, :]
+                dm[1, :, eff_dm_idxs] = dm[1, :, eff_dm_idxs] @ ub.T
+                # update index tags after apply this gate
+                ud_map = self.tensors[its].get_ud_map()
+                dm_idxs_map = {ud_map.get(
+                    x, x): ix for x, ix in dm_idxs_map.items()}
+
+        init_idxs = self.get_initial_indices()
+        reidx = np.array([dm_idxs_map[ix] for ix in init_idxs])
+        return dm[:, reidx, :][:, :, reidx]
+
+    def make_rdm2(self, dm1=None):
+        if dm1 is None:
+            dm1 = self.make_rdm1()
+        dm1a, dm1b = dm1[0], dm1[1]
+        dm2aa = (torch.einsum('ij,kl->ijkl', dm1a, dm1a)
+                 - torch.einsum('ij,kl->iklj', dm1a, dm1a))
+        dm2bb = (torch.einsum('ij,kl->ijkl', dm1b, dm1b)
+                 - torch.einsum('ij,kl->iklj', dm1b, dm1b))
+        dm2ab = torch.einsum('ij,kl->ijkl', dm1a, dm1b)
+        return torch.cat([dm2aa[None], dm2ab[None], dm2bb[None]])
+
+    def energy_tot(self, h1e, g2e, dm1=None, dm2=None):
+        if dm1 is None:
+            dm1 = self.make_rdm1()
+        if dm2 is None:
+            dm2 = self.make_rdm2(dm1=dm1)
+        if len(h1e.shape) == 2:
+            h1e = torch.cat([h1e[None], h1e[None]])
+        if len(g2e.shape) == 4:
+            g2e = torch.cat([g2e[None], g2e[None], g2e[None]])
+        e_tot = torch.einsum('ij,ij->', dm1[0], h1e[0])
+        e_tot += torch.einsum('ij,ij->', dm1[1], h1e[1])
+        e_tot += torch.einsum('ijkl,ijkl->', dm2[0], g2e[0]) * 0.5
+        e_tot += torch.einsum('ijkl,ijkl->', dm2[1], g2e[1]) * 1.0
+        e_tot += torch.einsum('ijkl,ijkl->', dm2[2], g2e[2]) * 0.5
+        return e_tot
+
+    def get_occupations(self):
+
+        term_occ = [], []
+
+        layers = self.get_layers()
+
+        for l in layers:
+            for its in l:
+                for occ in self.tensors[its].core_occ[0]:
+                    term_occ[0].append(float(occ))
+                for occ in self.tensors[its].core_occ[1]:
+                    term_occ[1].append(float(occ))
+
+        return np.array(term_occ)
+
+    def set_occ_half_filling(self):
+
+        layers = self.get_layers()
+
+        ix = 0
+        for l in layers:
+            for its in l:
+                occa, occb = self.tensors[its].core_occ
+                for i in range(len(occa)):
+                    occa[i] = 1.0 if ix % 2 == 0 else 0.0
+                    occb[i] = 1.0 if ix % 2 == 1 else 0.0
+                    ix += 1
+
+        return self
+
+    def set_occupations(self, occs):
+
+        layers = self.get_layers()
+
+        ix = 0
+        for l in layers:
+            for its in l:
+                occa, occb = self.tensors[its].core_occ
+                for i in range(len(occa)):
+                    occa[i] = occs[0][ix]
+                    occb[i] = occs[1][ix]
+                    ix += 1
+
+        return self
+
+
+class GHFTensorNetwork(RHFTensorNetwork):
+    _high_occ = 1.0
+
+    def __init__(self, tensors):
+        super().__init__(tensors)
+
+    def make_rdm2(self, dm1=None):
+        if dm1 is None:
+            dm1 = self.make_rdm1()
+        dm2 = (torch.einsum('ij,kl->ijkl', dm1, dm1)
+               - torch.einsum('ij,kl->iklj', dm1, dm1))
+        return dm2
 
 
 class GaussianMERA1D(GaussianTensorNetwork):
