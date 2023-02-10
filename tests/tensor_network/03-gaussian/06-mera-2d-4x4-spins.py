@@ -36,6 +36,7 @@ g2e = np.zeros((L, L, L, L))
 for i in range(L):
     g2e[i, i, i, i] = U
 
+# 1-electron integrals from spin orbital space half factor from half the 1pdm
 h1e_spin = np.zeros((2*L, 2*L))
 for ix in range(LX):
     for iy in range(LY):
@@ -44,7 +45,7 @@ for ix in range(LX):
         ixd, iyd = ix, iy - 1
         ixu, iyu = ix, iy + 1
         if ix > 0:
-            h1e_spin[2*ix * LY + iy, 2*ixl * LY + iyl] = -1.0 / 2.0 # half factor from double counting
+            h1e_spin[2*ix * LY + iy, 2*ixl * LY + iyl] = -1.0 / 2.0 
             h1e_spin[2*ixl * LY + iyl, 2*ix * LY + iy] = -1.0 / 2.0
             h1e_spin[(2*ix + 1) * LY + iy, (2*ixl + 1) * LY + iyl] = -1.0 / 2.0
             h1e_spin[(2*ixl + 1) * LY + iyl, (2*ix + 1) * LY + iy] = -1.0 / 2.0
@@ -64,9 +65,16 @@ for ix in range(LX):
             h1e_spin[(2*ix + 1) * LY + iy, (2*ixu + 1) * LY + iyu] = -1.0 / 2.0
             h1e_spin[(2*ixu + 1) * LY + iyu, (2*ix + 1) * LY + iy] = -1.0 / 2.0
 
+# 2-electron integrals from spin orbital space hard-coded factors
 g2e_spin = np.zeros((2*L, 2*L, 2*L, 2*L))
-for i in range(2*L):
-    g2e_spin[i, i, i, i] = U / 2.0 # half factor from double counting
+for i in range(L):
+    g2e_spin[2*i, 2*i, 2*i, 2*i] = U / 4.0
+    g2e_spin[2*i + 1, 2*i + 1, 2*i + 1, 2*i + 1] = U / 4.0
+    g2e_spin[2*i+1, 2*i+1, 2*i, 2*i] = U / 6.0 
+    g2e_spin[2*i , 2*i , 2*i + 1, 2*i + 1] = U / 6.0
+    g2e_spin[2*i+1, 2*i, 2*i, 2*i+1] = U / 12.0 
+    g2e_spin[2*i , 2*i + 1, 2*i + 1, 2*i] = U / 12.0
+
 
 mf = mol.HF()
 mf.get_hcore = lambda *_: h1e
