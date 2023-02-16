@@ -20,14 +20,14 @@ for i in range(L):
     g2e[i, i, i, i] = U
 
 gh1e = np.zeros((L * 2, L * 2))
-gh1e[0::2, 0::2] = h1e
-gh1e[1::2, 1::2] = h1e
+gh1e[:L, :L] = h1e
+gh1e[L:, L:] = h1e
 
 gg2e = np.zeros((L * 2, L * 2, L * 2, L * 2))
-gg2e[0::2, 0::2, 0::2, 0::2] = g2e
-gg2e[0::2, 0::2, 1::2, 1::2] = g2e
-gg2e[1::2, 1::2, 0::2, 0::2] = g2e
-gg2e[1::2, 1::2, 1::2, 1::2] = g2e
+gg2e[:L, :L, :L, :L] = g2e
+gg2e[:L, :L, L:, L:] = g2e
+gg2e[L:, L:, :L, :L] = g2e
+gg2e[L:, L:, L:, L:] = g2e
 
 mf = mol.GHF()
 mf.get_hcore = lambda *_: gh1e
@@ -46,8 +46,8 @@ dm0a = [1, 0] * (L // 2)
 dm0b = [0, 1] * (L // 2)
 
 gdm0 = np.zeros((L * 2, ))
-gdm0[0::2] = dm0a
-gdm0[1::2] = dm0b
+gdm0[:L] = dm0a
+gdm0[L:] = dm0b
 
 mf.conv_tol = 1E-14
 mf.kernel(dm0=np.diag(gdm0))
@@ -74,9 +74,16 @@ print('init  ener = ', float(gmps.energy_tot(gh1e, gg2e)))
 opt = GaussianOptimizer(gmps, gh1e, gg2e, iprint=0)
 ener, x = opt.optimize()
 print('final ener = ', ener, 'niter = ', opt.niter)
+ener, x = opt.optimize(x0='random', maxiter=1000)
+print('final ener = ', ener, 'niter = ', opt.niter)
 
-# converged SCF energy = -11.6759028949188  <S^2> = 0.84295667  2S+1 = 2.0908914
-# rdm1 diff =  0.1049089920627553
-# rdm2 diff =  0.8125546190332478
-# init  ener =  -11.663689962215582
-# final ener =  -11.861765207589771 niter =  102
+mf.get_hcore = lambda *_: gh1e.detach().numpy()
+mf.kernel(dm0=gmps.make_rdm1().detach().numpy())
+
+# converged SCF energy = -11.8657704004292  <S^2> = 1.5694297  2S+1 = 2.6977248
+# rdm1 diff =  0.0006334389909877746
+# rdm2 diff =  0.004906597316523212
+# init  ener =  -11.86576984195317
+# final ener =  -11.865769846148526 niter =  4
+# final ener =  -11.865741780564255 niter =  327
+# converged SCF energy = -11.8657704004292  <S^2> = 1.5694298  2S+1 = 2.6977248

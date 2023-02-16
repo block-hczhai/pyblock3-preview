@@ -20,14 +20,14 @@ for i in range(L):
     g2e[i, i, i, i] = U
 
 gh1e = np.zeros((L * 2, L * 2))
-gh1e[0::2, 0::2] = h1e
-gh1e[1::2, 1::2] = h1e
+gh1e[:L, :L] = h1e
+gh1e[L:, L:] = h1e
 
 gg2e = np.zeros((L * 2, L * 2, L * 2, L * 2))
-gg2e[0::2, 0::2, 0::2, 0::2] = g2e
-gg2e[0::2, 0::2, 1::2, 1::2] = g2e
-gg2e[1::2, 1::2, 0::2, 0::2] = g2e
-gg2e[1::2, 1::2, 1::2, 1::2] = g2e
+gg2e[:L, :L, :L, :L] = g2e
+gg2e[:L, :L, L:, L:] = g2e
+gg2e[L:, L:, :L, :L] = g2e
+gg2e[L:, L:, L:, L:] = g2e
 
 mf = mol.GHF()
 mf.get_hcore = lambda *_: gh1e
@@ -46,8 +46,8 @@ dm0a = [1, 0] * (L // 2)
 dm0b = [0, 1] * (L // 2)
 
 gdm0 = np.zeros((L * 2, ))
-gdm0[0::2] = dm0a
-gdm0[1::2] = dm0b
+gdm0[:L] = dm0a
+gdm0[L:] = dm0b
 
 mf.conv_tol = 1E-14
 mf.kernel(dm0=np.diag(gdm0))
@@ -81,11 +81,15 @@ gmera = gmera.no_grad_()
 print('rdm1 diff = ', np.linalg.norm(gmera.make_rdm1() - rdm1))
 print('rdm2 diff = ', np.linalg.norm(gmera.make_rdm2() - rdm2))
 
-# converged SCF energy = -11.6759028949188  <S^2> = 0.84295667  2S+1 = 2.0908914
-# rdm1 diff =  1.942567571783183
-# rdm2 diff =  14.634556982969224
-# init  ener =  -8.707134018801948
-# final ener =  -11.78936119043862 niter =  785
-# final ener =  -11.789512698473882 niter =  683
-# rdm1 diff =  1.501465714399439
-# rdm2 diff =  11.447372389917902
+mf.get_hcore = lambda *_: gh1e.detach().numpy()
+mf.kernel(dm0=gmera.make_rdm1().detach().numpy())
+
+# converged SCF energy = -11.8657704004292  <S^2> = 1.5694297  2S+1 = 2.6977248
+# rdm1 diff =  0.30806786186917157
+# rdm2 diff =  2.384656401517744
+# init  ener =  -11.745012254590188
+# final ener =  -11.864935286083055 niter =  660
+# final ener =  -11.648108613041709 niter =  381
+# rdm1 diff =  1.8075179849774736
+# rdm2 diff =  13.773815244866343
+# converged SCF energy = -11.6509740107719  <S^2> = 2.4111855  2S+1 = 3.2626281

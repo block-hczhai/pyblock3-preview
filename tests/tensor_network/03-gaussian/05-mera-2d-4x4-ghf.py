@@ -37,14 +37,14 @@ for i in range(L):
     g2e[i, i, i, i] = U
 
 gh1e = np.zeros((L * 2, L * 2))
-gh1e[0::2, 0::2] = h1e
-gh1e[1::2, 1::2] = h1e
+gh1e[:L, :L] = h1e
+gh1e[L:, L:] = h1e
 
 gg2e = np.zeros((L * 2, L * 2, L * 2, L * 2))
-gg2e[0::2, 0::2, 0::2, 0::2] = g2e
-gg2e[0::2, 0::2, 1::2, 1::2] = g2e
-gg2e[1::2, 1::2, 0::2, 0::2] = g2e
-gg2e[1::2, 1::2, 1::2, 1::2] = g2e
+gg2e[:L, :L, :L, :L] = g2e
+gg2e[:L, :L, L:, L:] = g2e
+gg2e[L:, L:, :L, :L] = g2e
+gg2e[L:, L:, L:, L:] = g2e
 
 mf = mol.GHF()
 mf.get_hcore = lambda *_: gh1e
@@ -69,8 +69,8 @@ dm0a = np.array(
 dm0b = ~dm0a & 1
 
 gdm0 = np.zeros((L * 2, ))
-gdm0[0::2] = dm0a
-gdm0[1::2] = dm0b
+gdm0[:L] = dm0a
+gdm0[L:] = dm0b
 
 mf.conv_tol = 1E-14
 mf.max_cycle = 200
@@ -135,18 +135,22 @@ for _ in range(10):
     ener, x = opt.optimize(x0='random', maxiter=1000)
     print('final ener = ', ener, 'niter = ', opt.niter)
 
-# converged SCF energy = -14.8269007837547  <S^2> = 3.5946321  2S+1 = 3.9215467
-# rdm1 diff =  1.4045635202501676
-# rdm2 diff =  10.724698622241661
-# init  ener =  -11.30464073943204
-# final ener =  -14.766878617656943 niter =  338
-# final ener =  -14.766880324063017 niter =  165
-# final ener =  -14.69582137850006 niter =  265
-# final ener =  -14.76688000976375 niter =  195
-# final ener =  -14.766879857021873 niter =  182
-# final ener =  -14.76688036502653 niter =  179
-# final ener =  -14.766880214949722 niter =  201
-# final ener =  -14.766880182043035 niter =  221
-# final ener =  -14.766878953960633 niter =  352
-# final ener =  -14.766880327070155 niter =  266
-# final ener =  -14.7668801551673 niter =  225
+mf.get_hcore = lambda *_: gh1e.detach().numpy()
+mf.kernel(dm0=gmera.make_rdm1().detach().numpy())
+
+# converged SCF energy = -14.8692937269376  <S^2> = 2.5877562  2S+1 = 3.3691282
+# rdm1 diff =  1.2048424452214004
+# rdm2 diff =  9.235551288241458
+# init  ener =  -12.958558689864702
+# final ener =  -14.869170007690826 niter =  313
+# final ener =  -14.365501059967688 niter =  482
+# final ener =  -14.86920764192523 niter =  219
+# final ener =  -14.869205900985524 niter =  426
+# final ener =  -14.365071610238608 niter =  383
+# final ener =  -14.869202960075905 niter =  198
+# final ener =  -14.471265969548346 niter =  123
+# final ener =  -14.869215688729616 niter =  248
+# final ener =  -14.869199737154526 niter =  199
+# final ener =  -14.869200941165765 niter =  208
+# final ener =  -14.869222756197026 niter =  360
+# converged SCF energy = -14.8692937269376  <S^2> = 2.5877562  2S+1 = 3.3691282
