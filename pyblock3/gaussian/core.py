@@ -339,25 +339,31 @@ class RHFTensorNetwork(GaussianTensorNetwork):
 
         for l in layers:
             for its in l:
-                # find the small 1pdm for indices at this tensor
-                eff_dm_idxs = np.array([dm_idxs_map[x]
-                                        for x in self.tensors[its].d_idx])
-                eff_dm = dm[eff_dm_idxs, :][:, eff_dm_idxs]
-                xb, ub = torch.linalg.eigh(eff_dm)
-                # sort eigvals to put 0 and 2 near the beginning
-                xg = torch.tensor([list(xb), list(self._high_occ - xb)])
-                xg[xg <= 1E-50] = 1E-50
-                p = torch.argsort(-(xg[0] * torch.log(xg[0]) +
-                                    xg[1] * torch.log(xg[1])))
-                xb = xb[p]
-                ub = ub[:, p]
-                if torch.linalg.det(ub) < 0:
-                    ub[:, 0] *= -1
-                self.tensors[its].data = my_logm(ub)
-                self.tensors[its].core_occ = np.round(
-                    xb[:self.tensors[its].n_core])
-                dm[eff_dm_idxs, :] = ub.T @ dm[eff_dm_idxs, :]
-                dm[:, eff_dm_idxs] = dm[:, eff_dm_idxs] @ ub
+                ncore = self.tensors[its].n_core
+                if ncore > 0:
+                    # find the small 1pdm for indices at this tensor
+                    eff_dm_idxs = np.array([dm_idxs_map[x]
+                                            for x in self.tensors[its].d_idx])
+                    eff_dm = dm[eff_dm_idxs, :][:, eff_dm_idxs]
+                    xb, ub = torch.linalg.eigh(eff_dm)
+                    # sort eigvals to put 0 and 2 near the beginning
+                    xg = torch.tensor([list(xb), list(self._high_occ - xb)])
+                    xg[xg <= 1E-50] = 1E-50
+                    p = torch.argsort(-(xg[0] * torch.log(xg[0]) +
+                                        xg[1] * torch.log(xg[1])))
+                    xb = xb[p]
+                    ub = ub[:, p]
+                    if torch.linalg.det(ub) < 0:
+                        ub[:, 0] *= -1
+                    self.tensors[its].data = my_logm(ub)
+                    self.tensors[its].core_occ = np.round(
+                        xb[:ncore])
+                    dm[eff_dm_idxs, :] = ub.T @ dm[eff_dm_idxs, :]
+                    dm[:, eff_dm_idxs] = dm[:, eff_dm_idxs] @ ub
+                else:
+                    dim = len(self.tensors[its].u_idx)
+                    self.tensors[its].data = torch.zeros((dim,dim),dtype=float)
+                    self.tensors[its].core_occ = torch.tensor([],dtype=float)
                 # update index tags after apply this gate
                 du_map = self.tensors[its].get_du_map()
                 dm_idxs_map = {du_map.get(
