@@ -124,6 +124,9 @@ Then we use :func:`MPE.linear` to fit ``bra`` to ``dmpo @ mps``.
 This is a sweep algorithm similar to DMRG.
 In principle, the following line (and the above line) can be replaced by simply
 ``bra = dmpo @ mps; bra.fix_pattern()`` (which may be slower).
+Also note that ``MPE.linear`` may have some problems handling the constant term in MPO.
+If the mpo has a constant term (the ``dmpo`` here does not have a constant), one can do
+``MPE(bra, mpo - mpo.const, mps).linear(...); bra += mpo.const * mps``.
 
 .. code:: python
 

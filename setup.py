@@ -41,7 +41,7 @@ class CMakeBuild(build_ext):
                 '-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY_{}={}'.format(
                     cfg.upper(), self.build_temp),
                 '-DPYTHON_EXECUTABLE_HINT={}'.format(sys.executable),
-                '-DUSE_MKL=ON'
+                '-DUSE_MKL=ON',
             ]
 
             # We can handle some platform-specific settings at our discretion
