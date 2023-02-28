@@ -52,6 +52,10 @@ class GaussianOptimizer:
 
         self.grad = energy_and_grad
 
+    @property
+    def params_length(self):
+        return len(pack(self.tn.get_params()))
+
     def optimize(self, x0=None, maxiter=100):
 
         self.niter = 0
@@ -103,14 +107,20 @@ class GaussianTensor:
 
 class GaussianTensorNetwork:
 
-    def __init__(self, tensors):
+    def __init__(self, tensors, grad_idxs=None):
         self.tensors = tensors
+        self.grad_idxs = grad_idxs
+
+    @property
+    def grad_tensors(self):
+        return [ts for its, ts in enumerate(self.tensors)
+            if self.grad_idxs is None or its in self.grad_idxs]
 
     def get_params(self):
-        return [ts.data for ts in self.tensors]
+        return [ts.data for ts in self.grad_tensors]
 
     def set_params(self, params):
-        for p, ts in zip(params, self.tensors):
+        for p, ts in zip(params, self.grad_tensors):
             ts.data = p
         return self
 
@@ -162,6 +172,21 @@ class GaussianTensorNetwork:
                     all_u_idx.remove(di)
 
         return sorted(list(all_u_idx))
+
+    def get_core_terminal_indices(self):
+
+        all_u_idx = set()
+
+        for ts in self.tensors:
+            for ui in ts.u_idx[:ts.n_core]:
+                all_u_idx.add(ui)
+
+        return sorted(list(all_u_idx))
+
+    def get_non_core_terminal_indices(self):
+
+        idx = set(self.get_terminal_indices()) - set(self.get_core_terminal_indices())
+        return sorted(list(idx))
 
     def get_layers(self):
         """
@@ -295,6 +320,44 @@ class GaussianTensorNetwork:
 
         return self
 
+    def repr_layers(self):
+
+        minx = min([g[1] for t in self.tensors for g in t.u_idx])
+        maxx = max([g[1] for t in self.tensors for g in t.u_idx])
+        miny = min([g[2] for t in self.tensors for g in t.u_idx])
+        maxy = max([g[2] for t in self.tensors for g in t.u_idx])
+
+        layers = self.get_layers()
+        r = "NLayers = %d\n" % len(layers)
+
+        for il, l in enumerate(layers):
+            r += "Layer %d NTensors = %d\n" % (il, len(l))
+            mp = [[""] * (maxy - miny + 1) for _ in range(minx, maxx + 1)]
+            for its in l:
+                for ix, xu in enumerate(self.tensors[its].u_idx):
+                    mp[xu[1] - minx][xu[2] - miny] = str(its)
+                    if ix < self.tensors[its].n_core:
+                        if self.tensors[its].core_occ is None:
+                            mp[xu[1] - minx][xu[2] - miny] = "?" + mp[xu[1] - minx][xu[2] - miny]
+                        else:
+                            occa = self.tensors[its].core_occ[0][ix]
+                            occb = self.tensors[its].core_occ[1][ix]
+                            mp[xu[1] - minx][xu[2] - miny] = "0ba2"[
+                                int(np.round(occa)) * 2 + int(np.round(occb))] + mp[xu[1] - minx][xu[2] - miny]
+            maxl_mp = max([max(len(x) for x in mx) for mx in mp]) + 1
+            mp = "\n".join(["".join(["%%%ds" % maxl_mp % x for x in mx]) for mx in mp])
+            r += mp + "\n"
+
+        return r
+
+    def truncate_layers(self, n_layer):
+
+        layers = self.get_layers()[:n_layer]
+        layers = [xx for x in layers for xx in x]
+
+        return GaussianTensorNetwork(tensors=[ts for its, ts in enumerate(self.tensors)
+            if its in layers]).view_as(self.__class__)
+
     def view_as(self, cls):
         return cls(self.tensors)
 
@@ -389,8 +452,8 @@ class RHFTensorNetwork(GaussianTensorNetwork):
                         dm[:, eff_dm_idxs] = dm[:, eff_dm_idxs] @ ub
                     else:
                         dim = len(self.tensors[its].u_idx)
-                        self.tensors[its].data = torch.zeros((dim,dim),dtype=float)
-                        self.tensors[its].core_occ = torch.tensor([],dtype=float)
+                        self.tensors[its].data = torch.zeros((dim, dim), dtype=float)
+                        self.tensors[its].core_occ = torch.tensor([], dtype=float)
                     # update index tags after apply this gate
                     du_map = self.tensors[its].get_du_map()
                     dm_idxs_map = {du_map.get(
@@ -434,13 +497,16 @@ class RHFTensorNetwork(GaussianTensorNetwork):
                - torch.einsum('ij,kl->iklj', dm1, dm1) / 2)
         return dm2
 
-    def energy_tot(self, h1e, g2e, dm1=None, dm2=None):
+    def energy_tot(self, h1e, g2e=None, dm1=None, dm2=None):
         if dm1 is None:
             dm1 = self.make_rdm1()
-        if dm2 is None:
-            dm2 = self.make_rdm2(dm1=dm1)
         e_tot = torch.einsum('ij,ij->', dm1, h1e)
-        e_tot += torch.einsum('ijkl,ijkl->', dm2, g2e) * 0.5
+        if g2e is not None:
+            if dm2 is not None:
+                e_tot += torch.einsum('ijkl,ijkl->', dm2, g2e) * 0.5
+            else:
+                e_tot += torch.einsum('ij,kl,ijkl->', dm1, dm1, g2e) * 0.5
+                e_tot -= torch.einsum('ij,kl,iklj->', dm1, dm1, g2e) * 0.25
         return e_tot
 
     def set_occ_half_filling(self):
@@ -575,20 +641,26 @@ class UHFTensorNetwork(GaussianTensorNetwork):
         dm2ab = torch.einsum('ij,kl->ijkl', dm1a, dm1b)
         return torch.cat([dm2aa[None], dm2ab[None], dm2bb[None]])
 
-    def energy_tot(self, h1e, g2e, dm1=None, dm2=None):
+    def energy_tot(self, h1e, g2e=None, dm1=None, dm2=None):
         if dm1 is None:
             dm1 = self.make_rdm1()
-        if dm2 is None:
-            dm2 = self.make_rdm2(dm1=dm1)
         if len(h1e.shape) == 2:
             h1e = torch.cat([h1e[None], h1e[None]])
-        if len(g2e.shape) == 4:
-            g2e = torch.cat([g2e[None], g2e[None], g2e[None]])
         e_tot = torch.einsum('ij,ij->', dm1[0], h1e[0])
         e_tot += torch.einsum('ij,ij->', dm1[1], h1e[1])
-        e_tot += torch.einsum('ijkl,ijkl->', dm2[0], g2e[0]) * 0.5
-        e_tot += torch.einsum('ijkl,ijkl->', dm2[1], g2e[1]) * 1.0
-        e_tot += torch.einsum('ijkl,ijkl->', dm2[2], g2e[2]) * 0.5
+        if g2e is not None:
+            if len(g2e.shape) == 4:
+                g2e = torch.cat([g2e[None], g2e[None], g2e[None]])
+            if dm2 is not None:
+                e_tot += torch.einsum('ijkl,ijkl->', dm2[0], g2e[0]) * 0.5
+                e_tot += torch.einsum('ijkl,ijkl->', dm2[1], g2e[1]) * 1.0
+                e_tot += torch.einsum('ijkl,ijkl->', dm2[2], g2e[2]) * 0.5
+            else:
+                e_tot += torch.einsum('ij,kl,ijkl->', dm1[0], dm1[0], g2e[0]) * 0.5
+                e_tot -= torch.einsum('ij,kl,iklj->', dm1[0], dm1[0], g2e[0]) * 0.5
+                e_tot += torch.einsum('ij,kl,ijkl->', dm1[0], dm1[1], g2e[1]) * 1.0
+                e_tot += torch.einsum('ij,kl,ijkl->', dm1[1], dm1[1], g2e[2]) * 0.5
+                e_tot -= torch.einsum('ij,kl,iklj->', dm1[1], dm1[1], g2e[2]) * 0.5
         return e_tot
 
     def get_occupations(self):
@@ -628,12 +700,18 @@ class UHFTensorNetwork(GaussianTensorNetwork):
         ix = 0
         for l in layers:
             for its in l:
+                if self.tensors[its].core_occ is None:
+                    self.tensors[its].core_occ = (
+                        torch.tensor([0.0] * self.tensors[its].n_core, dtype=torch.float64),
+                        torch.tensor([0.0] * self.tensors[its].n_core, dtype=torch.float64)
+                    )
                 occa, occb = self.tensors[its].core_occ
                 for i in range(len(occa)):
                     occa[i] = occs[0][ix]
                     occb[i] = occs[1][ix]
                     ix += 1
-
+        
+        assert ix == len(occs[0]) and ix == len(occs[1])
         return self
 
 
@@ -735,6 +813,136 @@ class GaussianMERA1D(GaussianTensorNetwork):
                 tensors[-1].n_core = tensors[-1].width
                 break
             cur_idx = next_idx
+
+        super().__init__(tensors)
+
+
+class GaussianMERA2D(GaussianTensorNetwork):
+
+    def __init__(self, n_sites, n_tensor_sites, n_core, dis_ent_width=None,
+        starting_idxs=None, core_depth=None, add_cap=True,
+        n_dis_ent_tensor_sites=None, large_dis_ent=False):
+        """
+            n_sites : (int, int).
+                Number of sites along x, y in the MERA
+            n_tensor_sites : (int, int).
+                Number of sites along x, y in each MERA tensor
+            n_dis_ent_tensor_sites : (int, int) or None.
+                Number of sites along x, y in each MERA tensor for dis_ent
+            dis_ent_width : (int, int).
+                Number of sites in smaller dim in each dis ent tensor
+            n_core : (int, int).
+                Number of core indices along x, y in the upper bond of MERA tensor
+            starting_idxs : (int, int, int).
+                Starting layer, x, and y indices
+            core_depth : int or None.
+                If not None, use mod to determine core position. None is equiv to core_depth == 1
+            add_cap : bool.
+                If True, make all upper indices core indices in the last tensor
+            large_dis_ent : bool.
+                If True, with suitable n_dis_ent_tensor_sites, dis_ent will cover all sites along x/y.
+        """
+        from functools import reduce
+        assert any(x >= 1 for x in n_core)
+        tensors = []
+        stl, stx, sty = starting_idxs if starting_idxs is not None else (0, 0, 0)
+        cur_idx = [[(stl, stx + i, sty + j) for j in range(0, n_sites[1])] for i in range(0, n_sites[1])]
+        cur_l = stl + 1
+        nax, nay = tuple(tsz - c for tsz, c in zip(n_tensor_sites, n_core))
+        if dis_ent_width is None:
+            dis_ent_width = tuple(x // 2 for x in n_tensor_sites)
+        if n_dis_ent_tensor_sites is None:
+            n_dis_ent_tensor_sites = n_tensor_sites
+        ncx, ncy = n_sites
+        nwx, nwy = dis_ent_width
+        flatten = lambda l: reduce(lambda x, y: x + y, l, [])
+        upper = lambda k, l: [(l, x[1], x[2]) for x in k]
+        while True:
+            ntx, nty = n_dis_ent_tensor_sites
+            nax, nay = nay, nax
+            # dis ent along x
+            i = ntx // 2 if not large_dis_ent else 0
+            while True:
+                dx = min(ntx, ncx - i)
+                for j in range(0, ncy, nwy):
+                    dy = min(nwy, ncy - j)
+                    d_idx = flatten([k[j:j + dy] for k in cur_idx[i:i + dx]])
+                    u_idx = upper(d_idx, cur_l)
+                    if dx == ntx:
+                        tensors.append(GaussianTensor(u_idx, d_idx, n_core=0))
+                        for k in cur_idx[i:i + dx]:
+                            k[j:j + dy] = upper(k[j:j + dy], cur_l)
+                if i + dx == ncx:
+                    break
+                i += dx
+            cur_l += 1
+            # dis ent along y
+            j = nty // 2 if not large_dis_ent else 0
+            while True:
+                dy = min(nty, ncy - j)
+                for i in range(0, ncx, nwx):
+                    dx = min(nwx, ncx - i)
+                    d_idx = flatten([k[j:j + dy] for k in cur_idx[i:i + dx]])
+                    u_idx = upper(d_idx, cur_l)
+                    if dy == nty:
+                        tensors.append(GaussianTensor(u_idx, d_idx, n_core=0))
+                        for k in cur_idx[i:i + dx]:
+                            k[j:j + dy] = upper(k[j:j + dy], cur_l)
+                if j + dy == ncy:
+                    break
+                j += dy
+            cur_l += 1
+            # isometry
+            ntx, nty = n_tensor_sites
+            new_cur_idx = [[None] * ncy for _ in range(ncx)]
+            ni = 0
+            nts = 0
+            for i in range(0, ncx, ntx):
+                nj = 0
+                dx = min(ncx - i, ntx)
+                for j in range(0, ncy, nty):
+                    dy = min(ncy - j, nty)
+                    xc, yc = i + dx - nax, j + dy - nay
+                    if core_depth is None:
+                        d_idx = flatten([[(gi, gj) for gj in range(j, j + dy)] for gi in range(i, i + dx)])
+                        d_idx = sorted(d_idx, key=lambda k: ((k[0] >= xc) + (k[1] >= yc), ) + k)
+                    else:
+                        d_idx = flatten([[(gi, gj) for gj in range(dy)] for gi in range(dx)])
+                        gxc, gyc = (dx - nax) // core_depth, (dy - nay) // core_depth
+                        d_idx = sorted(d_idx, key=lambda k:
+                            ((k[0] % (dx // core_depth) >= gxc) + (k[1] % (dy // core_depth) >= gyc), ) + k)
+                        d_idx = [(i + gi, j + gj) for (gi, gj) in d_idx]
+
+                    d_idx = [cur_idx[gi][gj] for (gi, gj) in d_idx]
+                    u_idx = upper(d_idx, cur_l)
+                    n_core_this = max(0, dx * dy - nax * nay)
+                    tensors.append(GaussianTensor(u_idx, d_idx, n_core=n_core_this))
+                    nts += 1
+                    if core_depth is None:
+                        for k, kd in zip(new_cur_idx[ni:ni + nax], cur_idx[xc:i + dx]):
+                            k[nj:nj + nay] = upper(kd[yc:j + dy], cur_l)
+                    else:
+                        gxc, gyc = (dx - nax) // core_depth, (dy - nay) // core_depth
+                        igi, igj = 0, 0
+                        for gi in range(dx):
+                            igj = 0
+                            if gi % (dx // core_depth) >= gxc:
+                                for gj in range(dy):
+                                    if gj % (dy // core_depth) >= gyc:
+                                        new_cur_idx[ni + igi][nj + igj] = (cur_l, ) + cur_idx[i + gi][j + gj][1:]
+                                        igj += 1
+                                igi += 1
+                        assert igi * igj == tensors[-1].width - n_core_this
+                    nj += nay
+                ni += nax
+            cur_l += 1
+            cur_idx = [[k for k in j if k is not None] for j in new_cur_idx
+                if len([k for k in j if k is not None]) != 0]
+            ncx, ncy = len(cur_idx), len(cur_idx[0])
+            if nts == 1:
+                if add_cap:
+                    tensors[-1].n_core = tensors[-1].width
+                break
 
         super().__init__(tensors)
 
