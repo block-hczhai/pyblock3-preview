@@ -53,6 +53,12 @@ Using ``pip``:
 
     pip install pyblock3
 
+To install the most recent development version, use:
+
+    pip install pyblock3==<version> --extra-index-url=https://block-hczhai.github.io/pyblock3-preview/pypi/
+
+where ``<version>`` can be some development version number like ``0.2.7rc5``.
+
 Or you can compile it manually:
 
 Dependence: `python3`, `psutil`, `numba`, and `numpy` (version >= 1.17.0). pyblock3 can run in pure python mode,
