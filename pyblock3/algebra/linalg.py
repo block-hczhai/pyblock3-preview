@@ -86,11 +86,11 @@ def _olsen_precondition(q, c, ld, diag):
     """Olsen precondition."""
     t = c.copy()
     mask = np.abs(ld - diag) > 1E-12
-    t[mask] = t[mask] / (ld - diag[mask])
+    t[mask] /= ld - diag[mask]
     numerator = np.dot(t.conj(), q)
     denominator = np.dot(c.conj(), t)
     q += (-numerator / denominator) * c
-    q[mask] = q[mask] / (ld - diag[mask])
+    q[mask] /= ld - diag[mask]
 
 
 def _precondition(r, diag):

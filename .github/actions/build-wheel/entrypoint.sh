@@ -23,7 +23,7 @@ PY_EXE=/opt/python/"${PY_VER}"/bin/python3
 sed -i "/DPYTHON_EXECUTABLE/a \                '-DPYTHON_EXECUTABLE=${PY_EXE}'," setup.py
 
 /opt/python/"${PY_VER}"/bin/pip install --upgrade --no-cache-dir pip
-/opt/python/"${PY_VER}"/bin/pip install --no-cache-dir mkl==2019 mkl-include intel-openmp numpy psutil cmake==3.17 pybind11
+/opt/python/"${PY_VER}"/bin/pip install --no-cache-dir mkl==2019 mkl-include intel-openmp 'numpy<1.23.0' psutil cmake==3.17 pybind11==2.10.1
 
 sed -i '/new_soname = src_name/a \    if any(x in src_name for x in ["libmkl_avx2", "libmkl_avx512"]): new_soname = src_name' \
     $($(cat $(which auditwheel) | head -1 | awk -F'!' '{print $2}') -c "from auditwheel import repair;print(repair.__file__)")
