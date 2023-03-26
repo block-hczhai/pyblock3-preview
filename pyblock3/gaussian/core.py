@@ -27,8 +27,11 @@ def unpack(r, x):
 class GaussianOptimizer:
 
     def __init__(self, tn, h1e, g2e, jit=True, iprint=1):
+        import time
         self.tn = tn
         self.niter = 0
+        self._time = time.perf_counter()
+        self.total_time = 0.0
 
         def get_ener(x):
             tn.set_params(x)
@@ -47,7 +50,10 @@ class GaussianOptimizer:
             grad = torch.autograd.grad(energy, params)
             self.niter += 1
             if iprint >= 1:
-                print("%5d = %20.12f" % (self.niter, float(energy.detach())))
+                print("%5d = %20.12f T = %10.3f" % (self.niter, float(
+                    energy.detach()), time.perf_counter() - self._time))
+            self.total_time += time.perf_counter() - self._time
+            self._time = time.perf_counter()
             return float(energy.detach()), pack(grad)
 
         self.grad = energy_and_grad
@@ -114,7 +120,7 @@ class GaussianTensorNetwork:
     @property
     def grad_tensors(self):
         return [ts for its, ts in enumerate(self.tensors)
-            if self.grad_idxs is None or its in self.grad_idxs]
+                if self.grad_idxs is None or its in self.grad_idxs]
 
     def get_params(self):
         return [ts.data for ts in self.grad_tensors]
@@ -137,6 +143,26 @@ class GaussianTensorNetwork:
             ts.data = ts.data.detach()
         return self
 
+    def restrict_grad_idxs(self, sub_tn=None):
+        """
+        Only grad wrt the tensors in the sub_tn.
+        """
+        if sub_tn is None:
+            self.grad_idxs = None
+        else:
+            self.grad_idxs = [it for it, ts in enumerate(
+                self.tensors) if ts in sub_tn.tensors]
+
+    def _smart_sorted(self, idx):
+        if len(idx) == 0:
+            return idx
+        elif isinstance(idx[0], int):
+            return sorted(idx)
+        elif isinstance(idx[0], tuple) and len(idx[0]) == 3:
+            return sorted(idx, key=lambda x: (x[1:], x))
+        else:
+            return sorted(idx)
+
     def get_initial_indices(self):
         """
         Initial indices are down (d_idx) indices that are not connected to any up indices.
@@ -153,7 +179,7 @@ class GaussianTensorNetwork:
                 if ui in all_d_idx:
                     all_d_idx.remove(ui)
 
-        return sorted(list(all_d_idx))
+        return self._smart_sorted(list(all_d_idx))
 
     def get_terminal_indices(self):
         """
@@ -171,7 +197,7 @@ class GaussianTensorNetwork:
                 if di in all_u_idx:
                     all_u_idx.remove(di)
 
-        return sorted(list(all_u_idx))
+        return self._smart_sorted(list(all_u_idx))
 
     def get_core_terminal_indices(self):
 
@@ -181,12 +207,13 @@ class GaussianTensorNetwork:
             for ui in ts.u_idx[:ts.n_core]:
                 all_u_idx.add(ui)
 
-        return sorted(list(all_u_idx))
+        return self._smart_sorted(list(all_u_idx))
 
     def get_non_core_terminal_indices(self):
 
-        idx = set(self.get_terminal_indices()) - set(self.get_core_terminal_indices())
-        return sorted(list(idx))
+        idx = set(self.get_terminal_indices()) - \
+            set(self.get_core_terminal_indices())
+        return self._smart_sorted(list(idx))
 
     def get_layers(self):
         """
@@ -321,6 +348,7 @@ class GaussianTensorNetwork:
         return self
 
     def repr_layers(self):
+        """Print structure of 2D TN layer by layer."""
 
         minx = min([g[1] for t in self.tensors for g in t.u_idx])
         maxx = max([g[1] for t in self.tensors for g in t.u_idx])
@@ -338,17 +366,71 @@ class GaussianTensorNetwork:
                     mp[xu[1] - minx][xu[2] - miny] = str(its)
                     if ix < self.tensors[its].n_core:
                         if self.tensors[its].core_occ is None:
-                            mp[xu[1] - minx][xu[2] - miny] = "?" + mp[xu[1] - minx][xu[2] - miny]
+                            mp[xu[1] - minx][xu[2] - miny] = "?" + \
+                                mp[xu[1] - minx][xu[2] - miny]
                         else:
                             occa = self.tensors[its].core_occ[0][ix]
                             occb = self.tensors[its].core_occ[1][ix]
                             mp[xu[1] - minx][xu[2] - miny] = "0ba2"[
                                 int(np.round(occa)) * 2 + int(np.round(occb))] + mp[xu[1] - minx][xu[2] - miny]
             maxl_mp = max([max(len(x) for x in mx) for mx in mp]) + 1
-            mp = "\n".join(["".join(["%%%ds" % maxl_mp % x for x in mx]) for mx in mp])
+            mp = "\n".join(
+                ["".join(["%%%ds" % maxl_mp % x for x in mx]) for mx in mp])
             r += mp + "\n"
 
         return r
+
+    def fit_to_reference_2d(self, ref_tn):
+        """Match the input, output, and core indices of this TN with those in ref_tn.
+        Only works for 2D."""
+
+        ref_init_idxs = sorted(ref_tn.get_initial_indices(),
+                               key=lambda p: p[1:] + p[:1])
+        ref_cterm_idxs = sorted(
+            ref_tn.get_core_terminal_indices(), key=lambda p: p[1:] + p[:1])
+        ref_nterm_idxs = sorted(
+            ref_tn.get_non_core_terminal_indices(), key=lambda p: p[1:] + p[:1])
+
+        idx_mp = {}
+
+        fit_term = self.get_terminal_indices()
+        fit_cterm = []
+        for fi in fit_term:
+            found = False
+            for ri in ref_cterm_idxs:
+                if ri[1:] == fi[1:]:
+                    idx_mp[fi] = ri
+                    found = True
+                    break
+            if found:
+                fit_cterm.append(fi)
+            else:
+                for ri in ref_nterm_idxs:
+                    if ri[1:] == fi[1:]:
+                        idx_mp[fi] = ri
+                        break
+
+        fit_init = self.get_initial_indices()
+        for fi in fit_init:
+            for ri in ref_init_idxs:
+                if ri[1:] == fi[1:]:
+                    idx_mp[fi] = ri
+                    break
+
+        for ts in self.tensors:
+            xud = zip(ts.u_idx, ts.d_idx)
+            xud = sorted(xud, key=lambda x: (
+                x[0] not in fit_cterm, x[0][1:], x))
+            ts.n_core = sum([x in fit_cterm for x in ts.u_idx])
+            ts.u_idx, ts.d_idx = zip(*xud)
+            ts.u_idx = list(ts.u_idx)
+            ts.d_idx = list(ts.d_idx)
+
+        for ts in self.tensors:
+            ts.u_idx = [idx_mp.get(x, x) for x in ts.u_idx]
+            ts.d_idx = [idx_mp.get(x, x) for x in ts.d_idx]
+
+        return self
 
     def truncate_layers(self, n_layer):
 
@@ -356,7 +438,7 @@ class GaussianTensorNetwork:
         layers = [xx for x in layers for xx in x]
 
         return GaussianTensorNetwork(tensors=[ts for its, ts in enumerate(self.tensors)
-            if its in layers]).view_as(self.__class__)
+                                              if its in layers]).view_as(self.__class__)
 
     def view_as(self, cls):
         return cls(self.tensors)
@@ -411,8 +493,8 @@ class RHFTensorNetwork(GaussianTensorNetwork):
                     # sort eigvals to put 0 and 2 near the beginning
                     xg = torch.tensor([list(xb), list(self._high_occ - xb)])
                     xg[xg <= 1E-50] = 1E-50
-                    p = torch.argsort(-(xg[0] * torch.log(xg[0]) +
-                                        xg[1] * torch.log(xg[1])))
+                    p = torch.argsort(-(xg[0] * torch.log(xg[0])
+                                        + xg[1] * torch.log(xg[1])))
                     xb = xb[p]
                     ub = ub[:, p]
                     if torch.linalg.det(ub) < 0:
@@ -437,10 +519,11 @@ class RHFTensorNetwork(GaussianTensorNetwork):
                         eff_dm = dm[eff_dm_idxs, :][:, eff_dm_idxs]
                         xb, ub = torch.linalg.eigh(eff_dm)
                         # sort eigvals to put 0 and 2 near the beginning
-                        xg = torch.tensor([list(xb), list(self._high_occ - xb)])
+                        xg = torch.tensor(
+                            [list(xb), list(self._high_occ - xb)])
                         xg[xg <= 1E-50] = 1E-50
-                        p = torch.argsort(-(xg[0] * torch.log(xg[0]) +
-                                            xg[1] * torch.log(xg[1])))
+                        p = torch.argsort(-(xg[0] * torch.log(xg[0])
+                                            + xg[1] * torch.log(xg[1])))
                         xb = xb[p]
                         ub = ub[:, p]
                         if torch.linalg.det(ub) < 0:
@@ -452,8 +535,10 @@ class RHFTensorNetwork(GaussianTensorNetwork):
                         dm[:, eff_dm_idxs] = dm[:, eff_dm_idxs] @ ub
                     else:
                         dim = len(self.tensors[its].u_idx)
-                        self.tensors[its].data = torch.zeros((dim, dim), dtype=float)
-                        self.tensors[its].core_occ = torch.tensor([], dtype=float)
+                        self.tensors[its].data = torch.zeros(
+                            (dim, dim), dtype=float)
+                        self.tensors[its].core_occ = torch.tensor(
+                            [], dtype=float)
                     # update index tags after apply this gate
                     du_map = self.tensors[its].get_du_map()
                     dm_idxs_map = {du_map.get(
@@ -493,8 +578,8 @@ class RHFTensorNetwork(GaussianTensorNetwork):
     def make_rdm2(self, dm1=None):
         if dm1 is None:
             dm1 = self.make_rdm1()
-        dm2 = (torch.einsum('ij,kl->ijkl', dm1, dm1)
-               - torch.einsum('ij,kl->iklj', dm1, dm1) / 2)
+        dm2 = (torch.einsum('ij,kl->ijkl', dm1, dm1) -
+               torch.einsum('ij,kl->iklj', dm1, dm1) / 2)
         return dm2
 
     def energy_tot(self, h1e, g2e=None, dm1=None, dm2=None):
@@ -570,10 +655,10 @@ class UHFTensorNetwork(GaussianTensorNetwork):
                 xg = torch.tensor(
                     [list(xa), list(1 - xa), list(xb), list(1 - xb)])
                 xg[xg <= 1E-50] = 1E-50
-                pa = torch.argsort(-(xg[0] * torch.log(xg[0]) +
-                                     xg[1] * torch.log(xg[1])))
-                pb = torch.argsort(-(xg[2] * torch.log(xg[2]) +
-                                     xg[3] * torch.log(xg[3])))
+                pa = torch.argsort(-(xg[0] * torch.log(xg[0])
+                                     + xg[1] * torch.log(xg[1])))
+                pb = torch.argsort(-(xg[2] * torch.log(xg[2])
+                                     + xg[3] * torch.log(xg[3])))
                 xa, xb = xa[pa], xb[pb]
                 ua, ub = ua[:, pa], ub[:, pb]
                 if torch.linalg.det(ua) < 0:
@@ -634,10 +719,10 @@ class UHFTensorNetwork(GaussianTensorNetwork):
         if dm1 is None:
             dm1 = self.make_rdm1()
         dm1a, dm1b = dm1[0], dm1[1]
-        dm2aa = (torch.einsum('ij,kl->ijkl', dm1a, dm1a)
-                 - torch.einsum('ij,kl->iklj', dm1a, dm1a))
-        dm2bb = (torch.einsum('ij,kl->ijkl', dm1b, dm1b)
-                 - torch.einsum('ij,kl->iklj', dm1b, dm1b))
+        dm2aa = (torch.einsum('ij,kl->ijkl', dm1a, dm1a) -
+                 torch.einsum('ij,kl->iklj', dm1a, dm1a))
+        dm2bb = (torch.einsum('ij,kl->ijkl', dm1b, dm1b) -
+                 torch.einsum('ij,kl->iklj', dm1b, dm1b))
         dm2ab = torch.einsum('ij,kl->ijkl', dm1a, dm1b)
         return torch.cat([dm2aa[None], dm2ab[None], dm2bb[None]])
 
@@ -656,11 +741,16 @@ class UHFTensorNetwork(GaussianTensorNetwork):
                 e_tot += torch.einsum('ijkl,ijkl->', dm2[1], g2e[1]) * 1.0
                 e_tot += torch.einsum('ijkl,ijkl->', dm2[2], g2e[2]) * 0.5
             else:
-                e_tot += torch.einsum('ij,kl,ijkl->', dm1[0], dm1[0], g2e[0]) * 0.5
-                e_tot -= torch.einsum('ij,kl,iklj->', dm1[0], dm1[0], g2e[0]) * 0.5
-                e_tot += torch.einsum('ij,kl,ijkl->', dm1[0], dm1[1], g2e[1]) * 1.0
-                e_tot += torch.einsum('ij,kl,ijkl->', dm1[1], dm1[1], g2e[2]) * 0.5
-                e_tot -= torch.einsum('ij,kl,iklj->', dm1[1], dm1[1], g2e[2]) * 0.5
+                e_tot += torch.einsum('ij,kl,ijkl->',
+                                      dm1[0], dm1[0], g2e[0]) * 0.5
+                e_tot -= torch.einsum('ij,kl,iklj->',
+                                      dm1[0], dm1[0], g2e[0]) * 0.5
+                e_tot += torch.einsum('ij,kl,ijkl->',
+                                      dm1[0], dm1[1], g2e[1]) * 1.0
+                e_tot += torch.einsum('ij,kl,ijkl->',
+                                      dm1[1], dm1[1], g2e[2]) * 0.5
+                e_tot -= torch.einsum('ij,kl,iklj->',
+                                      dm1[1], dm1[1], g2e[2]) * 0.5
         return e_tot
 
     def get_occupations(self):
@@ -702,15 +792,17 @@ class UHFTensorNetwork(GaussianTensorNetwork):
             for its in l:
                 if self.tensors[its].core_occ is None:
                     self.tensors[its].core_occ = (
-                        torch.tensor([0.0] * self.tensors[its].n_core, dtype=torch.float64),
-                        torch.tensor([0.0] * self.tensors[its].n_core, dtype=torch.float64)
+                        torch.tensor(
+                            [0.0] * self.tensors[its].n_core, dtype=torch.float64),
+                        torch.tensor(
+                            [0.0] * self.tensors[its].n_core, dtype=torch.float64)
                     )
                 occa, occb = self.tensors[its].core_occ
                 for i in range(len(occa)):
                     occa[i] = occs[0][ix]
                     occb[i] = occs[1][ix]
                     ix += 1
-        
+
         assert ix == len(occs[0]) and ix == len(occs[1])
         return self
 
@@ -724,8 +816,8 @@ class GHFTensorNetwork(RHFTensorNetwork):
     def make_rdm2(self, dm1=None):
         if dm1 is None:
             dm1 = self.make_rdm1()
-        dm2 = (torch.einsum('ij,kl->ijkl', dm1, dm1)
-               - torch.einsum('ij,kl->iklj', dm1, dm1))
+        dm2 = (torch.einsum('ij,kl->ijkl', dm1, dm1) -
+               torch.einsum('ij,kl->iklj', dm1, dm1))
         return dm2
 
 
@@ -768,8 +860,8 @@ class GaussianMERA1D(GaussianTensorNetwork):
                     next_idx = []
                     i = n_tensor_sites // 2
                     while True:
-                        d = min(n_tensor_sites, len(cur_idx) -
-                                i + n_tensor_sites // 2)
+                        d = min(n_tensor_sites, len(cur_idx)
+                                - i + n_tensor_sites // 2)
                         d_idx = cur_idx[i:i + d]
                         u_idx = list(range(idx, idx + d))
                         if i + d > len(cur_idx):
@@ -782,8 +874,8 @@ class GaussianMERA1D(GaussianTensorNetwork):
                                 next_idx = u_idx[len(
                                     d_idx):] + next_idx + u_idx[:len(d_idx)]
                             else:
-                                next_idx = cur_idx[:i + d -
-                                                   len(cur_idx)] + next_idx + d_idx
+                                next_idx = cur_idx[:i + d
+                                                   - len(cur_idx)] + next_idx + d_idx
                         else:
                             if d == n_tensor_sites and d != len(cur_idx):
                                 idx += d
@@ -820,8 +912,8 @@ class GaussianMERA1D(GaussianTensorNetwork):
 class GaussianMERA2D(GaussianTensorNetwork):
 
     def __init__(self, n_sites, n_tensor_sites, n_core, dis_ent_width=None,
-        starting_idxs=None, core_depth=None, add_cap=True,
-        n_dis_ent_tensor_sites=None, large_dis_ent=False):
+                 starting_idxs=None, core_depth=None, add_cap=True,
+                 n_dis_ent_tensor_sites=None, large_dis_ent=False):
         """
             n_sites : (int, int).
                 Number of sites along x, y in the MERA
@@ -845,8 +937,10 @@ class GaussianMERA2D(GaussianTensorNetwork):
         from functools import reduce
         assert any(x >= 1 for x in n_core)
         tensors = []
-        stl, stx, sty = starting_idxs if starting_idxs is not None else (0, 0, 0)
-        cur_idx = [[(stl, stx + i, sty + j) for j in range(0, n_sites[1])] for i in range(0, n_sites[1])]
+        stl, stx, sty = starting_idxs if starting_idxs is not None else (
+            0, 0, 0)
+        cur_idx = [[(stl, stx + i, sty + j) for j in range(0, n_sites[1])]
+                   for i in range(0, n_sites[0])]
         cur_l = stl + 1
         nax, nay = tuple(tsz - c for tsz, c in zip(n_tensor_sites, n_core))
         if dis_ent_width is None:
@@ -855,8 +949,8 @@ class GaussianMERA2D(GaussianTensorNetwork):
             n_dis_ent_tensor_sites = n_tensor_sites
         ncx, ncy = n_sites
         nwx, nwy = dis_ent_width
-        flatten = lambda l: reduce(lambda x, y: x + y, l, [])
-        upper = lambda k, l: [(l, x[1], x[2]) for x in k]
+        def flatten(l): return reduce(lambda x, y: x + y, l, [])
+        def upper(k, l): return [(l, x[1], x[2]) for x in k]
         while True:
             ntx, nty = n_dis_ent_tensor_sites
             nax, nay = nay, nax
@@ -904,32 +998,39 @@ class GaussianMERA2D(GaussianTensorNetwork):
                     dy = min(ncy - j, nty)
                     xc, yc = i + dx - nax, j + dy - nay
                     if core_depth is None:
-                        d_idx = flatten([[(gi, gj) for gj in range(j, j + dy)] for gi in range(i, i + dx)])
-                        d_idx = sorted(d_idx, key=lambda k: ((k[0] >= xc) + (k[1] >= yc), ) + k)
+                        d_idx = flatten(
+                            [[(gi, gj) for gj in range(j, j + dy)] for gi in range(i, i + dx)])
+                        d_idx = sorted(d_idx, key=lambda k: (
+                            (k[0] >= xc) + (k[1] >= yc), ) + k)
                     else:
-                        d_idx = flatten([[(gi, gj) for gj in range(dy)] for gi in range(dx)])
-                        gxc, gyc = (dx - nax) // core_depth, (dy - nay) // core_depth
+                        d_idx = flatten([[(gi, gj) for gj in range(dy)]
+                                         for gi in range(dx)])
+                        gxc, gyc = (dx - nax) // core_depth, (dy
+                                                              - nay) // core_depth
                         d_idx = sorted(d_idx, key=lambda k:
-                            ((k[0] % (dx // core_depth) >= gxc) + (k[1] % (dy // core_depth) >= gyc), ) + k)
+                                       ((k[0] % (dx // core_depth) >= gxc) + (k[1] % (dy // core_depth) >= gyc), ) + k)
                         d_idx = [(i + gi, j + gj) for (gi, gj) in d_idx]
 
                     d_idx = [cur_idx[gi][gj] for (gi, gj) in d_idx]
                     u_idx = upper(d_idx, cur_l)
                     n_core_this = max(0, dx * dy - nax * nay)
-                    tensors.append(GaussianTensor(u_idx, d_idx, n_core=n_core_this))
+                    tensors.append(GaussianTensor(
+                        u_idx, d_idx, n_core=n_core_this))
                     nts += 1
                     if core_depth is None:
                         for k, kd in zip(new_cur_idx[ni:ni + nax], cur_idx[xc:i + dx]):
                             k[nj:nj + nay] = upper(kd[yc:j + dy], cur_l)
                     else:
-                        gxc, gyc = (dx - nax) // core_depth, (dy - nay) // core_depth
+                        gxc, gyc = (dx - nax) // core_depth, (dy
+                                                              - nay) // core_depth
                         igi, igj = 0, 0
                         for gi in range(dx):
                             igj = 0
                             if gi % (dx // core_depth) >= gxc:
                                 for gj in range(dy):
                                     if gj % (dy // core_depth) >= gyc:
-                                        new_cur_idx[ni + igi][nj + igj] = (cur_l, ) + cur_idx[i + gi][j + gj][1:]
+                                        new_cur_idx[ni + igi][nj + igj] = (
+                                            cur_l, ) + cur_idx[i + gi][j + gj][1:]
                                         igj += 1
                                 igi += 1
                         assert igi * igj == tensors[-1].width - n_core_this
@@ -937,7 +1038,7 @@ class GaussianMERA2D(GaussianTensorNetwork):
                 ni += nax
             cur_l += 1
             cur_idx = [[k for k in j if k is not None] for j in new_cur_idx
-                if len([k for k in j if k is not None]) != 0]
+                       if len([k for k in j if k is not None]) != 0]
             ncx, ncy = len(cur_idx), len(cur_idx[0])
             if nts == 1:
                 if add_cap:
@@ -945,6 +1046,107 @@ class GaussianMERA2D(GaussianTensorNetwork):
                 break
 
         super().__init__(tensors)
+
+
+class GaussianLinearGates2D(GaussianTensorNetwork):
+
+    def __init__(self, n_sites, n_tensor_sites, n_shift_sites, n_layers, starting_idxs=None):
+        """
+            n_sites : (int, int).
+                Number of sites along x, y in the MERA
+            n_tensor_sites : (int, int).
+                Number of sites along x, y in each MERA tensor
+            n_shift_sites : (int, int).
+                Number of shifted sites along x, y, after each layer
+            n_layers : int
+                Number of layers
+            starting_idxs : (int, int, int).
+                Starting layer, x, and y indices
+        """
+        from functools import reduce
+        tensors = []
+        stl, stx, sty = starting_idxs if starting_idxs is not None else (
+            0, 0, 0)
+        cur_idx = [[(stl, stx + i, sty + j) for j in range(0, n_sites[1])]
+                   for i in range(0, n_sites[0])]
+        cur_l = stl + 1
+        def flatten(l): return reduce(lambda x, y: x + y, l, [])
+        def upper(k, l): return [(l, x[1], x[2]) for x in k]
+        shx, shy = 0, 0
+        for _ in range(n_layers):
+            dx, dy = n_tensor_sites[0], 1
+            for j in range(n_sites[1]):
+                for i in range(shx, n_sites[0], dx):
+                    if i + dx > n_sites[0]:
+                        continue
+                    d_idx = flatten([k[j:j + dy] for k in cur_idx[i:i + dx]])
+                    u_idx = upper(d_idx, cur_l)
+                    tensors.append(GaussianTensor(u_idx, d_idx, n_core=0))
+                    for k in cur_idx[i:i + dx]:
+                        k[j:j + dy] = upper(k[j:j + dy], cur_l)
+            cur_l += 1
+            dx, dy = 1, n_tensor_sites[1]
+            for i in range(n_sites[0]):
+                for j in range(shy, n_sites[1], dy):
+                    if j + dy > n_sites[1]:
+                        continue
+                    d_idx = flatten([k[j:j + dy] for k in cur_idx[i:i + dx]])
+                    u_idx = upper(d_idx, cur_l)
+                    tensors.append(GaussianTensor(u_idx, d_idx, n_core=0))
+                    for k in cur_idx[i:i + dx]:
+                        k[j:j + dy] = upper(k[j:j + dy], cur_l)
+            cur_l += 1
+            shx = (shx + n_shift_sites[0]) % n_tensor_sites[0]
+            shy = (shy + n_shift_sites[1]) % n_tensor_sites[1]
+
+        super().__init__(tensors)
+        self._cur_idx = cur_idx
+
+
+class GaussianRectGates2D(GaussianTensorNetwork):
+
+    def __init__(self, n_sites, n_tensor_sites, n_shift_sites, n_layers, starting_idxs=None):
+        """
+            n_sites : (int, int).
+                Number of sites along x, y in the MERA
+            n_tensor_sites : (int, int).
+                Number of sites along x, y in each MERA tensor
+            n_shift_sites : (int, int).
+                Number of shifted sites along x, y, after each layer
+            n_layers : int
+                Number of layers
+            starting_idxs : (int, int, int).
+                Starting layer, x, and y indices
+        """
+        from functools import reduce
+        tensors = []
+        stl, stx, sty = starting_idxs if starting_idxs is not None else (
+            0, 0, 0)
+        cur_idx = [[(stl, stx + i, sty + j) for j in range(0, n_sites[1])]
+                   for i in range(0, n_sites[0])]
+        cur_l = stl + 1
+        def flatten(l): return reduce(lambda x, y: x + y, l, [])
+        def upper(k, l): return [(l, x[1], x[2]) for x in k]
+        shx, shy = 0, 0
+        for ixl in range(n_layers):
+            dx, dy = n_tensor_sites[0], n_tensor_sites[1]
+            for i in range(shx, n_sites[0], dx):
+                for j in range(shy, n_sites[1], dy):
+                    if i + dx > n_sites[0] or j + dy > n_sites[1]:
+                        continue
+                    d_idx = flatten([k[j:j + dy] for k in cur_idx[i:i + dx]])
+                    u_idx = upper(d_idx, cur_l)
+                    tensors.append(GaussianTensor(u_idx, d_idx, n_core=0))
+                    for k in cur_idx[i:i + dx]:
+                        k[j:j + dy] = upper(k[j:j + dy], cur_l)
+            cur_l += 1
+            if ixl % 2 == 0:
+                shx = (shx + n_shift_sites[0]) % n_tensor_sites[0]
+            else:
+                shy = (shy + n_shift_sites[1]) % n_tensor_sites[1]
+
+        super().__init__(tensors)
+        self._cur_idx = cur_idx
 
 
 class GaussianMPS(GaussianTensorNetwork):
