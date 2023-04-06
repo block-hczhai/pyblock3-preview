@@ -165,7 +165,7 @@ class MPSTools:
                 im = b.find_state(qm)
                 assert im != -1
                 tensors[i].data[im].append(((ql, qr), Tensor(VectorInt(block.shape))))
-                tensors[i].data[im][-1][1].data = VectorDouble(np.asarray(block).flatten())
+                np.array(tensors[i].data[im][-1][1], copy=False)[:] = block
         umps = UnfusedMPS()
         umps.info = minfo
         umps.n_sites = len(mps)
