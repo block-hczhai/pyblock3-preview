@@ -23,16 +23,12 @@ jobs:
 
     strategy:
       matrix:
-        os: [ ubuntu-latest, macos-latest ]
+        os: [ ubuntu-latest, macos-11 ]
         python: [ '3.7', '3.8', '3.9', '3.10' ]
         manylinux: [ 2010 ]
         plat: [ x86_64, arm64 ]
         parallel: [ serial ]
         exclude:
-          - os: macos-latest
-            python: '3.7'
-          - os: macos-latest
-            python: '3.8'
           - os: ubuntu-latest
             plat: arm64
       fail-fast: false
@@ -76,7 +72,7 @@ jobs:
           py.test pyblock3/algorithms --ignore=pyblock3/algorithms/tests/test_soc.py
 
       - name: build wheels (macos-x86_64)
-        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-latest' && matrix.plat == 'x86_64'
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-11' && matrix.plat == 'x86_64'
         env:
           TAG_STRING: ${{ github.event.ref }}
           MACOSX_DEPLOYMENT_TARGET: '10.9'
@@ -107,7 +103,7 @@ jobs:
           delocate-wheel -k dist/*.whl
 
       - name: build wheels (macos-arm64)
-        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-latest' && matrix.plat == 'arm64'
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'macos-11' && matrix.plat == 'arm64'
         env:
           TAG_STRING: ${{ github.event.ref }}
           MACOSX_DEPLOYMENT_TARGET: '11.0'
