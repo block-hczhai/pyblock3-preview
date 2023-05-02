@@ -414,7 +414,12 @@ class MPS(NDArrayOperatorsMixin):
     @implements(np.dot)
     def _dot(a, b, out=None):
         if isinstance(a, numbers.Number) or isinstance(b, numbers.Number):
-            return np.multiply(a, b, out=out)
+            if isinstance(a, numbers.Number) and a == 0:
+                return 0.0
+            elif isinstance(b, numbers.Number) and b == 0:
+                return 0.0
+            else:
+                return np.multiply(a, b, out=out)
 
         assert isinstance(a, MPS) and isinstance(b, MPS)
         assert a.n_sites == b.n_sites
@@ -489,6 +494,8 @@ class MPS(NDArrayOperatorsMixin):
 
             for i in range(n_sites):
                 tensors[i] = a.tensors[i].pdot(b.tensors[i])
+                if tensors[i].n_blocks == 0:
+                    return 0
 
             # merge virtual dims
             prod_bonds = []
