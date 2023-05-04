@@ -34,33 +34,36 @@ from ..symbolic.symbolic import SymbolicMatrix as ASymbolicMatrix
 from ..symbolic.symbolic import SymbolicRowVector as ASymbolicRowVector
 from ..symbolic.symbolic import SymbolicColumnVector as ASymbolicColumnVector
 
-from block2 import OpTypes, QCTypes, SZ, Tensor, Global, init_memory, release_memory
-from block2 import VectorInt, VectorDouble, VectorPIntInt, DoubleVectorAllocator, IntVectorAllocator
+from block2 import OpTypes, QCTypes, SZ, Global, init_memory, release_memory
+from block2 import VectorInt, VectorPIntInt, DoubleVectorAllocator, IntVectorAllocator
 from block2 import OpNames, SiteIndex
-from block2.sz import StateInfo, MPOQC, UnfusedMPS, CG, MPSInfo, VectorStateInfo
-from block2.sz import VectorVectorPSSTensor, VectorPSSTensor, SparseTensor, VectorSpTensor
-from block2.sz import OpElement, MPO, OpExpr, VectorOpExpr, OperatorTensor
+from block2.sz import StateInfo, CG, MPSInfo, VectorStateInfo, OpExpr, VectorOpExpr
 from block2.sz import SymbolicMatrix, SymbolicRowVector, SymbolicColumnVector
-from block2.sz import SparseMatrixInfo, SparseMatrix, TensorFunctions, OperatorFunctions, CG
-from block2.sz import VectorVectorPLMatInfo, VectorPLMatInfo, VectorSymbolic, VectorOpTensor
+from block2.sz import SparseMatrixInfo
+from block2.sz import VectorVectorPLMatInfo, VectorPLMatInfo, VectorSymbolic
 
 class MPSTools:
     @staticmethod
     def from_block2(bmps):
         """Translate block2 MPS to pyblock3 MPS."""
+        from block2.cpx.sz import UnfusedMPS as UMPS_C, MPS as MPS_C
+        if isinstance(bmps, UMPS_C) or isinstance(bmps, MPS_C):
+            import block2.cpx.sz as bx
+        else:
+            import block2.sz as bx
         tensors = [None] * bmps.n_sites
         cf = [c for c in bmps.canonical_form]
         if cf.count('C') + cf.count('K') + cf.count('S') != 1:
-            assert not isinstance(bmps, UnfusedMPS)
+            assert not isinstance(bmps, bx.UnfusedMPS)
             assert cf.count('C') == 2
             ix = cf.index('C')
             assert cf[ix + 1] == 'C'
             bmps.center = ix
             bmps.move_right(CG(), None)
             bmps.save_data()
-        if not isinstance(bmps, UnfusedMPS):
+        if not isinstance(bmps, bx.UnfusedMPS):
             bmps.load_data()
-            bmps = UnfusedMPS(bmps)
+            bmps = bx.UnfusedMPS(bmps)
         for i in range(0, bmps.n_sites):
             spd = bmps.tensors[i].data
             blocks = []
@@ -105,6 +108,10 @@ class MPSTools:
                 To inspect this MPS, please make sure that the block2 global
                 scratch folder and stack memory are properly initialized.
         """
+        if mps.dtype == np.float32 or mps.dtype == np.float64 or mps.dtype == float:
+            import block2.sz as bx, block2 as bf
+        else:
+            import block2.cpx.sz as bx, block2.cpx as bf
         frame_back = Global.frame
         inited = False
         if Global.frame is None or save_dir is not None:
@@ -158,22 +165,22 @@ class MPSTools:
         minfo.save_data("%s/%s-mps_info.bin" % (save_dir, tag))
         tensors = [None] * len(mps)
         for i, b in enumerate(basis):
-            tensors[i] = SparseTensor()
-            tensors[i].data = VectorVectorPSSTensor([VectorPSSTensor() for _ in range(b.n)])
+            tensors[i] = bx.SparseTensor()
+            tensors[i].data = bx.VectorVectorPSSTensor([bx.VectorPSSTensor() for _ in range(b.n)])
             for block in mps[i].blocks:
                 ql, qm, qr = [SZ(x.n, x.twos, x.pg) for x in block.q_labels]
                 im = b.find_state(qm)
                 assert im != -1
-                tensors[i].data[im].append(((ql, qr), Tensor(VectorInt(block.shape))))
+                tensors[i].data[im].append(((ql, qr), bf.Tensor(VectorInt(block.shape))))
                 np.array(tensors[i].data[im][-1][1], copy=False)[:] = block
-        umps = UnfusedMPS()
+        umps = bx.UnfusedMPS()
         umps.info = minfo
         umps.n_sites = len(mps)
         umps.canonical_form = "L" * center + ("S" if center == len(mps) - 1 else "K") + \
             "R" * (len(mps) - center - 1)
         umps.center = center
         umps.dot = 1
-        umps.tensors = VectorSpTensor(tensors)
+        umps.tensors = bx.VectorSpTensor(tensors)
         umps = umps.finalize()
         if inited:
             release_memory()
@@ -195,7 +202,7 @@ class SymbolicMPOTools:
             assert False
 
     @staticmethod
-    def tr_expr_to_block2(expr):
+    def tr_expr_to_block2(expr, bx):
         if expr == 0:
             return OpExpr()
         elif isinstance(expr, AOpElement):
@@ -207,15 +214,20 @@ class SymbolicMPOTools:
             name = getattr(OpNames, repr(expr.name))
             q = expr.q_label
             ql = SZ(q.n, q.twos, q.pg)
-            return OpElement(name, si, ql, expr.factor)
+            return bx.OpElement(name, si, ql, expr.factor)
         else:
             assert False
 
     @staticmethod
     def from_block2(bmpo):
         """Translate block2 (un-simplified) MPO to pyblock2 symbolic MPO."""
+        from block2.cpx.sz import MPO as MPO_C
+        if isinstance(bmpo, MPO_C):
+            import block2.cpx.sz as bx
+        else:
+            import block2.sz as bx
         assert bmpo.schemer is None
-        if isinstance(bmpo, MPOQC):
+        if isinstance(bmpo, bx.MPOQC):
             assert bmpo.mode == QCTypes.NC or bmpo.mode == QCTypes.CN
         tensors = [None] * bmpo.n_sites
         for i in range(0, bmpo.n_sites):
@@ -262,9 +274,13 @@ class SymbolicMPOTools:
         return MPS(tensors=tensors, const=bmpo.const_e)
 
     @staticmethod
-    def to_block2(mpo):
+    def to_block2(mpo, use_complex=False):
         """Translate pyblock2 symbolic MPO to block2 (un-simplified) MPO."""
-        bmpo = MPO(mpo.n_sites)
+        if not use_complex:
+            import block2.sz as bx
+        else:
+            import block2.cpx.sz as bx
+        bmpo = bx.MPO(mpo.n_sites)
         tensors = [None] * mpo.n_sites
         lops = [None] * mpo.n_sites
         rops = [None] * mpo.n_sites
@@ -281,11 +297,11 @@ class SymbolicMPOTools:
                 site_basis[i].quanta[ix] = SZ(k.n, k.twos, k.pg)
                 site_basis[i].n_states[ix] = v
             site_basis[i].sort_states()
-            tensors[i] = OperatorTensor()
+            tensors[i] = bx.OperatorTensor()
             site_op_infos[i] = {}
             dalloc = DoubleVectorAllocator()
             ialloc = IntVectorAllocator()
-            matd = [SymbolicMPOTools.tr_expr_to_block2(expr) for expr in ts.mat.data]
+            matd = [SymbolicMPOTools.tr_expr_to_block2(expr, bx) for expr in ts.mat.data]
             if isinstance(ts.mat, ASymbolicRowVector):
                 tensors[i].lmat = SymbolicRowVector(ts.mat.n_cols)
                 tensors[i].lmat.data = VectorOpExpr(matd)
@@ -297,12 +313,12 @@ class SymbolicMPOTools:
                 tensors[i].lmat.data = VectorOpExpr(matd)
                 tensors[i].lmat.indices = VectorPIntInt(ts.mat.indices)
             tensors[i].rmat = tensors[i].lmat
-            zero = SparseMatrix(dalloc)
+            zero = bx.SparseMatrix(dalloc)
             zero.factor = 0
             idq = SZ(0, 0, 0)
-            iop = OpElement(OpNames.I, SiteIndex(), idq, 1.0)
+            iop = bx.OpElement(OpNames.I, SiteIndex(), idq, 1.0)
             for expr, spmat in ts.ops.items():
-                xexpr = SymbolicMPOTools.tr_expr_to_block2(expr)
+                xexpr = SymbolicMPOTools.tr_expr_to_block2(expr, bx)
                 if isinstance(spmat, numbers.Number) or spmat.n_blocks == 0:
                     tensors[i].ops[xexpr] = zero
                     continue
@@ -316,7 +332,7 @@ class SymbolicMPOTools:
                     site_op_infos[i][dq].initialize(site_basis[i], site_basis[i],
                         dq, dq.is_fermion)
                 minfo = site_op_infos[i][dq]
-                xmat = SparseMatrix(dalloc)
+                xmat = bx.SparseMatrix(dalloc)
                 xmat.allocate(minfo)
                 for block in spx.blocks:
                     ql, qr = block.q_labels
@@ -330,13 +346,13 @@ class SymbolicMPOTools:
                     site_op_infos[i][idq].initialize(site_basis[i], site_basis[i],
                         idq, idq.is_fermion)
                 minfo = site_op_infos[i][idq]
-                xmat = SparseMatrix(dalloc)
+                xmat = bx.SparseMatrix(dalloc)
                 xmat.allocate(minfo)
                 for ix in range(0, minfo.n):
                     xmat[ix] = np.identity(minfo.n_states_ket[ix]).flatten()
                 tensors[i].ops[iop] = xmat
-            lopd = [SymbolicMPOTools.tr_expr_to_block2(expr) for expr in ts.lop.data]
-            ropd = [SymbolicMPOTools.tr_expr_to_block2(expr) for expr in ts.rop.data]
+            lopd = [SymbolicMPOTools.tr_expr_to_block2(expr, bx) for expr in ts.lop.data]
+            ropd = [SymbolicMPOTools.tr_expr_to_block2(expr, bx) for expr in ts.rop.data]
             lops[i] = SymbolicColumnVector(len(lopd))
             rops[i] = SymbolicRowVector(len(ropd))
             lops[i].data = VectorOpExpr(lopd)
@@ -344,14 +360,14 @@ class SymbolicMPOTools:
             site_op_infos[i] = VectorPLMatInfo(
                 sorted([(k, v) for k, v in site_op_infos[i].items()], key=lambda x: x[0]))
         bmpo.const_e = mpo.const
-        bmpo.tf = TensorFunctions(OperatorFunctions(CG()))
+        bmpo.tf = bx.TensorFunctions(bx.OperatorFunctions(CG()))
         bmpo.site_op_infos = VectorVectorPLMatInfo(site_op_infos)
         bmpo.basis = VectorStateInfo(site_basis)
         bmpo.sparse_form = "N" * mpo.n_sites
         bmpo.op = rops[-1][0]
         bmpo.right_operator_names = VectorSymbolic(lops)
         bmpo.left_operator_names = VectorSymbolic(rops)
-        bmpo.tensors = VectorOpTensor(tensors)
+        bmpo.tensors = bx.VectorOpTensor(tensors)
         return bmpo
 
 
@@ -359,8 +375,13 @@ class MPOTools:
     @staticmethod
     def from_block2(bmpo):
         """Translate block2 (un-simplified) MPO to pyblock2 MPO."""
+        from block2.cpx.sz import MPO as MPO_C
+        if isinstance(bmpo, MPO_C):
+            import block2.cpx.sz as bx
+        else:
+            import block2.sz as bx
         assert bmpo.schemer is None
-        if isinstance(bmpo, MPOQC):
+        if isinstance(bmpo, bx.MPOQC):
             assert bmpo.mode == QCTypes.NC or bmpo.mode == QCTypes.CN
         tensors = [None] * bmpo.n_sites
         # translate operator name symbols to quantum labels
@@ -405,7 +426,8 @@ class MPOTools:
                                 qu - qd).is_fermion else map_blocks_even
                             if qx not in map_blocks:
                                 map_blocks[qx] = SubTensor(
-                                    q_labels=qx, reduced=np.zeros((1, nu, nd, nr)))
+                                    q_labels=qx, reduced=np.zeros((1, nu, nd, nr),
+                                    dtype=np.array(expr.factor).dtype))
                             map_blocks[qx][0, :, :, ir] += expr.factor * \
                                 spmat.factor * np.array(spmat[p])
                     else:
@@ -432,7 +454,8 @@ class MPOTools:
                                 qu - qd).is_fermion else map_blocks_even
                             if qx not in map_blocks:
                                 map_blocks[qx] = SubTensor(
-                                    q_labels=qx, reduced=np.zeros((nl, nu, nd, 1)))
+                                    q_labels=qx, reduced=np.zeros((nl, nu, nd, 1),
+                                    dtype=np.array(expr.factor).dtype))
                             map_blocks[qx][il, :, :, 0] += expr.factor * \
                                 spmat.factor * np.array(spmat[p])
                     else:
@@ -462,7 +485,8 @@ class MPOTools:
                                 continue
                             if qx not in map_blocks:
                                 map_blocks[qx] = SubTensor(
-                                    q_labels=qx, reduced=np.zeros((nl, nu, nd, nr)))
+                                    q_labels=qx, reduced=np.zeros((nl, nu, nd, nr),
+                                    dtype=np.array(expr.factor).dtype))
                             map_blocks[qx][il, :, :, ir] += expr.factor * \
                                 spmat.factor * np.array(spmat[p])
                     else:
@@ -476,6 +500,6 @@ class MPOTools:
         return MPS(tensors=tensors, const=bmpo.const_e)
 
     @staticmethod
-    def to_block2(mpo):
+    def to_block2(mpo, use_complex=False):
         """Translate pyblock2 MPO to block2 (un-simplified) MPO."""
-        return SymbolicMPOTools.to_block2(mpo.to_symbolic())
+        return SymbolicMPOTools.to_block2(mpo.to_symbolic(), use_complex=use_complex)
