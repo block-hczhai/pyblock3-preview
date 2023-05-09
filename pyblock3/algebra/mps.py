@@ -493,6 +493,8 @@ class MPS(NDArrayOperatorsMixin):
                 return np.dot(a, b, out=out)
 
             for i in range(n_sites):
+                if a.tensors[i].n_blocks == 0 or b.tensors[i].n_blocks == 0:
+                    return 0
                 tensors[i] = a.tensors[i].pdot(b.tensors[i])
                 if tensors[i].n_blocks == 0:
                     return 0
