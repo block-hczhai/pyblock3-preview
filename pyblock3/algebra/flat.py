@@ -64,6 +64,9 @@ if ENABLE_FAST_IMPLS:
 
         def flat_sparse_skeleton_impl(bond_infos, pattern=None, dq=None):
             fdq = dq.to_flat() if dq is not None else SZ(0, 0, 0).to_flat()
+            ref = block3.MapUIntUInt()
+            ref[SZ(0, 0, 0).to_flat()] = 1
+            bond_infos = [ref if x is None else x for x in bond_infos]
             if pattern is None:
                 pattern = "+" * (len(bond_infos) - 1) + "-"
             return block3.flat_sparse_tensor.skeleton(block3.VectorMapUIntUInt(bond_infos), pattern, fdq)
@@ -1005,7 +1008,7 @@ class FlatFermionTensor(FermionTensor):
             else:
                 idx = a.ndim - len(idxa)
                 # 1-site op x n-site op
-                idx = range(idx, idx + min(idxb))
+                idx = range(idx, idx + min(idxb)) if len(idxb) != 0 else []
                 blocks = [odd_a, even_a]
         # op x state
         elif isinstance(a, FlatFermionTensor):
@@ -1017,7 +1020,7 @@ class FlatFermionTensor(FermionTensor):
                 def r(): return FlatFermionTensor(odd=odd, even=even)
             else:
                 # 1-site op x n-site state
-                idx = range(idx, idx + min(idxb))
+                idx = range(idx, idx + min(idxb)) if len(idxb) != 0 else []
                 blocks = [odd]
                 def r(): return odd + even
         # state x op

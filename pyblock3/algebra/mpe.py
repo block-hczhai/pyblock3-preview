@@ -104,8 +104,10 @@ class MPE:
         return _me_numpy_func_impls[func](*args, **kwargs)
 
     def _init_identities(self):
-        qbl, qkl = self.bra[0].infos[0], self.ket[0].infos[0]
-        qbr, qkr = self.bra[-1].infos[-1], self.ket[-1].infos[-1]
+        qbl = self.bra[0].infos[0] if len(self.bra[0].infos) != 0 else None
+        qkl = self.ket[0].infos[0] if len(self.ket[0].infos) != 0 else None
+        qbr = self.bra[-1].infos[-1] if len(self.bra[-1].infos) != 0 else None
+        qkr = self.ket[-1].infos[-1] if len(self.ket[-1].infos) != 0 else None
         qml = qbl if self.mpo[0].n_blocks == 0 else self.mpo[0].infos[0]
         qmr = qbl if self.mpo[-1].n_blocks == 0 else self.mpo[-1].infos[-1]
         l_mpo_id = self.mpo[0].ones(
