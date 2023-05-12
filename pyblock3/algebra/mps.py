@@ -426,9 +426,9 @@ class MPS(NDArrayOperatorsMixin):
 
         left = np.array(0)
         for i in range(a.n_sites):
-            assert a.tensors[i].ndim == b.tensors[i].ndim
             if a.tensors[i].n_blocks == 0 or b.tensors[i].n_blocks == 0:
                 return 0
+            assert a.tensors[i].ndim == b.tensors[i].ndim
 
             if i != a.n_sites - 1:
                 cidx = list(range(0, a.tensors[i].ndim - 1))

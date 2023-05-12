@@ -1045,8 +1045,10 @@ flat_sparse_svd(const py::array_t<uint32_t> &aqs,
                 const py::array_t<uint32_t> &ashs, const py::array_t<FL> &adata,
                 const py::array_t<uint64_t> &aidxs, uint32_t *pxidx) {
     if (aqs.shape()[0] == 0)
-        return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata, aidxs,
-                               aqs, ashs, adata, aidxs);
+        return std::make_tuple(
+            aqs, ashs, adata, aidxs, aqs, ashs,
+            py::array_t<typename GFP<FL>::FP>(vector<ssize_t>{(ssize_t)0}),
+            aidxs, aqs, ashs, adata, aidxs);
     int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
     const int cidx = L == LEFT ? ndima - 1 : 0;
     const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
@@ -1275,8 +1277,10 @@ flat_sparse_tensor_svd(const py::array_t<uint32_t> &aqs,
                        const map_fusing &linfo, const map_fusing &rinfo,
                        const string &pattern) {
     if (aqs.shape()[0] == 0)
-        return std::make_tuple(aqs, ashs, adata, aidxs, aqs, ashs, adata, aidxs,
-                               aqs, ashs, adata, aidxs);
+        return std::make_tuple(
+            aqs, ashs, adata, aidxs, aqs, ashs,
+            py::array_t<typename GFP<FL>::FP>(vector<ssize_t>{(ssize_t)0}),
+            aidxs, aqs, ashs, adata, aidxs);
     const int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
     const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
                   asj = aqs.strides()[1] / sizeof(uint32_t);
