@@ -376,6 +376,11 @@ class MPS(NDArrayOperatorsMixin):
 
         if n_sites == 1:
             return MPS(tensors=[a[0] + b[0]], const=a.const + b.const, opts=a.opts, dq=a.dq)
+        
+        if any([t.n_blocks == 0 for t in a.tensors]):
+            return b
+        elif any([t.n_blocks == 0 for t in b.tensors]):
+            return a
 
         ainfos = [t.infos for t in a.tensors]
         binfos = [t.infos for t in b.tensors]

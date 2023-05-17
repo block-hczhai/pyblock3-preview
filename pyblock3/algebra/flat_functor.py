@@ -59,6 +59,8 @@ if ENABLE_FAST_IMPLS:
         l, r = spt.tensors
         lo, le = l.odd, l.even
         ro, re = r.odd, r.even
+        if (lo.n_blocks == 0 and le.n_blocks == 0) or (ro.n_blocks == 0 and re.n_blocks == 0):
+            raise RuntimeError("Insufficient quantum numbers in initial states!")
         dl, dr, cinfos, vinfos = block3.flat_sparse_tensor.matmul_init(
             lo.q_labels, lo.shapes, le.q_labels, le.shapes, ro.q_labels,
             ro.shapes, re.q_labels, re.shapes)
