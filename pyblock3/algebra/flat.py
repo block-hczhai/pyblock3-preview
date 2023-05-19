@@ -246,8 +246,9 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         if dtype == float:
             data = np.random.random((idxs[-1], ))
         elif dtype == complex or dtype == np.complex128:
-            data = np.random.random(
-                (idxs[-1], )) + np.random.random((idxs[-1], )) * 1j
+            data = np.zeros((idxs[-1], ), dtype=complex)
+            data.real[:] = np.random.random( (idxs[-1], ))
+            data.imag[:] = np.random.random( (idxs[-1], ))
         else:
             return NotImplementedError('dtype %r not supported!' % dtype)
         return FlatSparseTensor(qs, shs, data, idxs)
@@ -299,6 +300,17 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
                 ia = blocks_map[q]
                 bdata[bidxs[ib]:bidxs[ib + 1]] = adata[aidxs[ia]:aidxs[ia + 1]]
         return self
+
+    def cast_assign_removed(self, other):
+        """return the removed part of cast_assign."""
+        aqs, adata, aidxs = other.q_labels, other.data, other.idxs
+        blocks_map = {q.tobytes(): iq for iq, q in enumerate(self.q_labels)}
+        cdata = np.zeros_like(adata, dtype=adata.dtype)
+        for ia in range(other.n_blocks):
+            q = aqs[ia].tobytes()
+            if q not in blocks_map:
+                cdata[aidxs[ia]:aidxs[ia + 1]] = adata[aidxs[ia]:aidxs[ia + 1]]
+        return other.__class__(q_labels=aqs, shapes=other.shapes, data=cdata, idxs=aidxs)
 
     def normalize_along_axis(self, axis):
         if axis < 0:

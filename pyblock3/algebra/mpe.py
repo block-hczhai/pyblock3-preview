@@ -378,6 +378,8 @@ class MPE:
             fst = FlatSparseFunctor(
                 self.mpo, pattern=pattern, symmetric=False, mpi=self.mpi)
             b = fst.prepare_vector(self.ket[0])
+            brem = fst.cmat.cast_assign_removed(self.ket[0])
+            brem_nrm = np.linalg.norm(brem)
             k1 = dt * (fst @ b)
             k2 = dt * (fst @ (0.5 * k1 + b))
             k3 = dt * (fst @ (0.5 * k2 + b))
@@ -387,9 +389,9 @@ class MPE:
             r2 = b + (16.0 / 81) * k1 + (20.0 / 81) * k2 + \
                 (20.0 / 81) * k3 + (-2.0 / 81) * k4
             r3 = b + k1 / 6 + k2 / 3 + k3 / 3 + k4 / 6
-            g = np.linalg.norm(r3)
+            g = np.sqrt(np.linalg.norm(r3) ** 2 + brem_nrm ** 2)
             w = np.dot(r3.conj(), fst @ r3) / g ** 2 if eval_ener else 0
-            kets = [self.ket.__class__(tensors=[fst.finalize_vector(x)],
+            kets = [self.ket.__class__(tensors=[brem + fst.finalize_vector(x)],
                                        opts=self.ket.opts) for x in [b, r1, r2, r3]]
             nflop = fst.nflop
         else:
