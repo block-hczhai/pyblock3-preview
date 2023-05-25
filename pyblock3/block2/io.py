@@ -338,7 +338,7 @@ class SymbolicMPOTools:
                     ql, qr = block.q_labels
                     ql, qr = SZ(ql.n, ql.twos, ql.pg), SZ(qr.n, qr.twos, qr.pg)
                     iq = xmat.info.find_state(dq.combine(ql, qr))
-                    xmat[iq] = np.asarray(block).flatten()
+                    xmat[iq] = np.asarray(block).ravel()
                 tensors[i].ops[xexpr] = xmat
             if iop not in tensors[i].ops:
                 if idq not in site_op_infos[i]:
@@ -349,7 +349,7 @@ class SymbolicMPOTools:
                 xmat = bx.SparseMatrix(dalloc)
                 xmat.allocate(minfo)
                 for ix in range(0, minfo.n):
-                    xmat[ix] = np.identity(minfo.n_states_ket[ix]).flatten()
+                    xmat[ix] = np.identity(minfo.n_states_ket[ix]).ravel()
                 tensors[i].ops[iop] = xmat
             lopd = [SymbolicMPOTools.tr_expr_to_block2(expr, bx) for expr in ts.lop.data]
             ropd = [SymbolicMPOTools.tr_expr_to_block2(expr, bx) for expr in ts.rop.data]

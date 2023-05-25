@@ -387,7 +387,7 @@ class SliceableTensor(np.ndarray):
 
     @property
     def dtype(self):
-        for v in self.flatten():
+        for v in self.ravel():
             if not isinstance(v, int) or v != 0:
                 return v.dtype
         return float

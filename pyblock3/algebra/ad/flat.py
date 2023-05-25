@@ -200,7 +200,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
         idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=np.uint64)
         data = np.zeros((idxs[-1], ), dtype=spt.dtype)
         for i in range(n_blocks):
-            data[idxs[i]:idxs[i + 1]] = spt.blocks[i].flatten()
+            data[idxs[i]:idxs[i + 1]] = spt.blocks[i].ravel()
         return FlatSparseTensor(q_labels, shapes, data, idxs)
     
     @staticmethod
@@ -717,7 +717,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             return v.__class__(
                 q_labels=np.repeat(v.q_labels, 2, axis=1),
                 shapes=np.repeat(v.shapes, 2, axis=1),
-                data=jnp.concatenate([jnp.diag(v.data[i:j]).flatten() for i, j in zip(v.idxs, v.idxs[1:])]))
+                data=jnp.concatenate([jnp.diag(v.data[i:j]).ravel() for i, j in zip(v.idxs, v.idxs[1:])]))
         elif v.n_blocks != 0:
             raise RuntimeError("ndim for np.diag must be 1 or 2.")
         else:
