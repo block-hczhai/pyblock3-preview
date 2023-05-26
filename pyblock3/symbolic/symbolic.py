@@ -44,7 +44,7 @@ class Symbolic:
         return set([abs(op) for op in self if op != 0])
 
     def __iter__(self):
-        yield from self.data.flatten()
+        yield from self.data.ravel()
 
     def __len__(self):
         return self.data.size

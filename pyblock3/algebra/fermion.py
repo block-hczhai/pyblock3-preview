@@ -1792,7 +1792,7 @@ class FlatFermionTensor(FlatSparseTensor):
         idxs[1:] = np.cumsum(shapes.prod(axis=1), dtype=INDEX_DTYPE)
         data = np.zeros((idxs[-1], ), dtype=spt.dtype)
         for i in range(n_blocks):
-            data[idxs[i]:idxs[i + 1]] = spt.blocks[i].flatten()
+            data[idxs[i]:idxs[i + 1]] = spt.blocks[i].ravel()
         return FlatFermionTensor(q_labels, shapes, data, spt.pattern, idxs, symmetry=cls, shape=spt.shape)
 
     @staticmethod

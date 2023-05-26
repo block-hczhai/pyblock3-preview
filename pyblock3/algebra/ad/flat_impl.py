@@ -68,9 +68,9 @@ def flat_sparse_tensordot(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, idxa
                     idxs.append(idxs[-1] + mat.size)
                     qs.append(outq)
                     shapes.append(mat.shape)
-                    mats.append(mat.flatten())
+                    mats.append(mat.ravel())
                 else:
-                    mats[blocks_map[outqk]] += mat.flatten()
+                    mats[blocks_map[outqk]] += mat.ravel()
 
     return (np.array(qs, dtype=np.uint32),
             np.array(shapes, dtype=np.uint32),
@@ -150,7 +150,7 @@ def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
             nk = np.multiply.reduce(sh)
             qq = np.array([x.to_flat() for x in qs + (q, )], dtype=aqs.dtype)
             sh = np.array(sh + (l.shape[-1], ), dtype=ashs.dtype)
-            l_blocks.append((qq, sh, l[k:k + nk, :].flatten()))
+            l_blocks.append((qq, sh, l[k:k + nk, :].ravel()))
             pqs = qs
         pqs = None
         for qs in items[q][1]:
@@ -160,7 +160,7 @@ def flat_sparse_tensor_svd(aqs, ashs, adata, aidxs, idx, linfo, rinfo, pattern):
             nk = np.multiply.reduce(sh)
             qq = np.array([x.to_flat() for x in (q, ) + qs], dtype=aqs.dtype)
             sh = np.array((r.shape[0], ) + sh, dtype=ashs.dtype)
-            r_blocks.append((qq, sh, r[:, k:k + nk].flatten()))
+            r_blocks.append((qq, sh, r[:, k:k + nk].ravel()))
             pqs = qs
     lqs = np.array([xl[0] for xl in l_blocks], dtype=aqs.dtype)
     lshs = np.array([xl[1] for xl in l_blocks], dtype=ashs.dtype)
@@ -203,7 +203,7 @@ def flat_sparse_left_svd(aqs, ashs, adata, aidxs, indexed=False):
         rqs[ir, :] = qq
         rshs[ir] = r.shape
         ridxs[ir + 1] = ridxs[ir] + r.size
-        rmats[ir] = r.flatten()
+        rmats[ir] = r.ravel()
         sqs[ir, 0] = qq
         sshs[ir, 0] = s.shape[0]
         sidxs[ir + 1] = sidxs[ir] + s.shape[0]
@@ -213,7 +213,7 @@ def flat_sparse_left_svd(aqs, ashs, adata, aidxs, indexed=False):
         lshs[v, -1] = l.shape[-1]
         lidx[ill:ill + len(v)] = v
         for q, ia in zip(ls, v):
-            lmats[ia] = q.flatten()
+            lmats[ia] = q.ravel()
             ill += 1
     assert ill == nblocks_l
     rr = lqs[lidx], lshs[lidx], jnp.concatenate([lmats[x] for x in lidx]), None, \
@@ -253,7 +253,7 @@ def flat_sparse_right_svd(aqs, ashs, adata, aidxs, indexed=False):
         lqs[il, :] = qq
         lshs[il] = l.shape
         lidxs[il + 1] = lidxs[il] + l.size
-        lmats[il] = l.flatten()
+        lmats[il] = l.ravel()
         sqs[il, 0] = qq
         sshs[il, 0] = s.shape[0]
         sidxs[il + 1] = sidxs[il] + s.shape[0]
@@ -263,7 +263,7 @@ def flat_sparse_right_svd(aqs, ashs, adata, aidxs, indexed=False):
         rshs[v, 0] = r.shape[0]
         ridx[irr:irr + len(v)] = v
         for q, ia in zip(rs, v):
-            rmats[ia] = q.flatten()
+            rmats[ia] = q.ravel()
             irr += 1
     assert irr == nblocks_r
     rr = lqs, lshs, jnp.concatenate(lmats), lidxs, \
@@ -296,12 +296,12 @@ def flat_sparse_left_canonicalize(aqs, ashs, adata, aidxs):
         rqs[ir, :] = qq
         rshs[ir] = r.shape
         ridxs[ir + 1] = ridxs[ir] + r.size
-        rmats[ir] = r.flatten()
+        rmats[ir] = r.ravel()
         qs = np.split(q, list(accumulate(l_shapes[:-1])), axis=0)
         assert len(qs) == len(v)
         qshs[v, -1] = r.shape[0]
         for q, ia in zip(qs, v):
-            qmats[ia] = q.flatten()
+            qmats[ia] = q.ravel()
     return qqs, qshs, jnp.concatenate(qmats), None, rqs, rshs, jnp.concatenate(rmats), ridxs
 
 
@@ -329,12 +329,12 @@ def flat_sparse_right_canonicalize(aqs, ashs, adata, aidxs):
         lqs[il, :] = qq
         lshs[il] = r.shape[::-1]
         lidxs[il + 1] = lidxs[il] + r.size
-        lmats[il] = r.T.flatten()
+        lmats[il] = r.T.ravel()
         qs = np.split(q, list(accumulate(r_shapes[:-1])), axis=0)
         assert len(qs) == len(v)
         qshs[v, 0] = r.shape[0]
         for q, ia in zip(qs, v):
-            qmats[ia] = q.T.flatten()
+            qmats[ia] = q.T.ravel()
     return lqs, lshs, jnp.concatenate(lmats), lidxs, qqs, qshs, jnp.concatenate(qmats), None
 
 
@@ -356,7 +356,7 @@ def flat_sparse_right_canonicalize_indexed(aqs, ashs, adata, aidxs):
 
 def flat_sparse_transpose(aqs, ashs, adata, aidxs, axes):
     data = jnp.concatenate(
-        [jnp.transpose(adata[i:j].reshape(sh), axes=axes).flatten()
+        [jnp.transpose(adata[i:j].reshape(sh), axes=axes).ravel()
          for i, j, sh in zip(aidxs, aidxs[1:], ashs)])
     return (aqs[:, axes], ashs[:, axes], data, aidxs)
 
@@ -456,7 +456,7 @@ def flat_sparse_fuse(aqs, ashs, adata, aidxs, idxs, info, pattern):
         blocks_map[zrq] = (blocks_map[zrq][0], blocks_map[zrq][1],
             rdata.at[sl].set(adata[aidxs[ia]:aidxs[ia + 1]].reshape(rsh)))
     rqs, rshs, rdata = zip(*blocks_map.values())
-    return np.array(rqs, dtype=np.uint32), np.array(rshs, dtype=np.uint32), jnp.concatenate([d.flatten() for d in rdata]), None
+    return np.array(rqs, dtype=np.uint32), np.array(rshs, dtype=np.uint32), jnp.concatenate([d.ravel() for d in rdata]), None
 
 
 def flat_sparse_trans_fusing_info(info):
@@ -527,7 +527,7 @@ def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol
             mat[: ashs[ia, 0], ..., : ashs[ia, -1]]
             + adata[aidxs[ia]:aidxs[ia + 1]].reshape(ashs[ia])
         )
-        cdata = cdata.at[cidxs[ic]:cidxs[ic + 1]].set(xmat.flatten())
+        cdata = cdata.at[cidxs[ic]:cidxs[ic + 1]].set(xmat.ravel())
 
     # copy b blocks to smaller index in new block
     for ib, q in xbqs:
@@ -540,7 +540,7 @@ def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol
             mat[-int(bshs[ib, 0]):, ..., -int(bshs[ib, -1]):]
             + bdata[bidxs[ib]:bidxs[ib + 1]].reshape(bshs[ib])
         )
-        cdata = cdata.at[cidxs[ic]:cidxs[ic + 1]].set(xmat.flatten())
+        cdata = cdata.at[cidxs[ic]:cidxs[ic + 1]].set(xmat.ravel())
 
     return cqs, cshs, cdata, cidxs
 
@@ -601,7 +601,7 @@ def flat_sparse_truncate_svd(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
             sh = lshs[ikl:ikl + nkl].copy()
             sh[:, -1] = ng
             dt = ldata[lidxs[ikl]:lidxs[ikl + nkl]
-                       ].reshape((-1, ns))[:, gl].flatten()
+                       ].reshape((-1, ns))[:, gl].ravel()
             l_blocks.append((lqs[ikl:ikl + nkl], sh, dt,
                              np.arange(ikl, ikl + nkl, dtype=int)))
         nsshs[iks, 0] = ng
@@ -618,7 +618,7 @@ def flat_sparse_truncate_svd(lqs, lshs, ldata, lidxs, sqs, sshs, sdata, sidxs,
                 [rdata[irst:ired].reshape((ns, -1))
                     for irst, ired in zip(rrx[:-1], rrx[1:])], axis=1)[gl, :]
             dt = np.concatenate(
-                [dt[:, irst:ired].flatten() for irst, ired in zip(rrxr[:-1], rrxr[1:])])
+                [dt[:, irst:ired].ravel() for irst, ired in zip(rrxr[:-1], rrxr[1:])])
             r_blocks.append((rqs[ikr:ikr + nkr], sh, dt,
                              np.arange(ikr, ikr + nkr, dtype=int)))
         if eigen_values:
