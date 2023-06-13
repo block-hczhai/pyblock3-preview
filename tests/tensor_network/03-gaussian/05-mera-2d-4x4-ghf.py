@@ -64,7 +64,7 @@ dm0a = np.array(
      [1, 0, 1, 0],
      [0, 1, 0, 1],
      [1, 0, 1, 0]]
-).flatten()
+).ravel()
 
 dm0b = ~dm0a & 1
 

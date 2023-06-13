@@ -8,7 +8,7 @@ def pack(x):
     r = np.zeros(size)
     iz = 0
     for z in x:
-        r[iz:iz + z.nelement()] = z.detach().numpy().flatten()
+        r[iz:iz + z.nelement()] = z.detach().numpy().ravel()
         iz += z.nelement()
     assert iz == r.size
     return r
