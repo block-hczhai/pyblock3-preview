@@ -561,7 +561,12 @@ class MPS(NDArrayOperatorsMixin):
         infos = [i if len(i) != 0 else (BondInfo(), ) for i in infos]
         bonds.append(infos[0][0])
         for i in range(self.n_sites - 1):
-            bonds.append(infos[i + 1][0] | infos[i][-1])
+            if len(infos[i + 1][0]) == 0:
+                bonds.append(infos[i][-1])
+            elif len(infos[i][-1]) == 0:
+                bonds.append(infos[i + 1][0])
+            else:
+                bonds.append(infos[i + 1][0] | infos[i][-1])
         bonds.append(infos[-1][-1])
         r = '|'.join([str(x.n_bonds) for x in bonds])
         return r if self.const == 0 else r + " (%+12.5f)" % self.const
