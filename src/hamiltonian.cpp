@@ -210,7 +210,8 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<FL> h_values,
     const int32_t *pperm = perm.data();
     FL rsc_factor = 1;
     for (int ii = 0; ii < n_sites; ii++) {
-        cout << "MPO site" << setw(4) << ii << " / " << n_sites << endl;
+        cout << "MPO site" << setw(4) << ii << " / " << n_sites << " .. ";
+        cout.flush();
         q_map.clear();
         map_ls.clear();
         map_rs.clear();
@@ -822,6 +823,7 @@ build_mpo(py::array_t<int32_t> orb_sym, py::array_t<FL> h_values,
             }
             isk += rszm;
         }
+        cout << "D = " << s_kept_total << endl;
         assert(isk == s_kept_total);
         cur_terms = new_cur_terms;
         cur_values = new_cur_values;
