@@ -113,7 +113,7 @@ class MPE:
         l_mpo_id = self.mpo[0].ones(
             bond_infos=(qml, qbl, qkl, qml), pattern="++--")
         r_mpo_id = self.mpo[-1].ones(bond_infos=(qmr,
-                                                 qbr, qkr, qmr), pattern="+-+-", dq=self.mpo.dq)
+                                                 qbr, qkr, qmr), pattern="++--", dq=self.mpo.dq)
         l_bra_id = self.bra[0].ones(bond_infos=(qbl, ))
         r_bra_id = self.bra[-1].ones(bond_infos=(qbl, ))
         l_ket_id = self.ket[0].ones(bond_infos=(qkl, ))
