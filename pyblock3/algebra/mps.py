@@ -461,7 +461,7 @@ class MPS(NDArrayOperatorsMixin):
     @implements(np.linalg.norm)
     def _norm(x):
         d = np.conj(x).dot(x)
-        assert abs(d.imag) / abs(d.real) < 1E-10
+        assert (abs(d.real) > 1E-10 and abs(d.imag) / abs(d.real) < 1E-10) or abs(d.imag) < 1E-10
         return np.sqrt(abs(d.real) if abs(d.real) < 1E-10 else d.real)
 
     def norm(self):
