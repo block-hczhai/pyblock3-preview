@@ -238,12 +238,12 @@ class MPE:
 
     def _effective_mps(self, mps, lid, rid, l=0, r=2):
         """Get mps in sub-system with sites [l, r)"""
-        tensors = [lid, *self.ket[l:r], rid]
+        tensors = [lid, *mps[l:r], rid]
         tensors[:2] = [
             reduce(lambda a, b: np.tensordot(a, b, axes=0), tensors[:2])]
         tensors[-2:] = [reduce(lambda a, b: np.tensordot(a,
                                                          b, axes=0), tensors[-2:])]
-        return self.ket.__class__(tensors=tensors, opts=mps.opts)
+        return mps.__class__(tensors=tensors, opts=mps.opts)
 
     def _effective_bra(self, l=0, r=2):
         """Get bra in sub-system with sites [l, r)"""
