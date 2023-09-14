@@ -24,8 +24,8 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, macos-11 ]
-        python: [ '3.7', '3.8', '3.9', '3.10' ]
-        manylinux: [ 2010 ]
+        python: [ '3.7', '3.8', '3.9', '3.10', '3.11' ]
+        manylinux: [ 2014 ]
         plat: [ x86_64, arm64 ]
         parallel: [ serial ]
         exclude:
@@ -122,6 +122,7 @@ jobs:
           gsed -i "/DUSE_MKL/c \                '-DUSE_MKL=OFF'," setup.py
           git clone https://github.com/Homebrew/brew arm-brew
           cd arm-brew && git checkout 3.6.16 && cd ..
+          ./arm-brew/bin/brew update
           OMPGZ=$(./arm-brew/bin/brew fetch --force --bottle-tag=arm64_big_sur libomp | grep "Downloaded to" | awk '{print $3}')
           ./arm-brew/bin/brew install ${OMPGZ}
           export OMPROOT=$(./arm-brew/bin/brew --prefix libomp)
