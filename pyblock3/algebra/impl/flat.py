@@ -469,15 +469,13 @@ def flat_sparse_trans_fusing_info(info):
 
 
 def flat_sparse_kron_add(aqs, ashs, adata, aidxs, bqs, bshs, bdata, bidxs, infol, infor):
-    if len(aqs) == 0:
-        return bqs, bshs, bdata, bidxs
-    elif len(bqs) == 0:
+    if len(aqs) == 0 and len(bqs) == 0:
         return aqs, ashs, adata, aidxs
-    lb = {k.to_flat(): v for k, v in infol.items()}
-    rb = {k.to_flat(): v for k, v in infor.items()}
-    na, nb = aqs.shape[0], bqs.shape[0]
-    ndim = aqs.shape[1]
-    assert ndim == bqs.shape[1]
+    lb = {k: v for k, v in infol.items()}
+    rb = {k: v for k, v in infor.items()}
+    na, nb = len(aqs), len(bqs)
+    ndim = aqs.shape[1] if len(aqs) != 0 else bqs.shape[1]
+    assert ndim == bqs.shape[1] or len(bqs) == 0
     xaqs = [(i, q.tobytes()) for i, q in enumerate(aqs)]
     xbqs = [(i, q.tobytes()) for i, q in enumerate(bqs)]
 

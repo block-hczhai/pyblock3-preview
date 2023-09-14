@@ -496,12 +496,14 @@ flat_sparse_tensor_kron_add(
     const py::array_t<uint32_t> &bqs, const py::array_t<uint32_t> &bshs,
     const py::array_t<FL> &bdata, const py::array_t<uint64_t> &bidxs,
     const map_uint_uint<Q> &infol, const map_uint_uint<Q> &infor) {
-    if (aqs.shape()[0] == 0)
-        return std::make_tuple(bqs, bshs, bdata, bidxs);
-    else if (bqs.shape()[0] == 0)
+    if (aqs.shape()[0] == 0 && bqs.shape()[0] == 0)
         return std::make_tuple(aqs, ashs, adata, aidxs);
-    const int n_blocks_a = (int)aqs.shape()[0], ndima = (int)aqs.shape()[1];
-    const int n_blocks_b = (int)bqs.shape()[0], ndimb = (int)bqs.shape()[1];
+    const int n_blocks_a = (int)aqs.shape()[0],
+              ndima = (int)aqs.shape()[0] != 0 ? (int)aqs.shape()[1]
+                                               : (int)bqs.shape()[1];
+    const int n_blocks_b = (int)bqs.shape()[0],
+              ndimb = (int)bqs.shape()[0] != 0 ? (int)bqs.shape()[1]
+                                               : (int)aqs.shape()[1];
     const ssize_t asi = aqs.strides()[0] / sizeof(uint32_t),
                   asj = aqs.strides()[1] / sizeof(uint32_t);
     const ssize_t bsi = bqs.strides()[0] / sizeof(uint32_t),
