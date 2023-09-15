@@ -93,7 +93,7 @@ if not NO_COMPILE:
         install_requires=[
             "mkl==2021.4",
             "mkl-include",
-            "numpy<1.23.0",
+            "numpy",
             "psutil",
             "pybind11<=2.10.1",
             "intel-openmp",
