@@ -31,7 +31,8 @@ release = '1.0'
 # ones.
 extensions = [
     'sphinx.ext.autodoc',
-    'sphinx.ext.mathjax'
+    'sphinx.ext.mathjax',
+    'sphinx_rtd_theme',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -44,18 +45,9 @@ exclude_patterns = []
 
 
 # -- Options for HTML output -------------------------------------------------
-
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
-#
-on_rtd = os.environ.get('READTHEDOCS') == 'True'
-if on_rtd:
-    html_theme = 'default'
-    autodoc_mock_imports = ['block3', 'numpy', 'psutil']
-else:
-    html_theme = 'bizstyle'
-    sys.path.insert(0, os.path.abspath('../../build'))
-
+html_theme = 'sphinx_rtd_theme'
+autodoc_mock_imports = ['block3', 'numpy', 'psutil']
+sys.path.insert(0, os.path.abspath('../../build'))
 sys.path.insert(0, os.path.abspath('../..'))
 
 # Add any paths that contain custom static files (such as style sheets) here,
