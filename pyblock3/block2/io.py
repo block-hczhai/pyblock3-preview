@@ -144,6 +144,7 @@ class MPSTools:
             basis[ib] = p
             p.sort_states()
         minfo = MPSInfo(mps.n_sites, vacuum, target, VectorStateInfo(basis))
+        minfo.set_bond_dimension_full_fci(vacuum, vacuum)
         minfo.left_dims[0] = StateInfo(vacuum)
         for i, info in enumerate(mps_infos):
             p = minfo.left_dims[i + 1]
