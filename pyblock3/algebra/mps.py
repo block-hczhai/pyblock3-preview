@@ -187,7 +187,7 @@ class MPS(NDArrayOperatorsMixin):
             tr = (0, *tuple(range(d + 1, d + d + 1)),
                   *tuple(range(1, d + 1)), d + d + 1)
             tensors[i] = self.tensors[i].transpose(tr)
-        return MPS(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
+        return type(self)(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq)
 
     @classmethod
     def ones(cls, info, dtype=float, opts=None):
