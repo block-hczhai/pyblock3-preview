@@ -53,6 +53,18 @@ jobs:
           sudo apt-get install libopenmpi-dev
           python -m pip install mpi4py
 
+      - name: fix mkl for amd cpu
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          lscpu
+          export CPUTYPE=$(lscpu | grep 'Vendor ID' | awk '{print $3}')
+          echo $CPUTYPE
+          if [ "$CPUTYPE" = "AuthenticAMD" ]; then
+            echo "int mkl_serv_intel_cpu_true() { return 1; }" > fixcpu.c
+            $CC -shared -fPIC -o libfixcpu.so fixcpu.c
+          fi
+          getconf LONG_BIT
+
       - name: build test
         env:
           MKLROOT: ~/.local
@@ -64,7 +76,20 @@ jobs:
           cd ..
           echo "PYTHONPATH=./build:${PYTHONPATH}" >> $GITHUB_ENV
 
-      - name: run test (serial)
+      - name: run test (serial, linux)
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          MKLROOT: ~/.local
+        run: |
+          export CPUTYPE=$(lscpu | grep 'Vendor ID' | awk '{print $3}')
+          if [ "$CPUTYPE" = "AuthenticAMD" ]; then
+            export LD_PRELOAD=$PWD/libfixcpu.so
+          fi
+          py.test pyblock3/algebra
+          py.test pyblock3/algorithms --ignore=pyblock3/algorithms/tests/test_soc.py
+
+      - name: run test (serial, macos)
+        if: matrix.os == 'macos-12'
         env:
           MKLROOT: ~/.local
         run: |
