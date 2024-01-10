@@ -349,9 +349,9 @@ class MPS(NDArrayOperatorsMixin):
             for i in range(self.n_sites - 1, 0, -1):
                 l, s, r = tensors[i].right_svd(full_matrices=False)
                 l, s, r, err = r.__class__.truncate_svd(l, s, r, **opts)
-                rs = np.tensordot(s.diag(), r, axes=1)
-                tensors[i] = rs
-                tensors[i - 1] = np.tensordot(tensors[i - 1], l, axes=1)
+                ls = np.tensordot(l, s.diag(), axes=1)
+                tensors[i] = r
+                tensors[i - 1] = np.tensordot(tensors[i - 1], ls, axes=1)
                 merror = max(merror, err)
         else:
             for i in range(self.n_sites - 1, 0, -1):
@@ -361,9 +361,9 @@ class MPS(NDArrayOperatorsMixin):
             for i in range(0, self.n_sites - 1, 1):
                 l, s, r = tensors[i].left_svd(full_matrices=False)
                 l, s, r, err = l.__class__.truncate_svd(l, s, r, **opts)
-                ls = np.tensordot(l, s.diag(), axes=1)
-                tensors[i] = ls
-                tensors[i + 1] = np.tensordot(r, tensors[i + 1], axes=1)
+                sr = np.tensordot(s.diag(), r, axes=1)
+                tensors[i] = l
+                tensors[i + 1] = np.tensordot(sr, tensors[i + 1], axes=1)
                 merror = max(merror, err)
         return type(self)(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq), merror
 
