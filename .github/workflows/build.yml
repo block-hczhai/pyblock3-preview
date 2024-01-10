@@ -61,7 +61,7 @@ jobs:
           echo $CPUTYPE
           if [ "$CPUTYPE" = "AuthenticAMD" ]; then
             echo "int mkl_serv_intel_cpu_true() { return 1; }" > fixcpu.c
-            $CC -shared -fPIC -o libfixcpu.so fixcpu.c
+            gcc -shared -fPIC -o libfixcpu.so fixcpu.c
           fi
           getconf LONG_BIT
 
