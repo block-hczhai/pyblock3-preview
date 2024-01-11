@@ -366,6 +366,25 @@ class MPS(NDArrayOperatorsMixin):
                 tensors[i + 1] = np.tensordot(sr, tensors[i + 1], axes=1)
                 merror = max(merror, err)
         return type(self)(tensors=tensors, const=self.const, opts=self.opts, dq=self.dq), merror
+    
+    def get_bipartite_entanglement(self):
+        tensors = [ts for ts in self.tensors]
+        bip_ent = np.zeros(self.n_sites - 1, dtype=np.float64)
+        for i in range(self.n_sites - 1, 0, -1):
+            l, q = tensors[i].right_canonicalize()
+            tensors[i] = q
+            tensors[i - 1] = np.tensordot(tensors[i - 1], l, axes=1)
+        for i in range(0, self.n_sites - 1, 1):
+            l, s, r = tensors[i].left_svd(full_matrices=False)
+            sr = np.tensordot(s.diag(), r, axes=1)
+            tensors[i] = l
+            tensors[i + 1] = np.tensordot(sr, tensors[i + 1], axes=1)
+
+            ldsq = s.data**2
+            ldsq /= np.sum(ldsq)
+            ldsq = ldsq[ldsq != 0]
+            bip_ent[i] = float(np.sum(-ldsq * np.log(ldsq)))
+        return bip_ent
 
     @classmethod
     def _add(cls, a, b):
