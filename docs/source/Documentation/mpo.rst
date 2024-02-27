@@ -204,9 +204,11 @@ to make sure that number of openMP threads is correct.
 .. code:: python3
 
     from pyscf import gto, scf, lo, symm, ao2mo
+    from pyblock3.fcidump import PointGroup
     # H chain
     N = 10
     BOHR = 0.52917721092  # Angstroms
+    mpg = 'c1'  # point group: d2h or c1
     R = 1.8 * BOHR
     mol = gto.M(atom=[['H', (0, 0, i * R)] for i in range(N)],
                 basis='sto6g', verbose=0, symmetry=mpg)

@@ -87,7 +87,7 @@ Using SliceableTensor:
 
 .. code:: python3
 
-    smps = mps.to_sliceable()
+    smps = mps.to_non_flat().to_sliceable()
     print(smps[0])
     print('-'*20)
     print(smps[0][:, 2:, 2])
