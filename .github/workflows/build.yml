@@ -24,7 +24,7 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, macos-12 ]
-        python: [ '3.7', '3.8', '3.9', '3.10', '3.11' ]
+        python: [ '3.7', '3.8', '3.9', '3.10', '3.11', '3.12' ]
         manylinux: [ 2014 ]
         plat: [ x86_64, arm64 ]
         parallel: [ serial ]
@@ -34,8 +34,8 @@ jobs:
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
 
@@ -44,8 +44,8 @@ jobs:
           MKLROOT: ~/.local
         run: |
           export PYT=$(which python)
-          python -m pip install pip build twine pytest --upgrade
-          python -m pip install mkl==2021.4 mkl-include intel-openmp numpy psutil 'cmake>=3.19' pybind11==2.10.1
+          python -m pip install pip build twine setuptools pytest --upgrade
+          python -m pip install mkl==2021.4 mkl-include intel-openmp numpy psutil 'cmake>=3.19' pybind11==2.12.0
 
       - name: install requirements (linux / mpi)
         if: matrix.os == 'ubuntu-latest'
@@ -101,6 +101,7 @@ jobs:
         env:
           TAG_STRING: ${{ github.event.ref }}
           MACOSX_DEPLOYMENT_TARGET: '10.9'
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: |
           brew update
           brew install libomp
@@ -117,7 +118,7 @@ jobs:
           export OMPROOT=$(brew --prefix libomp)
           echo ${OMPROOT}
           cmake --version
-          python -m pip install wheel delocate
+          python -m pip install wheel delocate==0.10.7
           python -m pip wheel . -w ./dist --no-deps
           export DYLD_LIBRARY_PATH=$(python -c "import site;print(':'.join(x+'/../..' for x in site.getsitepackages()))")
           # prevent delocating libomp
@@ -132,6 +133,7 @@ jobs:
         env:
           TAG_STRING: ${{ github.event.ref }}
           MACOSX_DEPLOYMENT_TARGET: '11.0'
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: |
           brew update
           brew install libomp
@@ -153,7 +155,7 @@ jobs:
           export OMPROOT=$(./arm-brew/bin/brew --prefix libomp)
           echo ${OMPROOT}
           cmake --version
-          python -m pip install wheel delocate
+          python -m pip install wheel delocate==0.10.7
           export _PYTHON_HOST_PLATFORM="macosx-12.0-arm64"
           export SDKROOT=/Applications/Xcode_13.2.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk
           export CROSS_COMPILE=1
@@ -179,15 +181,15 @@ jobs:
 
       - name: release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/*
 
       - name: upload artifacts
         if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.parallel }}
+          name: dist-${{ matrix.parallel }}-${{ matrix.python }}-${{ matrix.os }}-${{ matrix.plat }}
           path: dist
           retention-days: 2
 
@@ -200,10 +202,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: 3.9
+          python-version: 3.12
 
       - name: build source dist (serial)
         env:
@@ -211,12 +213,12 @@ jobs:
         run: |
           echo ${TAG_STRING:11}
           sed -i "s/version=.*/version='${TAG_STRING:11}',/" setup.py
-          python -m pip install pip build twine --upgrade
+          python -m pip install pip build twine setuptools --upgrade
           python -m build --sdist
 
       - name: release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/*
 
@@ -227,16 +229,16 @@ jobs:
           python .github/workflows/build_pypi.py ${REPO} ./idx-dist/pypi
 
       - name: setup pages
-        uses: actions/configure-pages@v2
+        uses: actions/configure-pages@v5
 
       - name: upload artifacts
-        uses: actions/upload-pages-artifact@v1
+        uses: actions/upload-pages-artifact@v3
         with:
           path: './idx-dist'
 
       - name: deploy to gitHub pages
         id: deployment
-        uses: actions/deploy-pages@v1
+        uses: actions/deploy-pages@v4
 
   publish:
     name: publish
@@ -244,10 +246,10 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: 3.9
+          python-version: 3.12
 
       - name: build source dist (serial)
         env:
@@ -255,18 +257,15 @@ jobs:
         run: |
           echo ${TAG_STRING:11}
           sed -i "s/version=.*/version='${TAG_STRING:11}',/" setup.py
-          python -m pip install pip build twine --upgrade
+          python -m pip install pip build twine setuptools --upgrade
           python -m build --sdist
 
       - name: download wheels
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
-          name: dist-serial
+          pattern: dist-serial-*
           path: dist
+          merge-multiple: true
 
       - name: publish to pypi
-        uses: pypa/gh-action-pypi-publish@v1.4.2
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-
+        uses: pypa/gh-action-pypi-publish@release/v1

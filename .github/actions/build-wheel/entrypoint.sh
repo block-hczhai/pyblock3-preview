@@ -27,8 +27,8 @@ PY_EXE=/opt/python/"${PY_VER}"/bin/python3
 sed -i "/DPYTHON_EXECUTABLE/a \                '-DPYTHON_EXECUTABLE=${PY_EXE}'," setup.py
 
 ls -l /opt/python
-/opt/python/"${PY_VER}"/bin/pip install --upgrade --no-cache-dir pip
-/opt/python/"${PY_VER}"/bin/pip install --no-cache-dir mkl==2021.4 mkl-include intel-openmp numpy psutil 'cmake>=3.19' pybind11==2.10.1
+/opt/python/"${PY_VER}"/bin/pip install --upgrade --no-cache-dir pip setuptools
+/opt/python/"${PY_VER}"/bin/pip install --no-cache-dir mkl==2021.4 mkl-include intel-openmp numpy psutil 'cmake>=3.19' pybind11==2.12.0
 $(cat $(which auditwheel) | head -1 | awk -F'!' '{print $2}') -m pip install auditwheel==5.1.2
 
 sed -i '/new_soname = src_name/a \    if any(x in src_name for x in ["libmkl_avx2", "libmkl_avx512"]): new_soname = src_name' \
