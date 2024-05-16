@@ -301,6 +301,8 @@ class SliceableTensor(np.ndarray):
 
     def __getitem__(self, key):
         r = super().__getitem__(key)
+        if r is None:
+            return r
         r.infos = list(self.infos)
         if isinstance(key, int):
             kk = sorted(r.infos[0])[key]
@@ -388,7 +390,7 @@ class SliceableTensor(np.ndarray):
     @property
     def dtype(self):
         for v in self.ravel():
-            if not isinstance(v, int) or v != 0:
+            if v is not None and (not isinstance(v, int) or v != 0):
                 return v.dtype
         return float
 
