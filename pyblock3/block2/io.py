@@ -162,6 +162,7 @@ class MPSTools:
                 p.n_states[ix] = v
             p.sort_states()
         minfo.tag = tag
+        minfo.bond_dim = minfo.get_max_bond_dimension()
         minfo.save_mutable()
         minfo.save_data("%s/%s-mps_info.bin" % (save_dir, tag))
         tensors = [None] * len(mps)
