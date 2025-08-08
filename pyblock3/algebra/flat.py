@@ -250,7 +250,7 @@ class FlatSparseTensor(NDArrayOperatorsMixin):
             data.real[:] = np.random.random( (idxs[-1], ))
             data.imag[:] = np.random.random( (idxs[-1], ))
         else:
-            return NotImplementedError('dtype %r not supported!' % dtype)
+            raise NotImplementedError('dtype %r not supported!' % dtype)
         return FlatSparseTensor(qs, shs, data, idxs)
     
     def fix_pattern(self, pattern=None, dq=None):
