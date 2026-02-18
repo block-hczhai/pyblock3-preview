@@ -159,7 +159,7 @@ void bind_sparse_tensor(py::module &m, py::module &pm, string name) {
              })
         .def("__xor__",
              [](map_uint_uint<Q> *self, map_uint_uint<Q> *other) {
-                 return move(bond_info_fusing_product<Q>(
+                 return std::move(bond_info_fusing_product<Q>(
                      vector<map_uint_uint<Q>>{*self, *other}, "++"));
              })
         .def("filter",

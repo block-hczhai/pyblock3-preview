@@ -1068,17 +1068,19 @@ def compute_phase(
     if isinstance(q_labels, np.ndarray):
         if symmetry is None:
             symmetry = setting.DEFAULT_SYMMETRY
-        plist = [symmetry.flat_to_parity(qpn) for qpn in q_labels]
+        # Cast to Python int to avoid unsigned overflow in later parity arithmetic.
+        plist = [int(symmetry.flat_to_parity(int(qpn))) for qpn in q_labels]
     else:
         plist = [qpn.parity for qpn in q_labels]
     counted = []
     phase = 1
     for x in axes:
         if direction=="left":
-            parity = sum([plist[i] for i in range(x) if i not in counted]) * plist[x]
+            parity = int(sum([plist[i] for i in range(x) if i not in counted])) * int(plist[x])
         elif direction=="right":
-            parity = sum([plist[i] for i in range(x+1, len(plist)) if i not in counted]) * plist[x]
-        phase *= (-1) ** parity
+            parity = int(sum([plist[i] for i in range(x+1, len(plist)) if i not in counted])) * int(plist[x])
+        if parity % 2:
+            phase = -phase
         counted.append(x)
     return phase
 

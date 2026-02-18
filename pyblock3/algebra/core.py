@@ -411,7 +411,10 @@ class SliceableTensor(np.ndarray):
         """Convert to dense numpy.ndarray."""
         sh = tuple(info.n_bonds for info in self.infos)
         aw = np.indices(self.shape).reshape((self.ndim, -1)).transpose()
-        r = np.zeros(sh, dtype=self.dtype)
+        p = np.asarray(self)
+        dtypes = [np.asarray(p[tuple(ix)]).dtype for ix in aw if p[tuple(ix)] is not None]
+        dtype = np.result_type(*dtypes) if dtypes else self.dtype
+        r = np.zeros(sh, dtype=dtype)
         idxs = []
         for ii, info in enumerate(self.infos):
             idx = np.zeros((self.shape[ii] + 1, ), dtype=int)
@@ -419,7 +422,6 @@ class SliceableTensor(np.ndarray):
                 idx[ik + 1] = info[k] + idx[ik]
             idxs.append(idx)
         for ix in aw:
-            p = np.asarray(self)
             if p[tuple(ix)] is not None:
                 sl = tuple(slice(idx[k], idx[k + 1])
                            for k, idx in zip(ix, idxs))

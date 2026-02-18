@@ -21,6 +21,11 @@ elif [ "${PYTHON_VERSION}" = "3.11" ]; then
     PY_VER=cp311-cp311
 elif [ "${PYTHON_VERSION}" = "3.12" ]; then
     PY_VER=cp312-cp312
+elif [ "${PYTHON_VERSION}" = "3.13" ]; then
+    PY_VER=cp313-cp313
+else
+    echo "Unsupported Python version: ${PYTHON_VERSION}" >&2
+    exit 1
 fi
 
 PY_EXE=/opt/python/"${PY_VER}"/bin/python3
@@ -30,6 +35,7 @@ ls -l /opt/python
 /opt/python/"${PY_VER}"/bin/pip install --upgrade --no-cache-dir pip setuptools
 /opt/python/"${PY_VER}"/bin/pip install --no-cache-dir mkl==2021.4 mkl-include intel-openmp numpy psutil 'cmake>=3.19' pybind11==2.12.0
 $(cat $(which auditwheel) | head -1 | awk -F'!' '{print $2}') -m pip install auditwheel==5.1.2
+$(cat $(which auditwheel) | head -1 | awk -F'!' '{print $2}') -m pip install setuptools
 
 sed -i '/new_soname = src_name/a \    if any(x in src_name for x in ["libmkl_avx2", "libmkl_avx512"]): new_soname = src_name' \
     $($(cat $(which auditwheel) | head -1 | awk -F'!' '{print $2}') -c "from auditwheel import repair;print(repair.__file__)")

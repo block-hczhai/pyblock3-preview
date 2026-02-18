@@ -1465,7 +1465,9 @@ class SparseTensor(NDArrayOperatorsMixin):
                 kk += info[k]
             idx_infos.append(idx_info)
         sh = tuple(sum(info.values()) for info in infos)
-        arr = np.zeros(sh, dtype=self.dtype)
+        block_dtypes = [np.asarray(block.data).dtype for block in self.blocks]
+        dtype = np.result_type(*block_dtypes) if block_dtypes else self.dtype
+        arr = np.zeros(sh, dtype=dtype)
         for block in self.blocks:
             idx = tuple(slice(ixf[q], ixf[q] + info[q])
                          for q, ixf, info in zip(block.q_labels, idx_infos, infos))

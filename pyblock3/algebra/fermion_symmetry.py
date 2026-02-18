@@ -69,6 +69,7 @@ class U1:
 
     @classmethod
     def flat_to_qpn(cls, x):
+        x = np.asarray(x).astype(np.int64, copy=False)
         return x // 131072 - 8192
 
     @classmethod
@@ -223,6 +224,7 @@ class U11:
 
     @classmethod
     def flat_to_qpn(cls, x):
+        x = np.asarray(x).astype(np.int64, copy=False)
         return (x // 131072) % 16384 - 8192, (x // 8) % 16384 - 8192
 
     @classmethod
