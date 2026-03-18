@@ -42,6 +42,7 @@ class SZ:
 
     @staticmethod
     def from_flat(x):
+        x = int(x)
         return SZ((x // 131072) % 16384 - 8192, (x // 8) % 16384 - 8192, x % 8)
 
     @staticmethod
@@ -273,4 +274,3 @@ class BondFusingInfo(BondInfo):
             finfo[q][k] = quanta[q], v
             quanta[q] += v
         return BondFusingInfo(quanta, finfo=finfo, pattern='+')
-
