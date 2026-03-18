@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 from pyblock3.algebra.fermion_symmetry import U11, U1, Z4, Z2, Z22
+from pyblock3.algebra.symmetry import SZ
 from itertools import product
 
 class TestAlgebras(unittest.TestCase):
@@ -69,6 +70,14 @@ class TestAlgebras(unittest.TestCase):
             u1a = U1(z)
             u1b = U1.from_flat(u1a.to_flat())
             assert u1a==u1b
+
+    def test_sz_from_flat_uint32(self):
+        sym = SZ(n=-1, twos=-3, pg=5)
+        flat = np.uint32(sym.to_flat())
+        out = SZ.from_flat(flat)
+        assert out.n == -1
+        assert out.twos == -3
+        assert out.pg == 5
 
     def test_U11_compute(self):
         ndim = 10
