@@ -70,6 +70,19 @@ MESSAGE(STATUS "PYTHON_INCLUDE_DIRS = ${PYTHON_INCLUDE_DIRS}")
 MESSAGE(STATUS "PYLIB_SUFFIX = ${PYLIB_SUFFIX}")
 MESSAGE(STATUS "PYBIND_INCLUDE_DIRS = ${PYBIND_INCLUDE_DIRS}")
 
+# CPython 3.15 sets _POSIX_C_SOURCE=202405L / _XOPEN_SOURCE=800 in pyconfig.h
+# unguarded; glibc < 2.42 features.h gives 200809L / 700 (and glibc >= 2.42 with
+# older CPython gives the reverse mismatch). Whichever comes first wins silently,
+# so pyconfig.h must precede any libstdc++/glibc header.
+IF (NOT WIN32)
+    FIND_FILE(PYCONFIG_H pyconfig.h HINTS ${PYTHON_INCLUDE_DIRS} NO_DEFAULT_PATH)
+    IF (NOT PYCONFIG_H)
+        MESSAGE(FATAL_ERROR "pyconfig.h not found in ${PYTHON_INCLUDE_DIRS}")
+    ENDIF()
+    MESSAGE(STATUS "PYCONFIG_H = ${PYCONFIG_H}")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${PYCONFIG_H}")
+ENDIF()
+
 IF (${PYTHON_EXECUTABLE_HINT})
     IF (NOT (${PYTHON_EXECUTABLE_HINT} EQUAL ${PYTHON_EXECUTABLE}))
         MESSAGE(FATAL_ERROR "Python3 used by cmake (${PYTHON_EXECUTABLE}) does not match Python3 \

@@ -24,7 +24,7 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-24.04, macos-15 ]
-        python: [ '3.8', '3.9', '3.10', '3.11', '3.12', '3.13' ]
+        python: [ '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', '3.14t', '3.15-dev', '3.15t-dev' ]
         manylinux: [ 2014 ]
         plat: [ x86_64, arm64 ]
         parallel: [ serial ]
@@ -36,8 +36,8 @@ jobs:
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
 
@@ -54,13 +54,13 @@ jobs:
           MKLROOT: ~/.local
         run: |
           python -m pip install pip build twine setuptools pytest --upgrade
-          python -m pip install mkl==2021.4 mkl-include intel-openmp numpy psutil 'cmake>=3.19' pybind11==2.12.0
+          python -m pip install mkl==2024.2.2 mkl-include intel-openmp numpy psutil 'cmake>=3.19' pybind11==3.1.0
 
       - name: install requirements (macOS)
         if: matrix.os == 'macos-15'
         run: |
           python -m pip install pip build twine setuptools pytest --upgrade
-          python -m pip install numpy psutil 'cmake>=3.19' pybind11==2.12.0
+          python -m pip install numpy psutil 'cmake>=3.19' pybind11==3.1.0
 
       - name: install requirements (linux / mpi)
         if: matrix.os == 'ubuntu-24.04'
@@ -69,14 +69,18 @@ jobs:
           python -m pip install mpi4py
 
       - name: fix mkl for amd cpu
-        if: matrix.os == 'ubuntu-24.04'
+        if: matrix.os == 'ubuntu-24.04' && matrix.plat == 'x86_64'
+        env:
+          CC: gcc-14
+          CXX: g++-14
         run: |
           lscpu
           export CPUTYPE=$(lscpu | grep 'Vendor ID' | awk '{print $3}')
           echo $CPUTYPE
           if [ "$CPUTYPE" = "AuthenticAMD" ]; then
             echo "int mkl_serv_intel_cpu_true() { return 1; }" > fixcpu.c
-            gcc -shared -fPIC -o libfixcpu.so fixcpu.c
+            echo "int (*mkl_serv_get_cpu_true(void))(void) { return &mkl_serv_intel_cpu_true; }" >> fixcpu.c
+            $CC -shared -fPIC -o libfixcpu.so fixcpu.c
           fi
           getconf LONG_BIT
 
@@ -146,6 +150,8 @@ jobs:
           export PLAT="arm64"
           python -m pip wheel . -w ./dist --no-deps
           delocate-wheel --require-archs=arm64 -k dist/*.whl
+          cd /tmp && python -m pip install --no-deps $GITHUB_WORKSPACE/dist/*.whl
+          cd /tmp && python -c "import block3; print(block3.__file__)"
 
       - name: prepare build wheels (manylinux)
         if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'ubuntu-24.04'
@@ -186,8 +192,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
@@ -230,8 +236,8 @@ jobs:
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
